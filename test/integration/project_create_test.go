@@ -1,95 +1,27 @@
 package integration_test
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
-	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/app"
 	"github.com/google/uuid"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 func TestUserCanCreateProject(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	postgresContainer, err := postgres.Run(
-		ctx,
-		"postgres:17-alpine",
-		postgres.WithDatabase("orbitops"),
-		postgres.WithUsername("orbitops"),
-		postgres.WithPassword("orbitops"),
-		postgres.BasicWaitStrategies(),
+	environment := newTestEnvironment(t)
+	response := environment.postProject(
+		t,
+		"create-platform-project",
+		`{"name":"Platform","slug":"platform"}`,
 	)
-	if err != nil {
-		t.Fatalf("start PostgreSQL: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := postgresContainer.Terminate(context.Background()); err != nil {
-			t.Errorf("terminate PostgreSQL: %v", err)
-		}
-	})
-
-	databaseURL, err := postgresContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("get PostgreSQL connection string: %v", err)
-	}
-
-	runtime, err := app.New(ctx, app.Config{
-		DatabaseURL:   databaseURL,
-		LocalActorID:  "local-developer",
-		MigrateOnBoot: true,
-	})
-	if err != nil {
-		t.Fatalf("start OrbitOps: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := runtime.Close(); err != nil {
-			t.Errorf("close OrbitOps: %v", err)
-		}
-	})
-
-	server := httptest.NewServer(runtime.Handler())
-	t.Cleanup(server.Close)
-
-	requestBody := []byte(`{"name":"Platform","slug":"platform"}`)
-	request, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		server.URL+"/api/v1/projects",
-		bytes.NewReader(requestBody),
-	)
-	if err != nil {
-		t.Fatalf("build request: %v", err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Idempotency-Key", "create-platform-project")
-
-	response, err := server.Client().Do(request)
-	if err != nil {
-		t.Fatalf("create project: %v", err)
-	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusCreated)
 	}
 
-	var project struct {
-		ID        string    `json:"id"`
-		Name      string    `json:"name"`
-		Slug      string    `json:"slug"`
-		CreatedBy string    `json:"createdBy"`
-		CreatedAt time.Time `json:"createdAt"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&project); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
+	project := decodeProject(t, response)
 
 	if _, err := uuid.Parse(project.ID); err != nil {
 		t.Errorf("id = %q, want UUID: %v", project.ID, err)
@@ -105,5 +37,80 @@ func TestUserCanCreateProject(t *testing.T) {
 	}
 	if project.CreatedAt.IsZero() {
 		t.Error("createdAt is zero")
+	}
+}
+
+func TestRepeatedProjectCreateReturnsSameProject(t *testing.T) {
+	environment := newTestEnvironment(t)
+	requestBody := `{"name":"Delivery","slug":"delivery"}`
+	idempotencyKey := "create-delivery-project"
+
+	firstResponse := environment.postProject(t, idempotencyKey, requestBody)
+	defer firstResponse.Body.Close()
+	if firstResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("first status = %d, want %d", firstResponse.StatusCode, http.StatusCreated)
+	}
+	firstProject := decodeProject(t, firstResponse)
+
+	secondResponse := environment.postProject(t, idempotencyKey, requestBody)
+	defer secondResponse.Body.Close()
+	if secondResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("second status = %d, want %d", secondResponse.StatusCode, http.StatusCreated)
+	}
+	secondProject := decodeProject(t, secondResponse)
+
+	if secondProject.ID != firstProject.ID {
+		t.Errorf("replayed id = %q, want %q", secondProject.ID, firstProject.ID)
+	}
+	if !secondProject.CreatedAt.Equal(firstProject.CreatedAt) {
+		t.Errorf(
+			"replayed createdAt = %s, want %s",
+			secondProject.CreatedAt,
+			firstProject.CreatedAt,
+		)
+	}
+}
+
+func TestReusingIdempotencyKeyForDifferentProjectReturnsConflict(t *testing.T) {
+	environment := newTestEnvironment(t)
+	idempotencyKey := "create-conflicting-project"
+
+	firstResponse := environment.postProject(
+		t,
+		idempotencyKey,
+		`{"name":"First","slug":"first"}`,
+	)
+	defer firstResponse.Body.Close()
+	if firstResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("first status = %d, want %d", firstResponse.StatusCode, http.StatusCreated)
+	}
+
+	conflictResponse := environment.postProject(
+		t,
+		idempotencyKey,
+		`{"name":"Second","slug":"second"}`,
+	)
+	defer conflictResponse.Body.Close()
+	if conflictResponse.StatusCode != http.StatusConflict {
+		t.Fatalf(
+			"conflict status = %d, want %d",
+			conflictResponse.StatusCode,
+			http.StatusConflict,
+		)
+	}
+
+	var errorDocument struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(conflictResponse.Body).Decode(&errorDocument); err != nil {
+		t.Fatalf("decode conflict response: %v", err)
+	}
+	if errorDocument.Code != "idempotency_conflict" {
+		t.Errorf(
+			"conflict code = %q, want %q",
+			errorDocument.Code,
+			"idempotency_conflict",
+		)
 	}
 }

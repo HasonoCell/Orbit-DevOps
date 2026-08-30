@@ -23,6 +23,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Project"
+        "409":
+          description: 幂等键已经用于不同请求
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/projects/{projectId}:
+    get:
+      operationId: getProject
+      summary: 查询项目
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 项目详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         default:
           description: 请求失败
           content:

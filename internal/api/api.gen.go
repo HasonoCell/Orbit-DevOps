@@ -60,6 +60,9 @@ type ServerInterface interface {
 	// CreateProject 创建项目
 	// (POST /api/v1/projects)
 	CreateProject(c *gin.Context, params CreateProjectParams)
+	// GetProject 查询项目
+	// (GET /api/v1/projects/{projectId})
+	GetProject(c *gin.Context, projectId openapi_types.UUID)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -114,6 +117,31 @@ func (siw *ServerInterfaceWrapper) CreateProject(c *gin.Context) {
 	siw.Handler.CreateProject(c, params)
 }
 
+// GetProject operation middleware
+func (siw *ServerInterfaceWrapper) GetProject(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetProject(c, projectId)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -142,6 +170,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	}
 
 	router.POST(options.BaseURL+"/api/v1/projects", wrapper.CreateProject)
+	router.GET(options.BaseURL+"/api/v1/projects/:projectId", wrapper.GetProject)
 }
 
 type CreateProjectRequestObject struct {
@@ -167,6 +196,20 @@ func (response CreateProject201JSONResponse) VisitCreateProjectResponse(w http.R
 	return err
 }
 
+type CreateProject409JSONResponse Error
+
+func (response CreateProject409JSONResponse) VisitCreateProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateProjectdefaultJSONResponse struct {
 	Body       Error
 	StatusCode int
@@ -184,11 +227,67 @@ func (response CreateProjectdefaultJSONResponse) VisitCreateProjectResponse(w ht
 	return err
 }
 
+type GetProjectRequestObject struct {
+	ProjectId openapi_types.UUID `json:"projectId"`
+}
+
+type GetProjectResponseObject interface {
+	VisitGetProjectResponse(w http.ResponseWriter) error
+}
+
+type GetProject200JSONResponse Project
+
+func (response GetProject200JSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProject404JSONResponse Error
+
+func (response GetProject404JSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProjectdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetProjectdefaultJSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// CreateProject 创建项目
 	// (POST /api/v1/projects)
 	CreateProject(ctx context.Context, request CreateProjectRequestObject) (CreateProjectResponseObject, error)
+	// GetProject 查询项目
+	// (GET /api/v1/projects/{projectId})
+	GetProject(ctx context.Context, request GetProjectRequestObject) (GetProjectResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx *gin.Context, request any) (any, error)
@@ -281,23 +380,51 @@ func (sh *strictHandler) CreateProject(ctx *gin.Context, params CreateProjectPar
 	}
 }
 
+// GetProject operation middleware
+func (sh *strictHandler) GetProject(ctx *gin.Context, projectId openapi_types.UUID) {
+	var request GetProjectRequestObject
+
+	request.ProjectId = projectId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetProject(ctx, request.(GetProjectRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetProject")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetProjectResponseObject); ok {
+		if err := validResponse.VisitGetProjectResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"rFXfS1tJFP5X5KxPy01uorC4902XhZVdMCy+SRbG3JNkJPfOODNXNg0BsdUqVKHoQ1tbaIu2fWgrtlJr",
-	"rH9NM0n8L8rMTZqbHy0IvgRmMuec7zvfOd+tQYEFnIUYKgleDTgRJECFwp7mfQw4UxgWqn9j1dz4KAuC",
-	"ckVZCB7oq329s9va321ePe2sbzY/7+mtx93jg7v68Exvbbaf3NMXG+13O63n9zsnW1/XN8ABaqLLSHwU",
-	"4EBIAgQvWS1lyjkgcDWiAn3wlIjQAVkoY0AMjoD8/w+GJVUGLzs140BAw955xgFV5SahVIKGJajX671Q",
-	"y+oPgURhTrAVLKh/cTVCqcw98X1qiJFKTjCOQlGU4BVJRaIDPHFV6yIehJHJDMDIjsBwQFai0lDYb9PD",
-	"UZwohcI06L8lkrqTNz+Z1O+p/K+TMEot2aSlGFe3Tv77Y7ZsmBoAfwrBxA25FphvuY6wCVBKUhr33xAq",
-	"m6H/fhywrho3hWaV9GdtXJGJgCjwwCcKU4raToyA7obMVcdSov5Apiii/rgkPfl/KPDP+2GTJqVKwnIS",
-	"rEY7ZVLRsMhGd3FBLFO1wOWEbhy0D940G0fNy0etvdd6+5O++Hj97KVZxM23+sv6xF+Li7kJffyw3XgV",
-	"r6OiqoLJHLO5eXBgDYWMk2fS2XTGEGQcQ8IpeDCdzqSnwY5r2YrhEk7dtazLYyljO2HxahnRiAE674M3",
-	"uIA2Rd90lmowKbAIHvzi9q3J7T9xh0ypno+bi1LNMb8aT2yoMIyHifMKLdjS7oo0XGoJFxlXqWsU7liX",
-	"qA9KaVzJXkjOQhnP5FQme2sYei2yZQflvn5x0T58r88/6O1DfdkA+6BIooq6teqxWYyp3Tk5b51u6KPT",
-	"ztmxHW4ZBQERVfNFsGhicCa0/i0AAP//",
+	"zFVRbxtFEP4r0dAndPadmwq199YiBBZItVDfIiNtfWN7K9/ddnevwlgnRSkOrdQEUPNQSBFQNaUPFKtQ",
+	"0cahvwav7fwLtLt2fLYvQZESxIvl27uZ+Wa+b77tQC0OWRxhJAX4HWCEkxAlcvNUDjBkscSo1v4Y2/ok",
+	"QFHjlEkaR+CDevtQ3d8aPtwavH08Xu8O3myrze8mjw/uqt1XarM7+v5Ltb8xenF/+NNX497m3+sb4ADV",
+	"0U0kAXJwICIhgp+tVtDlHOB4O6EcA/AlT9ABUWtiSDSOkHz+CUYN2QS/dPGyAyGNps+XHZBtphMKyWnU",
+	"gDRNp6Gmq/c5EokVHt/CmvwUbycopD4nQUB1Y6RV4TFDLikK8OukJdABljnqTBDPw/C8ORilJRgOiFbS",
+	"WAh7b3UxihEpkesBfbZGCl9U9Y9XuFKovnsBllvLDmnN4prUqR59HN/UnWoAH3Ae81P2WosD0+tSNyEK",
+	"QRp57xZQmQyz7/OATdg4LTTDZHDVxNVjHhIJPgREYkFSM4kl0JOQa+3clmgwlylJaJCXZEr/sQSfPA+T",
+	"NEtVFpaT6Wp5UjoVjerx8i5e5zepvM7EiurvjHaeD/pPBwePhtu/qHt/qv0/Dn94ohex+6v6a33loxs3",
+	"Kitq79tR/5ldR0llC7M5rlbK4MAd5MIm94qloqcbjBlGhFHwYbXoFVfByLVpyHAJo+6dksssldZOYrta",
+	"mjSigZYD8OcX0KSYmc5aBy5wrIMP77gza3Jnn7gLppRW7XBRyGtx0LaKjSRGVkyMtWjNlHZvCd1LJ+Mi",
+	"eZUmRuHmukQ6T6V2JXMgWBwJq8mLXunMMExHZMrO03348/5o9zf1+nd1b1cd9DU3l7wrZ1bZGkVOXevl",
+	"hzu69Ojga6O07cGbLfXNg3Hv9fDlBpiQOkla8vzR2JLq6cvxqz2zZiIJQ8LbGqiZix2TebWoT7cz+VcO",
+	"Ug2ggTlS/RDlsTo1l5iW/+wKO8p44uX1L/5iFT0nKe+/k9S492x4t2v1dOn8GbRFtYBePFKPn/9f1DP8",
+	"cW/ce3KknjT9JwAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
