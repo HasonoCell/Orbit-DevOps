@@ -51,6 +51,14 @@ func (e *FailureError) Error() string {
 	return e.summary
 }
 
+func (e *FailureError) Category() string {
+	return e.category
+}
+
+func (e *FailureError) Summary() string {
+	return e.summary
+}
+
 type Runner struct {
 	config     Config
 	operations *operation.Module

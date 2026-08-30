@@ -9,6 +9,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/project"
+	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
 	"github.com/gin-gonic/gin"
 )
 
@@ -17,6 +18,7 @@ type Server struct {
 	catalog      *catalog.Module
 	delivery     *delivery.Module
 	operations   *operation.Module
+	observer     runtimeview.Observer
 	localActorID string
 }
 
@@ -51,6 +53,7 @@ func NewServer(
 	catalogModule *catalog.Module,
 	deliveryModule *delivery.Module,
 	operationModule *operation.Module,
+	observer runtimeview.Observer,
 	localActorID string,
 ) *Server {
 	return &Server{
@@ -58,6 +61,7 @@ func NewServer(
 		catalog:      catalogModule,
 		delivery:     deliveryModule,
 		operations:   operationModule,
+		observer:     observer,
 		localActorID: localActorID,
 	}
 }

@@ -127,6 +127,39 @@ func (e ReleaseTargetSnapshotStage) Valid() bool {
 	}
 }
 
+// Defines values for RuntimeSnapshotFreshness.
+const (
+	Fresh       RuntimeSnapshotFreshness = "fresh"
+	Unavailable RuntimeSnapshotFreshness = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeSnapshotFreshness enum.
+func (e RuntimeSnapshotFreshness) Valid() bool {
+	switch e {
+	case Fresh:
+		return true
+	case Unavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeSnapshotSource.
+const (
+	Kubernetes RuntimeSnapshotSource = "kubernetes"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeSnapshotSource enum.
+func (e RuntimeSnapshotSource) Valid() bool {
+	switch e {
+	case Kubernetes:
+		return true
+	default:
+		return false
+	}
+}
+
 // Application defines model for Application.
 type Application struct {
 	CreatedAt time.Time          `json:"createdAt"`
@@ -266,6 +299,46 @@ type ReleaseTargetSnapshot struct {
 // ReleaseTargetSnapshotStage defines model for ReleaseTargetSnapshot.Stage.
 type ReleaseTargetSnapshotStage string
 
+// RuntimeCondition defines model for RuntimeCondition.
+type RuntimeCondition struct {
+	Message string `json:"message"`
+	Reason  string `json:"reason"`
+	Status  string `json:"status"`
+	Type    string `json:"type"`
+}
+
+// RuntimePod defines model for RuntimePod.
+type RuntimePod struct {
+	Name   string `json:"name"`
+	Phase  string `json:"phase"`
+	Ready  bool   `json:"ready"`
+	Reason string `json:"reason"`
+}
+
+// RuntimeSnapshot defines model for RuntimeSnapshot.
+type RuntimeSnapshot struct {
+	AvailableReplicas  int                      `json:"availableReplicas"`
+	Conditions         []RuntimeCondition       `json:"conditions"`
+	DeploymentExists   bool                     `json:"deploymentExists"`
+	DeploymentName     string                   `json:"deploymentName"`
+	DeploymentTargetId openapi_types.UUID       `json:"deploymentTargetId"`
+	DesiredReplicas    int                      `json:"desiredReplicas"`
+	ErrorCategory      *string                  `json:"errorCategory,omitempty"`
+	Freshness          RuntimeSnapshotFreshness `json:"freshness"`
+	ObservedAt         time.Time                `json:"observedAt"`
+	Pods               []RuntimePod             `json:"pods"`
+	ReadyReplicas      int                      `json:"readyReplicas"`
+	ReleaseId          *openapi_types.UUID      `json:"releaseId,omitempty"`
+	Source             RuntimeSnapshotSource    `json:"source"`
+	UpdatedReplicas    int                      `json:"updatedReplicas"`
+}
+
+// RuntimeSnapshotFreshness defines model for RuntimeSnapshot.Freshness.
+type RuntimeSnapshotFreshness string
+
+// RuntimeSnapshotSource defines model for RuntimeSnapshot.Source.
+type RuntimeSnapshotSource string
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -319,6 +392,9 @@ type ServerInterface interface {
 	// CreateRelease 创建发布并接纳异步操作
 	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
 	CreateRelease(c *gin.Context, deploymentTargetId openapi_types.UUID, params CreateReleaseParams)
+	// GetRuntimeSnapshot 从 Kubernetes 查询部署目标的当前运行状态
+	// (GET /api/v1/deployment-targets/{deploymentTargetId}/runtime-snapshot)
+	GetRuntimeSnapshot(c *gin.Context, deploymentTargetId openapi_types.UUID)
 	// GetOperation 查询异步操作
 	// (GET /api/v1/operations/{operationId})
 	GetOperation(c *gin.Context, operationId openapi_types.UUID)
@@ -497,6 +573,31 @@ func (siw *ServerInterfaceWrapper) CreateRelease(c *gin.Context) {
 	}
 
 	siw.Handler.CreateRelease(c, deploymentTargetId, params)
+}
+
+// GetRuntimeSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) GetRuntimeSnapshot(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deploymentTargetId" -------------
+	var deploymentTargetId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deploymentTargetId", c.Param("deploymentTargetId"), &deploymentTargetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deploymentTargetId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetRuntimeSnapshot(c, deploymentTargetId)
 }
 
 // GetOperation operation middleware
@@ -703,6 +804,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/deployment-targets", wrapper.CreateDeploymentTarget)
 	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.GetDeploymentTarget)
 	router.POST(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/releases", wrapper.CreateRelease)
+	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/runtime-snapshot", wrapper.GetRuntimeSnapshot)
 	router.GET(options.BaseURL+"/api/v1/releases/:releaseId", wrapper.GetRelease)
 	router.GET(options.BaseURL+"/api/v1/operations/:operationId", wrapper.GetOperation)
 }
@@ -954,6 +1056,59 @@ type CreateReleasedefaultJSONResponse struct {
 }
 
 func (response CreateReleasedefaultJSONResponse) VisitCreateReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRuntimeSnapshotRequestObject struct {
+	DeploymentTargetId openapi_types.UUID `json:"deploymentTargetId"`
+}
+
+type GetRuntimeSnapshotResponseObject interface {
+	VisitGetRuntimeSnapshotResponse(w http.ResponseWriter) error
+}
+
+type GetRuntimeSnapshot200JSONResponse RuntimeSnapshot
+
+func (response GetRuntimeSnapshot200JSONResponse) VisitGetRuntimeSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRuntimeSnapshot404JSONResponse Error
+
+func (response GetRuntimeSnapshot404JSONResponse) VisitGetRuntimeSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRuntimeSnapshotdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetRuntimeSnapshotdefaultJSONResponse) VisitGetRuntimeSnapshotResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -1261,6 +1416,9 @@ type StrictServerInterface interface {
 	// CreateRelease 创建发布并接纳异步操作
 	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
 	CreateRelease(ctx context.Context, request CreateReleaseRequestObject) (CreateReleaseResponseObject, error)
+	// GetRuntimeSnapshot 从 Kubernetes 查询部署目标的当前运行状态
+	// (GET /api/v1/deployment-targets/{deploymentTargetId}/runtime-snapshot)
+	GetRuntimeSnapshot(ctx context.Context, request GetRuntimeSnapshotRequestObject) (GetRuntimeSnapshotResponseObject, error)
 	// GetOperation 查询异步操作
 	// (GET /api/v1/operations/{operationId})
 	GetOperation(ctx context.Context, request GetOperationRequestObject) (GetOperationResponseObject, error)
@@ -1455,6 +1613,32 @@ func (sh *strictHandler) CreateRelease(ctx *gin.Context, deploymentTargetId open
 	}
 }
 
+// GetRuntimeSnapshot operation middleware
+func (sh *strictHandler) GetRuntimeSnapshot(ctx *gin.Context, deploymentTargetId openapi_types.UUID) {
+	var request GetRuntimeSnapshotRequestObject
+
+	request.DeploymentTargetId = deploymentTargetId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetRuntimeSnapshot(ctx, request.(GetRuntimeSnapshotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetRuntimeSnapshot")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetRuntimeSnapshotResponseObject); ok {
+		if err := validResponse.VisitGetRuntimeSnapshotResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetOperation operation middleware
 func (sh *strictHandler) GetOperation(ctx *gin.Context, operationId openapi_types.UUID) {
 	var request GetOperationRequestObject
@@ -1605,36 +1789,41 @@ func (sh *strictHandler) GetRelease(ctx *gin.Context, releaseId openapi_types.UU
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"dnqA799nu7N19Q7HRfN/BwAA//8=",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

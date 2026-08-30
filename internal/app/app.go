@@ -12,6 +12,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/platform/database"
 	"github.com/HasonoCell/OrbitOps/internal/project"
+	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
 	"github.com/HasonoCell/OrbitOps/internal/transport/httpapi"
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -32,7 +33,19 @@ type Runtime struct {
 	db      *sqlx.DB
 }
 
+type Dependencies struct {
+	RuntimeObserver runtimeview.Observer
+}
+
 func New(ctx context.Context, config Config) (*Runtime, error) {
+	return NewWithDependencies(ctx, config, Dependencies{})
+}
+
+func NewWithDependencies(
+	ctx context.Context,
+	config Config,
+	dependencies Dependencies,
+) (*Runtime, error) {
 	if config.DatabaseURL == "" {
 		return nil, errors.New("database URL is required")
 	}
@@ -74,11 +87,16 @@ func New(ctx context.Context, config Config) (*Runtime, error) {
 	})
 	operationModule := operation.New(db)
 	deliveryModule := delivery.New(db, operationModule)
+	observer := dependencies.RuntimeObserver
+	if observer == nil {
+		observer = runtimeview.UnavailableObserver{}
+	}
 	server := httpapi.NewServer(
 		projectModule,
 		catalogModule,
 		deliveryModule,
 		operationModule,
+		observer,
 		config.LocalActorID,
 	)
 	strictHandler := api.NewStrictHandler(server, nil)
