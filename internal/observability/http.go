@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -13,6 +14,14 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
+
+const projectIDContextKey = "orbitops.project_id"
+
+func SetRequestProjectID(ctx context.Context, projectID uuid.UUID) {
+	if ginContext, ok := ctx.(*gin.Context); ok {
+		ginContext.Set(projectIDContextKey, projectID.String())
+	}
+}
 
 func TraceMiddleware(
 	tracer trace.Tracer,
@@ -59,6 +68,10 @@ func RequestMiddleware(
 		defer func() {
 			duration := time.Since(startedAt)
 			route := routeName(ctx)
+			projectID := ctx.GetString(projectIDContextKey)
+			if projectID == "" {
+				projectID = ctx.Param("projectId")
+			}
 			metrics.RecordHTTPRequest(ctx.Request.Method, route, ctx.Writer.Status(), duration)
 			spanContext := trace.SpanContextFromContext(ctx.Request.Context())
 			logger.InfoContext(ctx.Request.Context(), "HTTP 请求完成",
@@ -68,7 +81,7 @@ func RequestMiddleware(
 				"status", ctx.Writer.Status(),
 				"duration_ms", duration.Milliseconds(),
 				"actor_id", actorID,
-				"project_id", ctx.Param("projectId"),
+				"project_id", projectID,
 				"idempotency_key", boundedHeader(ctx.GetHeader("Idempotency-Key"), 128),
 				"trace_id", spanContext.TraceID().String(),
 			)

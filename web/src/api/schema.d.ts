@@ -98,7 +98,8 @@ export interface paths {
         };
         /** 查询部署目标 */
         get: operations["getDeploymentTarget"];
-        put?: never;
+        /** 更新部署目标的可变期望配置 */
+        put: operations["updateDeploymentTarget"];
         post?: never;
         delete?: never;
         options?: never;
@@ -207,6 +208,12 @@ export interface components {
             createdAt: string;
         };
         CreateDeploymentTargetRequest: {
+            /** @enum {string} */
+            stage: "development";
+            replicas: number;
+            containerPort: number;
+        };
+        UpdateDeploymentTargetRequest: {
             /** @enum {string} */
             stage: "development";
             replicas: number;
@@ -606,6 +613,62 @@ export interface operations {
             };
             /** @description 部署目标不存在 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateDeploymentTarget: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前操作者与写操作范围内的幂等标识。 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                deploymentTargetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDeploymentTargetRequest"];
+            };
+        };
+        responses: {
+            /** @description 部署目标已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentTarget"];
+                };
+            };
+            /** @description 部署目标不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 幂等键已经用于不同请求 */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

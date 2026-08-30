@@ -7,6 +7,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/api"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
+	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -50,6 +51,7 @@ func (s *Server) CreateRelease(
 			return nil, err
 		}
 	}
+	observability.SetRequestProjectID(ctx, acceptance.Release.TargetSnapshot.ProjectID)
 
 	return api.CreateRelease201JSONResponse{
 		Release:   releaseResponse(acceptance.Release),
@@ -71,6 +73,7 @@ func (s *Server) GetRelease(
 		}
 		return nil, err
 	}
+	observability.SetRequestProjectID(ctx, release.TargetSnapshot.ProjectID)
 
 	return api.GetRelease200JSONResponse(releaseResponse(release)), nil
 }
@@ -89,6 +92,11 @@ func (s *Server) GetOperation(
 		}
 		return nil, err
 	}
+	release, err := s.delivery.GetRelease(httpRequestContext(ctx), operationRecord.ReleaseID)
+	if err != nil {
+		return nil, err
+	}
+	observability.SetRequestProjectID(ctx, release.TargetSnapshot.ProjectID)
 
 	return api.GetOperation200JSONResponse(operationResponse(operationRecord)), nil
 }

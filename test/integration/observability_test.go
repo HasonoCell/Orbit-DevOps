@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -45,6 +46,44 @@ func TestHealthAndMetricsExposeControlPlaneState(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("metrics do not contain %q", want)
 		}
+	}
+}
+
+func TestReleaseRequestLogIncludesControlPlaneCorrelations(t *testing.T) {
+	var output bytes.Buffer
+	environment := newTestEnvironmentWithDependencies(t, app.Dependencies{
+		Logger: slog.New(slog.NewJSONHandler(&output, nil)),
+	})
+	target := createDeploymentTarget(t, environment)
+	output.Reset()
+
+	response := environment.postJSON(
+		t,
+		"/api/v1/deployment-targets/"+target.ID+"/releases",
+		"correlated-release",
+		`{"imageReference":"registry.example/orbitops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
+	)
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create release status = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+
+	var entry map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(output.Bytes()), &entry); err != nil {
+		t.Fatalf("decode request log: %v\n%s", err, output.String())
+	}
+	for key, want := range map[string]string{
+		"actor_id":        "local-developer",
+		"project_id":      target.ProjectID,
+		"idempotency_key": "correlated-release",
+		"route":           "/api/v1/deployment-targets/:deploymentTargetId/releases",
+	} {
+		if got := entry[key]; got != want {
+			t.Errorf("log %s = %#v, want %q", key, got, want)
+		}
+	}
+	if requestID, ok := entry["request_id"].(string); !ok || requestID == "" {
+		t.Errorf("log request_id = %#v, want a non-empty string", entry["request_id"])
 	}
 }
 

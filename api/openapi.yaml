@@ -211,6 +211,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    put:
+      operationId: updateDeploymentTarget
+      summary: 更新部署目标的可变期望配置
+      parameters:
+        - name: deploymentTargetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeploymentTargetRequest"
+      responses:
+        "200":
+          description: 部署目标已更新
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentTarget"
+        "404":
+          description: 部署目标不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 幂等键已经用于不同请求
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/deployment-targets/{deploymentTargetId}/releases:
     post:
       operationId: createRelease
@@ -443,6 +485,26 @@ components:
           type: string
           format: date-time
     CreateDeploymentTargetRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - stage
+        - replicas
+        - containerPort
+      properties:
+        stage:
+          type: string
+          enum:
+            - development
+        replicas:
+          type: integer
+          minimum: 1
+          maximum: 5
+        containerPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+    UpdateDeploymentTargetRequest:
       type: object
       additionalProperties: false
       required:

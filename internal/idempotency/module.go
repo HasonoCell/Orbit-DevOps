@@ -89,3 +89,61 @@ func Claim(
 
 	return existing.ResourceID, false, nil
 }
+
+func StoreResponse(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	scope Scope,
+	response any,
+) error {
+	payload, err := json.Marshal(response)
+	if err != nil {
+		return fmt.Errorf("encode idempotent response: %w", err)
+	}
+	result, err := tx.ExecContext(
+		ctx,
+		`UPDATE idempotency_records
+		 SET response_payload = $1
+		 WHERE actor_id = $2 AND operation = $3 AND idempotency_key = $4`,
+		payload,
+		scope.ActorID,
+		scope.Operation,
+		scope.Key,
+	)
+	if err != nil {
+		return fmt.Errorf("store idempotent response: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("inspect idempotent response storage: %w", err)
+	}
+	if rowsAffected != 1 {
+		return errors.New("idempotency record does not exist")
+	}
+	return nil
+}
+
+func LoadResponse(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	scope Scope,
+	destination any,
+) error {
+	var payload []byte
+	if err := tx.GetContext(
+		ctx,
+		&payload,
+		`SELECT response_payload
+		 FROM idempotency_records
+		 WHERE actor_id = $1 AND operation = $2 AND idempotency_key = $3`,
+		scope.ActorID,
+		scope.Operation,
+		scope.Key,
+	); err != nil {
+		return fmt.Errorf("load idempotent response: %w", err)
+	}
+	if err := json.Unmarshal(payload, destination); err != nil {
+		return fmt.Errorf("decode idempotent response: %w", err)
+	}
+	return nil
+}

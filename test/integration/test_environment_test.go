@@ -224,6 +224,33 @@ func (e *testEnvironment) postJSON(
 	return response
 }
 
+func (e *testEnvironment) putJSON(
+	t *testing.T,
+	path string,
+	idempotencyKey string,
+	requestBody string,
+) *http.Response {
+	t.Helper()
+
+	request, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodPut,
+		e.server.URL+path,
+		bytes.NewBufferString(requestBody),
+	)
+	if err != nil {
+		t.Fatalf("build PUT request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", idempotencyKey)
+
+	response, err := e.server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("PUT %s: %v", path, err)
+	}
+	return response
+}
+
 func (e *testEnvironment) get(t *testing.T, path string) *http.Response {
 	t.Helper()
 

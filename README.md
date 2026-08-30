@@ -5,7 +5,8 @@ OrbitOps 是面向 Kubernetes 的应用交付控制平面。当前 S1 提供一�
 ## 当前能力
 
 - OpenAPI 3 定义 HTTP 契约，Go 与 TypeScript 代码均由契约生成或受其约束。
-- Gin API 在单个 PostgreSQL 事务中保存发布、`pending` Operation、幂等记录和审计记录。
+- Gin API 支持创建与查询 Project、Application、Deployment Target，并可幂等更新 Deployment Target 的可变期望配置。
+- 发布接纳在单个 PostgreSQL 事务中保存 Release、`pending` Operation、幂等记录和审计记录。
 - 独立 Worker 使用数据库租约领取 Operation，保留每次 Attempt，并写入明确的成功或结构化失败终态。
 - Kubernetes 适配器只连接经过核验的本地 Kind context 和 OrbitOps 管理的 Namespace，使用固定 Field Manager 执行 Server-Side Apply。
 - Runtime Snapshot 只来自 Kubernetes；观测失败会明确返回 `unavailable`。

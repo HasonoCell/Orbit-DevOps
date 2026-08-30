@@ -44,20 +44,30 @@ type CreateApplicationCommand struct {
 }
 
 type DeploymentTarget struct {
-	ID            uuid.UUID `db:"id"`
-	ApplicationID uuid.UUID `db:"application_id"`
-	Stage         string    `db:"stage"`
-	ClusterRef    string    `db:"cluster_ref"`
-	Namespace     string    `db:"namespace"`
-	Replicas      int       `db:"replicas"`
-	ContainerPort int       `db:"container_port"`
-	CreatedBy     string    `db:"created_by"`
-	CreatedAt     time.Time `db:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at"`
+	ID            uuid.UUID `db:"id" json:"id"`
+	ProjectID     uuid.UUID `db:"project_id" json:"projectId"`
+	ApplicationID uuid.UUID `db:"application_id" json:"applicationId"`
+	Stage         string    `db:"stage" json:"stage"`
+	ClusterRef    string    `db:"cluster_ref" json:"clusterRef"`
+	Namespace     string    `db:"namespace" json:"namespace"`
+	Replicas      int       `db:"replicas" json:"replicas"`
+	ContainerPort int       `db:"container_port" json:"containerPort"`
+	CreatedBy     string    `db:"created_by" json:"createdBy"`
+	CreatedAt     time.Time `db:"created_at" json:"createdAt"`
+	UpdatedAt     time.Time `db:"updated_at" json:"updatedAt"`
 }
 
 type CreateDeploymentTargetCommand struct {
 	ApplicationID  uuid.UUID
+	Stage          string
+	Replicas       int
+	ContainerPort  int
+	ActorID        string
+	IdempotencyKey string
+}
+
+type UpdateDeploymentTargetCommand struct {
+	ID             uuid.UUID
 	Stage          string
 	Replicas       int
 	ContainerPort  int
@@ -242,18 +252,19 @@ func (m *Module) CreateDeploymentTarget(
 		_ = tx.Rollback()
 	}()
 
-	var applicationExists bool
+	var projectID uuid.UUID
 	if err := tx.GetContext(
 		ctx,
-		&applicationExists,
-		`SELECT EXISTS (SELECT 1 FROM applications WHERE id = $1)`,
+		&projectID,
+		`SELECT project_id FROM applications WHERE id = $1`,
 		command.ApplicationID,
 	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return DeploymentTarget{}, ErrApplicationNotFound
+		}
 		return DeploymentTarget{}, fmt.Errorf("check deployment target application: %w", err)
 	}
-	if !applicationExists {
-		return DeploymentTarget{}, ErrApplicationNotFound
-	}
+	created.ProjectID = projectID
 
 	resourceID, isNew, err := idempotency.Claim(
 		ctx,
@@ -328,10 +339,15 @@ func (m *Module) GetDeploymentTarget(
 	if err := m.db.GetContext(
 		ctx,
 		&target,
-		`SELECT id, application_id, stage, cluster_ref, namespace, replicas,
-		        container_port, created_by, created_at, updated_at
+		`SELECT deployment_targets.id, applications.project_id,
+		        deployment_targets.application_id, deployment_targets.stage,
+		        deployment_targets.cluster_ref, deployment_targets.namespace,
+		        deployment_targets.replicas, deployment_targets.container_port,
+		        deployment_targets.created_by, deployment_targets.created_at,
+		        deployment_targets.updated_at
 		 FROM deployment_targets
-		 WHERE id = $1`,
+		 JOIN applications ON applications.id = deployment_targets.application_id
+		 WHERE deployment_targets.id = $1`,
 		id,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -341,6 +357,130 @@ func (m *Module) GetDeploymentTarget(
 	}
 
 	return target, nil
+}
+
+func (m *Module) UpdateDeploymentTarget(
+	ctx context.Context,
+	command UpdateDeploymentTargetCommand,
+) (DeploymentTarget, error) {
+	requestHash, err := idempotency.Fingerprint(struct {
+		ID            uuid.UUID `json:"id"`
+		Stage         string    `json:"stage"`
+		Replicas      int       `json:"replicas"`
+		ContainerPort int       `json:"containerPort"`
+	}{
+		ID:            command.ID,
+		Stage:         command.Stage,
+		Replicas:      command.Replicas,
+		ContainerPort: command.ContainerPort,
+	})
+	if err != nil {
+		return DeploymentTarget{}, fmt.Errorf("fingerprint update deployment target: %w", err)
+	}
+
+	tx, err := m.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return DeploymentTarget{}, fmt.Errorf("begin update deployment target: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	var current DeploymentTarget
+	if err := tx.GetContext(
+		ctx,
+		&current,
+		`SELECT deployment_targets.id, applications.project_id,
+		        deployment_targets.application_id, deployment_targets.stage,
+		        deployment_targets.cluster_ref, deployment_targets.namespace,
+		        deployment_targets.replicas, deployment_targets.container_port,
+		        deployment_targets.created_by, deployment_targets.created_at,
+		        deployment_targets.updated_at
+		 FROM deployment_targets
+		 JOIN applications ON applications.id = deployment_targets.application_id
+		 WHERE deployment_targets.id = $1
+		 FOR UPDATE OF deployment_targets`,
+		command.ID,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return DeploymentTarget{}, ErrDeploymentTargetNotFound
+		}
+		return DeploymentTarget{}, fmt.Errorf("lock deployment target update: %w", err)
+	}
+
+	scope := idempotency.Scope{
+		ActorID:   command.ActorID,
+		Operation: "deployment_target.update",
+		Key:       command.IdempotencyKey,
+	}
+	updatedAt := time.Now().UTC()
+	_, isNew, err := idempotency.Claim(
+		ctx,
+		tx,
+		scope,
+		requestHash,
+		command.ID,
+		updatedAt,
+	)
+	if err != nil {
+		return DeploymentTarget{}, err
+	}
+	if !isNew {
+		var replayed DeploymentTarget
+		if err := idempotency.LoadResponse(ctx, tx, scope, &replayed); err != nil {
+			return DeploymentTarget{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return DeploymentTarget{}, fmt.Errorf("commit deployment target update replay: %w", err)
+		}
+		return replayed, nil
+	}
+
+	updated := current
+	updated.Stage = command.Stage
+	updated.Replicas = command.Replicas
+	updated.ContainerPort = command.ContainerPort
+	updated.UpdatedAt = updatedAt
+	if _, err := tx.ExecContext(
+		ctx,
+		`UPDATE deployment_targets
+		 SET stage = $1, replicas = $2, container_port = $3, updated_at = $4
+		 WHERE id = $5`,
+		updated.Stage,
+		updated.Replicas,
+		updated.ContainerPort,
+		updated.UpdatedAt,
+		updated.ID,
+	); err != nil {
+		return DeploymentTarget{}, fmt.Errorf("update deployment target: %w", err)
+	}
+	if err := idempotency.StoreResponse(ctx, tx, scope, updated); err != nil {
+		return DeploymentTarget{}, err
+	}
+	if err := audit.Append(
+		ctx,
+		tx,
+		audit.Entry{
+			ActorID:    command.ActorID,
+			Action:     "deployment_target.update",
+			TargetType: "deployment_target",
+			TargetID:   updated.ID,
+			Summary: map[string]any{
+				"applicationId":  updated.ApplicationID.String(),
+				"containerPort":  updated.ContainerPort,
+				"idempotencyKey": command.IdempotencyKey,
+				"replicas":       updated.Replicas,
+				"stage":          updated.Stage,
+			},
+			CreatedAt: updatedAt,
+		},
+	); err != nil {
+		return DeploymentTarget{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return DeploymentTarget{}, fmt.Errorf("commit update deployment target: %w", err)
+	}
+	return updated, nil
 }
 
 func replayApplicationCreate(
@@ -376,10 +516,15 @@ func replayDeploymentTargetCreate(
 	if err := tx.GetContext(
 		ctx,
 		&target,
-		`SELECT id, application_id, stage, cluster_ref, namespace, replicas,
-		        container_port, created_by, created_at, updated_at
+		`SELECT deployment_targets.id, applications.project_id,
+		        deployment_targets.application_id, deployment_targets.stage,
+		        deployment_targets.cluster_ref, deployment_targets.namespace,
+		        deployment_targets.replicas, deployment_targets.container_port,
+		        deployment_targets.created_by, deployment_targets.created_at,
+		        deployment_targets.updated_at
 		 FROM deployment_targets
-		 WHERE id = $1`,
+		 JOIN applications ON applications.id = deployment_targets.application_id
+		 WHERE deployment_targets.id = $1`,
 		resourceID,
 	); err != nil {
 		return DeploymentTarget{}, fmt.Errorf("load idempotent deployment target result: %w", err)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/api"
 	"github.com/HasonoCell/OrbitOps/internal/catalog"
+	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
 )
 
@@ -24,6 +25,7 @@ func (s *Server) GetRuntimeSnapshot(
 		}
 		return nil, err
 	}
+	observability.SetRequestProjectID(ctx, target.ProjectID)
 
 	snapshot := s.observer.Observe(requestContext, runtimeview.Query{
 		ClusterRef: target.ClusterRef,

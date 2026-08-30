@@ -160,6 +160,21 @@ func (e RuntimeSnapshotSource) Valid() bool {
 	}
 }
 
+// Defines values for UpdateDeploymentTargetRequestStage.
+const (
+	UpdateDeploymentTargetRequestStageDevelopment UpdateDeploymentTargetRequestStage = "development"
+)
+
+// Valid indicates whether the value is a known member of the UpdateDeploymentTargetRequestStage enum.
+func (e UpdateDeploymentTargetRequestStage) Valid() bool {
+	switch e {
+	case UpdateDeploymentTargetRequestStageDevelopment:
+		return true
+	default:
+		return false
+	}
+}
+
 // Application defines model for Application.
 type Application struct {
 	CreatedAt time.Time          `json:"createdAt"`
@@ -339,11 +354,27 @@ type RuntimeSnapshotFreshness string
 // RuntimeSnapshotSource defines model for RuntimeSnapshot.Source.
 type RuntimeSnapshotSource string
 
+// UpdateDeploymentTargetRequest defines model for UpdateDeploymentTargetRequest.
+type UpdateDeploymentTargetRequest struct {
+	ContainerPort int                                `json:"containerPort"`
+	Replicas      int                                `json:"replicas"`
+	Stage         UpdateDeploymentTargetRequestStage `json:"stage"`
+}
+
+// UpdateDeploymentTargetRequestStage defines model for UpdateDeploymentTargetRequest.Stage.
+type UpdateDeploymentTargetRequestStage string
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
 // CreateDeploymentTargetParams defines parameters for CreateDeploymentTarget.
 type CreateDeploymentTargetParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// UpdateDeploymentTargetParams defines parameters for UpdateDeploymentTarget.
+type UpdateDeploymentTargetParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
@@ -369,6 +400,9 @@ type CreateApplicationParams struct {
 // CreateDeploymentTargetJSONRequestBody defines body for CreateDeploymentTarget for application/json ContentType.
 type CreateDeploymentTargetJSONRequestBody = CreateDeploymentTargetRequest
 
+// UpdateDeploymentTargetJSONRequestBody defines body for UpdateDeploymentTarget for application/json ContentType.
+type UpdateDeploymentTargetJSONRequestBody = UpdateDeploymentTargetRequest
+
 // CreateReleaseJSONRequestBody defines body for CreateRelease for application/json ContentType.
 type CreateReleaseJSONRequestBody = CreateReleaseRequest
 
@@ -389,6 +423,9 @@ type ServerInterface interface {
 	// GetDeploymentTarget 查询部署目标
 	// (GET /api/v1/deployment-targets/{deploymentTargetId})
 	GetDeploymentTarget(c *gin.Context, deploymentTargetId openapi_types.UUID)
+	// UpdateDeploymentTarget 更新部署目标的可变期望配置
+	// (PUT /api/v1/deployment-targets/{deploymentTargetId})
+	UpdateDeploymentTarget(c *gin.Context, deploymentTargetId openapi_types.UUID, params UpdateDeploymentTargetParams)
 	// CreateRelease 创建发布并接纳异步操作
 	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
 	CreateRelease(c *gin.Context, deploymentTargetId openapi_types.UUID, params CreateReleaseParams)
@@ -521,6 +558,58 @@ func (siw *ServerInterfaceWrapper) GetDeploymentTarget(c *gin.Context) {
 	}
 
 	siw.Handler.GetDeploymentTarget(c, deploymentTargetId)
+}
+
+// UpdateDeploymentTarget operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDeploymentTarget(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deploymentTargetId" -------------
+	var deploymentTargetId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deploymentTargetId", c.Param("deploymentTargetId"), &deploymentTargetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deploymentTargetId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateDeploymentTargetParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateDeploymentTarget(c, deploymentTargetId, params)
 }
 
 // CreateRelease operation middleware
@@ -803,6 +892,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/v1/applications/:applicationId", wrapper.GetApplication)
 	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/deployment-targets", wrapper.CreateDeploymentTarget)
 	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.GetDeploymentTarget)
+	router.PUT(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.UpdateDeploymentTarget)
 	router.POST(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/releases", wrapper.CreateRelease)
 	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/runtime-snapshot", wrapper.GetRuntimeSnapshot)
 	router.GET(options.BaseURL+"/api/v1/releases/:releaseId", wrapper.GetRelease)
@@ -973,6 +1063,75 @@ type GetDeploymentTargetdefaultJSONResponse struct {
 }
 
 func (response GetDeploymentTargetdefaultJSONResponse) VisitGetDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDeploymentTargetRequestObject struct {
+	DeploymentTargetId openapi_types.UUID `json:"deploymentTargetId"`
+	Params             UpdateDeploymentTargetParams
+	Body               *UpdateDeploymentTargetJSONRequestBody
+}
+
+type UpdateDeploymentTargetResponseObject interface {
+	VisitUpdateDeploymentTargetResponse(w http.ResponseWriter) error
+}
+
+type UpdateDeploymentTarget200JSONResponse DeploymentTarget
+
+func (response UpdateDeploymentTarget200JSONResponse) VisitUpdateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDeploymentTarget404JSONResponse Error
+
+func (response UpdateDeploymentTarget404JSONResponse) VisitUpdateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDeploymentTarget409JSONResponse Error
+
+func (response UpdateDeploymentTarget409JSONResponse) VisitUpdateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDeploymentTargetdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateDeploymentTargetdefaultJSONResponse) VisitUpdateDeploymentTargetResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -1413,6 +1572,9 @@ type StrictServerInterface interface {
 	// GetDeploymentTarget 查询部署目标
 	// (GET /api/v1/deployment-targets/{deploymentTargetId})
 	GetDeploymentTarget(ctx context.Context, request GetDeploymentTargetRequestObject) (GetDeploymentTargetResponseObject, error)
+	// UpdateDeploymentTarget 更新部署目标的可变期望配置
+	// (PUT /api/v1/deployment-targets/{deploymentTargetId})
+	UpdateDeploymentTarget(ctx context.Context, request UpdateDeploymentTargetRequestObject) (UpdateDeploymentTargetResponseObject, error)
 	// CreateRelease 创建发布并接纳异步操作
 	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
 	CreateRelease(ctx context.Context, request CreateReleaseRequestObject) (CreateReleaseResponseObject, error)
@@ -1572,6 +1734,40 @@ func (sh *strictHandler) GetDeploymentTarget(ctx *gin.Context, deploymentTargetI
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(GetDeploymentTargetResponseObject); ok {
 		if err := validResponse.VisitGetDeploymentTargetResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateDeploymentTarget operation middleware
+func (sh *strictHandler) UpdateDeploymentTarget(ctx *gin.Context, deploymentTargetId openapi_types.UUID, params UpdateDeploymentTargetParams) {
+	var request UpdateDeploymentTargetRequestObject
+
+	request.DeploymentTargetId = deploymentTargetId
+	request.Params = params
+
+	var body UpdateDeploymentTargetJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateDeploymentTarget(ctx, request.(UpdateDeploymentTargetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateDeploymentTarget")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(UpdateDeploymentTargetResponseObject); ok {
+		if err := validResponse.VisitUpdateDeploymentTargetResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -1789,41 +1985,43 @@ func (sh *strictHandler) GetRelease(ctx *gin.Context, releaseId openapi_types.UU
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"AP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

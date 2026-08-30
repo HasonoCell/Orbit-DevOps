@@ -7,6 +7,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/api"
 	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
+	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
@@ -28,6 +29,7 @@ func (s *Server) GetProject(
 	ctx context.Context,
 	request api.GetProjectRequestObject,
 ) (api.GetProjectResponseObject, error) {
+	observability.SetRequestProjectID(ctx, request.ProjectId)
 	requestContext := httpRequestContext(ctx)
 
 	existingProject, err := s.projects.Get(requestContext, request.ProjectId)
@@ -91,6 +93,7 @@ func (s *Server) CreateProject(
 		}
 		return nil, err
 	}
+	observability.SetRequestProjectID(ctx, createdProject.ID)
 
 	return api.CreateProject201JSONResponse{
 		Id:        createdProject.ID,
