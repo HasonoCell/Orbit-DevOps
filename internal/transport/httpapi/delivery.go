@@ -8,19 +8,25 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 func (s *Server) CreateRelease(
 	ctx context.Context,
 	request api.CreateReleaseRequestObject,
 ) (api.CreateReleaseResponseObject, error) {
+	requestContext := httpRequestContext(ctx)
+	traceCarrier := propagation.MapCarrier{}
+	s.propagator.Inject(requestContext, traceCarrier)
 	acceptance, err := s.delivery.CreateRelease(
-		httpRequestContext(ctx),
+		requestContext,
 		delivery.CreateReleaseCommand{
 			DeploymentTargetID: request.DeploymentTargetId,
 			ImageReference:     request.Body.ImageReference,
 			ActorID:            s.localActorID,
 			IdempotencyKey:     request.Params.IdempotencyKey,
+			TraceParent:        traceCarrier.Get("traceparent"),
+			TraceState:         traceCarrier.Get("tracestate"),
 		},
 	)
 	if err != nil {

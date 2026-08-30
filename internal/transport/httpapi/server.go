@@ -11,6 +11,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type Server struct {
@@ -20,6 +21,7 @@ type Server struct {
 	operations   *operation.Module
 	observer     runtimeview.Observer
 	localActorID string
+	propagator   propagation.TextMapPropagator
 }
 
 func (s *Server) GetProject(
@@ -55,6 +57,7 @@ func NewServer(
 	operationModule *operation.Module,
 	observer runtimeview.Observer,
 	localActorID string,
+	propagator propagation.TextMapPropagator,
 ) *Server {
 	return &Server{
 		projects:     projects,
@@ -63,6 +66,7 @@ func NewServer(
 		operations:   operationModule,
 		observer:     observer,
 		localActorID: localActorID,
+		propagator:   propagator,
 	}
 }
 

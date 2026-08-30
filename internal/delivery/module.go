@@ -77,6 +77,8 @@ type CreateReleaseCommand struct {
 	ImageReference     string
 	ActorID            string
 	IdempotencyKey     string
+	TraceParent        string
+	TraceState         string
 }
 
 type targetRecord struct {
@@ -203,6 +205,8 @@ func (m *Module) CreateRelease(
 			ReleaseID:      release.ID,
 			ActorID:        command.ActorID,
 			IdempotencyKey: command.IdempotencyKey,
+			TraceParent:    command.TraceParent,
+			TraceState:     command.TraceState,
 			CreatedAt:      createdAt,
 		},
 	)

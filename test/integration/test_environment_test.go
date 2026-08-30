@@ -133,6 +133,13 @@ type runtimePodDocument struct {
 }
 
 func newTestEnvironment(t *testing.T) *testEnvironment {
+	return newTestEnvironmentWithDependencies(t, app.Dependencies{})
+}
+
+func newTestEnvironmentWithDependencies(
+	t *testing.T,
+	dependencies app.Dependencies,
+) *testEnvironment {
 	t.Helper()
 
 	ctx := context.Background()
@@ -158,13 +165,13 @@ func newTestEnvironment(t *testing.T) *testEnvironment {
 		t.Fatalf("get PostgreSQL connection string: %v", err)
 	}
 
-	runtime, err := app.New(ctx, app.Config{
+	runtime, err := app.NewWithDependencies(ctx, app.Config{
 		DatabaseURL:     databaseURL,
 		LocalActorID:    "local-developer",
 		LocalClusterRef: "kind-orbitops-s1",
 		LocalNamespace:  "orbitops-s1",
 		MigrateOnBoot:   true,
-	})
+	}, dependencies)
 	if err != nil {
 		t.Fatalf("start OrbitOps: %v", err)
 	}

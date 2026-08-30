@@ -30,10 +30,15 @@ const (
 )
 
 type Config struct {
-	ClusterRef   string
-	Namespace    string
-	FieldManager string
-	PollInterval time.Duration
+	ClusterRef          string
+	Namespace           string
+	FieldManager        string
+	PollInterval        time.Duration
+	ReadFailureRecorder ReadFailureRecorder
+}
+
+type ReadFailureRecorder interface {
+	RecordKubernetesReadFailure()
 }
 
 type Adapter struct {
@@ -141,7 +146,7 @@ func (a *Adapter) checkOwnership(
 		return ownershipFailure("Deployment", name)
 	}
 	if err != nil && !apierrors.IsNotFound(err) {
-		return observeFailure("inspect Deployment ownership", err)
+		return a.observeFailure("inspect Deployment ownership", err)
 	}
 
 	service, err := a.client.CoreV1().Services(a.config.Namespace).Get(
@@ -153,7 +158,7 @@ func (a *Adapter) checkOwnership(
 		return ownershipFailure("Service", name)
 	}
 	if err != nil && !apierrors.IsNotFound(err) {
-		return observeFailure("inspect Service ownership", err)
+		return a.observeFailure("inspect Service ownership", err)
 	}
 	return nil
 }
@@ -175,7 +180,7 @@ func (a *Adapter) waitForRollout(
 			metav1.GetOptions{},
 		)
 		if err != nil {
-			return observeFailure("observe Deployment rollout", err)
+			return a.observeFailure("observe Deployment rollout", err)
 		}
 		if rolloutReady(deployment, int32(replicas)) {
 			return nil
@@ -189,7 +194,7 @@ func (a *Adapter) waitForRollout(
 			metav1.ListOptions{LabelSelector: TargetIDLabel + "=" + targetID.String()},
 		)
 		if err != nil {
-			return observeFailure("observe rollout Pods", err)
+			return a.observeFailure("observe rollout Pods", err)
 		}
 		if failure := podFailure(pods.Items); failure != nil {
 			return failure
@@ -305,9 +310,16 @@ func applyFailure(kind string, err error) error {
 	)
 }
 
-func observeFailure(action string, err error) error {
+func (a *Adapter) observeFailure(action string, err error) error {
+	a.recordReadFailure()
 	return worker.NewFailure(
 		"kubernetes_unavailable",
 		fmt.Sprintf("%s failed: %s", action, apierrors.ReasonForError(err)),
 	)
+}
+
+func (a *Adapter) recordReadFailure() {
+	if a.config.ReadFailureRecorder != nil {
+		a.config.ReadFailureRecorder.RecordKubernetesReadFailure()
+	}
 }

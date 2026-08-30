@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/api"
 	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
+	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/platform/database"
 	"github.com/HasonoCell/OrbitOps/internal/project"
@@ -18,6 +22,9 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	ginmiddleware "github.com/oapi-codegen/gin-middleware"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Config struct {
@@ -35,6 +42,10 @@ type Runtime struct {
 
 type Dependencies struct {
 	RuntimeObserver runtimeview.Observer
+	Logger          *slog.Logger
+	Metrics         *observability.Metrics
+	Tracer          trace.Tracer
+	Propagator      propagation.TextMapPropagator
 }
 
 func New(ctx context.Context, config Config) (*Runtime, error) {
@@ -87,6 +98,27 @@ func NewWithDependencies(
 	})
 	operationModule := operation.New(db)
 	deliveryModule := delivery.New(db, operationModule)
+	logger := dependencies.Logger
+	if logger == nil {
+		logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	}
+	metrics := dependencies.Metrics
+	if metrics == nil {
+		metrics = observability.NewMetrics(operationModule.CountPending)
+	} else {
+		metrics.RegisterPending(operationModule.CountPending)
+	}
+	tracer := dependencies.Tracer
+	if tracer == nil {
+		tracer = otel.Tracer("github.com/HasonoCell/OrbitOps/internal/app")
+	}
+	propagator := dependencies.Propagator
+	if propagator == nil {
+		propagator = propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		)
+	}
 	observer := dependencies.RuntimeObserver
 	if observer == nil {
 		observer = runtimeview.UnavailableObserver{}
@@ -98,11 +130,24 @@ func NewWithDependencies(
 		operationModule,
 		observer,
 		config.LocalActorID,
+		propagator,
 	)
 	strictHandler := api.NewStrictHandler(server, nil)
 
 	router := gin.New()
+	router.GET("/healthz", func(ginContext *gin.Context) {
+		checkContext, cancel := context.WithTimeout(ginContext.Request.Context(), time.Second)
+		defer cancel()
+		if err := db.PingContext(checkContext); err != nil {
+			ginContext.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable"})
+			return
+		}
+		ginContext.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+	router.GET("/metrics", gin.WrapH(metrics.Handler()))
 	router.Use(gin.Recovery())
+	router.Use(observability.TraceMiddleware(tracer, propagator))
+	router.Use(observability.RequestMiddleware(metrics, logger, config.LocalActorID))
 	router.Use(ginmiddleware.OapiRequestValidator(openAPISpec))
 	api.RegisterHandlers(router, strictHandler)
 

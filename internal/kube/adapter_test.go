@@ -3,10 +3,15 @@ package kube_test
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/kube"
+	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
@@ -65,6 +70,7 @@ func TestPublisherRefusesForeignResourceBeforeApply(t *testing.T) {
 }
 
 func TestRuntimeSnapshotReportsKubernetesUnavailable(t *testing.T) {
+	metrics := observability.NewMetrics(nil)
 	client := fake.NewClientset()
 	client.PrependReactor(
 		"get",
@@ -74,9 +80,10 @@ func TestRuntimeSnapshotReportsKubernetesUnavailable(t *testing.T) {
 		},
 	)
 	adapter, err := kube.New(client, kube.Config{
-		ClusterRef:   "kind-orbitops-s1",
-		Namespace:    "orbitops-s1",
-		FieldManager: "orbitops-delivery",
+		ClusterRef:          "kind-orbitops-s1",
+		Namespace:           "orbitops-s1",
+		FieldManager:        "orbitops-delivery",
+		ReadFailureRecorder: metrics,
 	})
 	if err != nil {
 		t.Fatalf("create adapter: %v", err)
@@ -99,6 +106,15 @@ func TestRuntimeSnapshotReportsKubernetesUnavailable(t *testing.T) {
 	}
 	if snapshot.ErrorCategory == nil || *snapshot.ErrorCategory != "kubernetes_unavailable" {
 		t.Errorf("error category = %v, want kubernetes_unavailable", snapshot.ErrorCategory)
+	}
+	metricResponse := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(metricResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	metricPayload, err := io.ReadAll(metricResponse.Result().Body)
+	if err != nil {
+		t.Fatalf("read Kubernetes metrics: %v", err)
+	}
+	if !strings.Contains(string(metricPayload), "orbitops_kubernetes_read_failures_total 1") {
+		t.Error("Kubernetes read failure metric was not incremented")
 	}
 }
 

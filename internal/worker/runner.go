@@ -4,11 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const maxFailureSummaryLength = 512
@@ -17,6 +24,14 @@ type Config struct {
 	WorkerID         string
 	LeaseDuration    time.Duration
 	OperationTimeout time.Duration
+	Logger           *slog.Logger
+	Recorder         OperationRecorder
+	Tracer           trace.Tracer
+	Propagator       propagation.TextMapPropagator
+}
+
+type OperationRecorder interface {
+	RecordOperation(status string, category string, duration time.Duration)
 }
 
 type PublishRequest struct {
@@ -64,6 +79,10 @@ type Runner struct {
 	operations *operation.Module
 	releases   *delivery.Module
 	publisher  Publisher
+	logger     *slog.Logger
+	recorder   OperationRecorder
+	tracer     trace.Tracer
+	propagator propagation.TextMapPropagator
 }
 
 func New(
@@ -90,12 +109,31 @@ func New(
 	if publisher == nil {
 		return nil, errors.New("publisher is required")
 	}
+	logger := config.Logger
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	tracer := config.Tracer
+	if tracer == nil {
+		tracer = otel.Tracer("github.com/HasonoCell/OrbitOps/internal/worker")
+	}
+	propagator := config.Propagator
+	if propagator == nil {
+		propagator = propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		)
+	}
 
 	return &Runner{
 		config:     config,
 		operations: operations,
 		releases:   releases,
 		publisher:  publisher,
+		logger:     logger,
+		recorder:   config.Recorder,
+		tracer:     tracer,
+		propagator: propagator,
 	}, nil
 }
 
@@ -110,16 +148,48 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 	if !claimed {
 		return false, nil
 	}
+	attemptStartedAt := time.Now()
+	carrier := propagation.MapCarrier{}
+	if lease.TraceParent != "" {
+		carrier.Set("traceparent", lease.TraceParent)
+	}
+	if lease.TraceState != "" {
+		carrier.Set("tracestate", lease.TraceState)
+	}
+	attemptContext := r.propagator.Extract(ctx, carrier)
+	attemptContext, span := r.tracer.Start(
+		attemptContext,
+		"release delivery attempt",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("orbitops.operation.id", lease.OperationID.String()),
+			attribute.String("orbitops.attempt.id", lease.AttemptID.String()),
+			attribute.Int("orbitops.attempt.number", lease.AttemptNumber),
+			attribute.String("orbitops.release.id", lease.ReleaseID.String()),
+		),
+	)
+	defer span.End()
+	r.logger.InfoContext(attemptContext, "Worker 已领取发布操作",
+		"operation_id", lease.OperationID,
+		"attempt_id", lease.AttemptID,
+		"attempt_number", lease.AttemptNumber,
+		"release_id", lease.ReleaseID,
+		"worker_id", lease.WorkerID,
+		"trace_id", span.SpanContext().TraceID(),
+	)
 
-	release, err := r.releases.GetRelease(ctx, lease.ReleaseID)
+	release, err := r.releases.GetRelease(attemptContext, lease.ReleaseID)
 	if err != nil {
 		failure := operation.Failure{
 			Category: "release_load_failed",
 			Summary:  "accepted release could not be loaded for delivery",
 		}
-		if completionErr := r.operations.Fail(ctx, lease, failure); completionErr != nil {
+		if completionErr := r.operations.Fail(attemptContext, lease, failure); completionErr != nil {
 			return true, errors.Join(err, completionErr)
 		}
+		r.recordTerminal(operation.StatusFailed, failure.Category, attemptStartedAt)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, failure.Category)
 		return true, fmt.Errorf("load claimed release: %w", err)
 	}
 
@@ -137,9 +207,21 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 		Replicas:           release.TargetSnapshot.Replicas,
 		ContainerPort:      release.TargetSnapshot.ContainerPort,
 	}
+	span.SetAttributes(
+		attribute.String("orbitops.project.id", request.ProjectID.String()),
+		attribute.String("orbitops.application.id", request.ApplicationID.String()),
+		attribute.String("orbitops.deployment_target.id", request.DeploymentTargetID.String()),
+	)
+	r.logger.InfoContext(attemptContext, "Worker 开始发布 Kubernetes 资源",
+		"operation_id", lease.OperationID,
+		"attempt_id", lease.AttemptID,
+		"release_id", release.ID,
+		"deployment_target_id", release.DeploymentTargetID,
+		"namespace", release.TargetSnapshot.Namespace,
+	)
 
-	executionContext, cancelExecution := context.WithTimeout(ctx, r.config.OperationTimeout)
-	heartbeatContext, stopHeartbeat := context.WithCancel(ctx)
+	executionContext, cancelExecution := context.WithTimeout(attemptContext, r.config.OperationTimeout)
+	heartbeatContext, stopHeartbeat := context.WithCancel(attemptContext)
 	heartbeatDone := make(chan error, 1)
 	go func() {
 		heartbeatErr := r.maintainLease(heartbeatContext, lease)
@@ -162,17 +244,43 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 	}
 
 	if publishErr == nil && executionErr == nil {
-		if err := r.operations.Succeed(ctx, lease); err != nil {
+		if err := r.operations.Succeed(attemptContext, lease); err != nil {
 			return true, err
 		}
+		r.recordTerminal(operation.StatusSucceeded, "none", attemptStartedAt)
+		r.logger.InfoContext(attemptContext, "发布操作成功",
+			"operation_id", lease.OperationID,
+			"attempt_id", lease.AttemptID,
+			"release_id", release.ID,
+			"deployment_target_id", release.DeploymentTargetID,
+		)
 		return true, nil
 	}
 
 	failure := classifyFailure(publishErr, executionErr)
-	if err := r.operations.Fail(ctx, lease, failure); err != nil {
+	if err := r.operations.Fail(attemptContext, lease, failure); err != nil {
 		return true, err
 	}
+	r.recordTerminal(operation.StatusFailed, failure.Category, attemptStartedAt)
+	if publishErr != nil {
+		span.RecordError(publishErr)
+	}
+	span.SetStatus(codes.Error, failure.Category)
+	r.logger.WarnContext(attemptContext, "发布操作失败",
+		"operation_id", lease.OperationID,
+		"attempt_id", lease.AttemptID,
+		"release_id", release.ID,
+		"deployment_target_id", release.DeploymentTargetID,
+		"error_category", failure.Category,
+		"error_summary", failure.Summary,
+	)
 	return true, nil
+}
+
+func (r *Runner) recordTerminal(status string, category string, startedAt time.Time) {
+	if r.recorder != nil {
+		r.recorder.RecordOperation(status, category, time.Since(startedAt))
+	}
 }
 
 func (r *Runner) maintainLease(ctx context.Context, lease operation.Lease) error {

@@ -3,11 +3,15 @@ package integration_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
+	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 )
@@ -57,10 +61,12 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 				err:            testCase.publishError,
 				waitForTimeout: testCase.waitForTimeout,
 			}
+			metrics := observability.NewMetrics(operations.CountPending)
 			runner, err := worker.New(worker.Config{
 				WorkerID:         "worker-terminal-test",
 				LeaseDuration:    3 * time.Second,
 				OperationTimeout: testCase.operationTimeout,
+				Recorder:         metrics,
 			}, operations, releases, publisher)
 			if err != nil {
 				t.Fatalf("create worker: %v", err)
@@ -143,6 +149,22 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 				if attempt.ErrorCategory == nil || *attempt.ErrorCategory != testCase.wantErrorCategory {
 					t.Errorf("attempt error category = %v, want %q", attempt.ErrorCategory, testCase.wantErrorCategory)
 				}
+			}
+
+			metricResponse := httptest.NewRecorder()
+			metrics.Handler().ServeHTTP(metricResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+			metricPayload, err := io.ReadAll(metricResponse.Result().Body)
+			if err != nil {
+				t.Fatalf("read worker metrics: %v", err)
+			}
+			category := testCase.wantErrorCategory
+			if category == "" {
+				category = "none"
+			}
+			wantMetric := `orbitops_operation_terminal_total{category="` + category +
+				`",status="` + testCase.wantStatus + `"} 1`
+			if !strings.Contains(string(metricPayload), wantMetric) {
+				t.Errorf("worker metrics do not contain %q", wantMetric)
 			}
 		})
 	}

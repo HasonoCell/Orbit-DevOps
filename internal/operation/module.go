@@ -39,6 +39,8 @@ type Record struct {
 	ReleaseID      uuid.UUID  `db:"release_id"`
 	CreatedBy      string     `db:"actor_id"`
 	IdempotencyKey string     `db:"idempotency_key"`
+	TraceParent    string     `db:"traceparent"`
+	TraceState     string     `db:"tracestate"`
 	Status         string     `db:"status"`
 	AttemptCount   int        `db:"attempt_count"`
 	ErrorCategory  *string    `db:"error_category"`
@@ -66,6 +68,8 @@ type CreatePendingCommand struct {
 	ReleaseID      uuid.UUID
 	ActorID        string
 	IdempotencyKey string
+	TraceParent    string
+	TraceState     string
 	CreatedAt      time.Time
 }
 
@@ -81,6 +85,8 @@ type Lease struct {
 	AttemptNumber int
 	WorkerID      string
 	ExpiresAt     time.Time
+	TraceParent   string
+	TraceState    string
 }
 
 type Failure struct {
@@ -93,6 +99,8 @@ type claimCandidate struct {
 	ReleaseID    uuid.UUID `db:"release_id"`
 	Status       string    `db:"status"`
 	AttemptCount int       `db:"attempt_count"`
+	TraceParent  string    `db:"traceparent"`
+	TraceState   string    `db:"tracestate"`
 }
 
 type Module struct {
@@ -114,6 +122,8 @@ func (m *Module) CreatePending(
 		ReleaseID:      command.ReleaseID,
 		CreatedBy:      command.ActorID,
 		IdempotencyKey: command.IdempotencyKey,
+		TraceParent:    command.TraceParent,
+		TraceState:     command.TraceState,
 		Status:         StatusPending,
 		AttemptCount:   0,
 		CreatedAt:      command.CreatedAt,
@@ -124,14 +134,16 @@ func (m *Module) CreatePending(
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO operations
-		 (id, operation_type, release_id, actor_id, idempotency_key, status,
-		  attempt_count, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		 (id, operation_type, release_id, actor_id, idempotency_key, traceparent,
+		  tracestate, status, attempt_count, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		record.ID,
 		record.Type,
 		record.ReleaseID,
 		record.CreatedBy,
 		record.IdempotencyKey,
+		record.TraceParent,
+		record.TraceState,
 		record.Status,
 		record.AttemptCount,
 		record.CreatedAt,
@@ -231,7 +243,7 @@ func (m *Module) ClaimNext(
 	if err := tx.GetContext(
 		ctx,
 		&candidate,
-		`SELECT id, release_id, status, attempt_count
+		`SELECT id, release_id, status, attempt_count, traceparent, tracestate
 		 FROM operations
 		 WHERE status = 'pending'
 		    OR (status = 'running' AND lease_expires_at <= $1)
@@ -315,7 +327,21 @@ func (m *Module) ClaimNext(
 		AttemptNumber: attemptNumber,
 		WorkerID:      request.WorkerID,
 		ExpiresAt:     expiresAt,
+		TraceParent:   candidate.TraceParent,
+		TraceState:    candidate.TraceState,
 	}, true, nil
+}
+
+func (m *Module) CountPending(ctx context.Context) (int, error) {
+	var count int
+	if err := m.db.GetContext(
+		ctx,
+		&count,
+		`SELECT count(*) FROM operations WHERE status = 'pending'`,
+	); err != nil {
+		return 0, fmt.Errorf("count pending operations: %w", err)
+	}
+	return count, nil
 }
 
 func (m *Module) Renew(
@@ -491,6 +517,7 @@ func requireOneLeaseRow(result sql.Result) error {
 }
 
 const operationSelect = `SELECT id, operation_type, release_id, actor_id, idempotency_key,
+       traceparent, tracestate,
        status, attempt_count, error_category, error_summary, created_at, updated_at,
        started_at, finished_at
  FROM operations`

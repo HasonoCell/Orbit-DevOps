@@ -47,6 +47,7 @@ func (a *Adapter) Observe(ctx context.Context, request ObserveRequest) Snapshot 
 		}
 	}
 	if err != nil {
+		a.recordReadFailure()
 		return unavailableSnapshot(observedAt, name, "kubernetes_unavailable")
 	}
 
@@ -56,6 +57,7 @@ func (a *Adapter) Observe(ctx context.Context, request ObserveRequest) Snapshot 
 		metav1.ListOptions{LabelSelector: TargetIDLabel + "=" + request.TargetID.String()},
 	)
 	if err != nil {
+		a.recordReadFailure()
 		snapshot.Freshness = FreshnessUnavailable
 		category := "kubernetes_unavailable"
 		snapshot.ErrorCategory = &category
