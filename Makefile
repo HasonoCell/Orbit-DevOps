@@ -1,0 +1,38 @@
+.PHONY: bootstrap kind-up db-up db-down api worker web generate check test test-kind
+
+bootstrap: kind-up db-up
+	corepack pnpm install --frozen-lockfile
+
+kind-up:
+	./scripts/setup-kind.sh
+
+db-up:
+	docker compose up -d --wait postgres
+
+db-down:
+	docker compose down
+
+api:
+	go run ./cmd/orbitops-api
+
+worker:
+	go run ./cmd/orbitops-worker
+
+web:
+	corepack pnpm --filter @orbitops/web dev
+
+generate:
+	go generate ./api
+	corepack pnpm web:generate
+
+check: generate
+	go vet ./...
+	corepack pnpm web:check
+	corepack pnpm web:build
+
+test:
+	go test ./... -count=1
+	corepack pnpm web:test:e2e
+
+test-kind:
+	ORBITOPS_KIND_E2E=1 go test ./test/kind -count=1 -v

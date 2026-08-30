@@ -1,0 +1,11 @@
+{
+  "name": "orbitops-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "web:generate": "pnpm --filter @orbitops/web generate",
+    "web:check": "pnpm --filter @orbitops/web check",
+    "web:build": "pnpm --filter @orbitops/web build",
+    "web:test:e2e": "pnpm --filter @orbitops/web test:e2e"
+  }
+}

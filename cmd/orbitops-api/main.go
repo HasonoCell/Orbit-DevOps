@@ -15,6 +15,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/OrbitOps/internal/platform/process"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -26,6 +27,7 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
+	gin.SetMode(gin.ReleaseMode)
 	config, err := envconfig.LoadAPI()
 	if err != nil {
 		return err

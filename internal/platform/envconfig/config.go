@@ -49,7 +49,7 @@ func LoadAPI() (API, error) {
 		return API{}, err
 	}
 	return API{
-		Address:       value("ORBITOPS_API_ADDRESS", ":8080"),
+		Address:       value("ORBITOPS_API_ADDRESS", "127.0.0.1:8080"),
 		DatabaseURL:   value("ORBITOPS_DATABASE_URL", defaultDatabaseURL),
 		ActorID:       value("ORBITOPS_ACTOR_ID", "local-developer"),
 		MigrateOnBoot: migrateOnBoot,
@@ -79,7 +79,7 @@ func LoadWorker() (Worker, error) {
 		return Worker{}, fmt.Errorf("read hostname: %w", err)
 	}
 	return Worker{
-		Address:          value("ORBITOPS_WORKER_ADDRESS", ":9091"),
+		Address:          value("ORBITOPS_WORKER_ADDRESS", "127.0.0.1:9091"),
 		DatabaseURL:      value("ORBITOPS_DATABASE_URL", defaultDatabaseURL),
 		WorkerID:         value("ORBITOPS_WORKER_ID", hostname),
 		PollInterval:     pollInterval,
