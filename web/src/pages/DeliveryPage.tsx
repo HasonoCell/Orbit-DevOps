@@ -1,6 +1,26 @@
+import type { FormEventHandler, ReactNode } from "react";
+import type { UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import {
+  Activity,
+  AppWindow,
+  Box,
+  Boxes,
+  CircleDot,
+  Container,
+  LayoutDashboard,
+  Menu,
+  MoreHorizontal,
+  Network,
+  Rocket,
+  Search,
+  Server,
+  Settings,
+  ShieldCheck,
+  X,
+} from "lucide-react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
@@ -43,8 +63,25 @@ const formSchema = z.object({
 
 type FormValues = z.input<typeof formSchema>;
 
+type WorkspaceProps = {
+  acceptance?: DeliveryAcceptance;
+  error?: Error;
+  form: UseFormReturn<FormValues, unknown, DeliveryInput>;
+  mobileNavOpen: boolean;
+  onCloseMobileNav: () => void;
+  onSubmit: FormEventHandler<HTMLFormElement>;
+  onToggleMobileNav: () => void;
+  operation?: Operation;
+  operationFetching: boolean;
+  pending: boolean;
+  runtimeError: Error | null;
+  snapshot?: RuntimeSnapshot;
+  useImage: (image: string) => void;
+};
+
 export function DeliveryPage() {
   const [acceptance, setAcceptance] = useState<DeliveryAcceptance>();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const idempotency = useRef<{ fingerprint: string; key: string } | undefined>(undefined);
   const form = useForm<FormValues, unknown, DeliveryInput>({
     resolver: zodResolver(formSchema),
@@ -68,7 +105,6 @@ export function DeliveryPage() {
     },
     onSuccess: (result) => setAcceptance(result),
   });
-
   const operationQuery = useQuery({
     queryKey: ["operation", acceptance?.operation.id],
     queryFn: () => getOperation(acceptance!.operation.id),
@@ -82,254 +118,227 @@ export function DeliveryPage() {
     enabled: acceptance !== undefined,
     refetchInterval: acceptance === undefined ? false : 1_000,
   });
-  const currentOperation = operationQuery.data ?? acceptance?.operation;
-  const stageLabel = useMemo(
-    () => (acceptance === undefined ? "等待创建" : "development"),
-    [acceptance],
-  );
 
   return (
-    <div className="min-h-screen bg-[var(--canvas)] text-slate-100">
-      <div className="ambient" aria-hidden="true" />
-      <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-7 lg:px-10">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl border border-cyan-300/30 bg-cyan-300/10 font-mono text-sm font-bold text-cyan-200">
-            OO
-          </div>
-          <div>
-            <p className="font-mono text-xs tracking-[0.24em] text-cyan-300">ORBITOPS</p>
-            <p className="text-sm text-slate-400">本地交付控制台</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-200">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_10px_#6ee7b7]" />
-          本地开发边界
-        </div>
-      </header>
+    <Workspace
+      acceptance={acceptance}
+      error={createMutation.error instanceof Error ? createMutation.error : undefined}
+      form={form}
+      mobileNavOpen={mobileNavOpen}
+      onCloseMobileNav={() => setMobileNavOpen(false)}
+      onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}
+      onToggleMobileNav={() => setMobileNavOpen((open) => !open)}
+      operation={operationQuery.data ?? acceptance?.operation}
+      operationFetching={operationQuery.isFetching}
+      pending={createMutation.isPending}
+      runtimeError={runtimeQuery.error}
+      snapshot={runtimeQuery.data}
+      useImage={(image) => form.setValue("imageReference", image, { shouldDirty: true, shouldValidate: true })}
+    />
+  );
+}
 
-      <main className="mx-auto grid max-w-7xl gap-6 px-6 pb-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(380px,0.92fr)] lg:px-10">
-        <section className="panel p-6 sm:p-8">
-          <div className="mb-8 flex items-start justify-between gap-4">
+function Workspace(props: WorkspaceProps) {
+  return (
+    <div className="a-shell">
+      {props.mobileNavOpen && <button className="sidebar-backdrop" type="button" aria-label="关闭导航" onClick={props.onCloseMobileNav} />}
+      <aside className={`a-sidebar ${props.mobileNavOpen ? "mobile-open" : ""}`} aria-label="产品导航">
+        <div className="sidebar-brand">
+          <Brand />
+          <button className="sidebar-close" type="button" aria-label="关闭导航" onClick={props.onCloseMobileNav}><X /></button>
+        </div>
+        <nav className="a-nav" aria-label="主导航">
+          <NavSection label="工作台">
+            <NavButton icon={<LayoutDashboard />} label="概览" />
+            <NavButton active icon={<Rocket />} label="交付" />
+            <NavButton icon={<Activity />} label="操作记录" />
+          </NavSection>
+          <NavSection label="资源">
+            <NavButton icon={<AppWindow />} label="应用" />
+            <NavButton icon={<Container />} label="运行目标" />
+            <NavButton icon={<Server />} label="集群" suffix="1" />
+          </NavSection>
+          <NavSection label="系统">
+            <NavButton icon={<Settings />} label="设置" />
+          </NavSection>
+        </nav>
+        <div className="a-profile">
+          <span className="avatar">HD</span>
+          <span><strong>local-developer</strong><small>本地开发者</small></span>
+          <MoreHorizontal size={16} />
+        </div>
+      </aside>
+
+      <div className="a-workspace">
+        <header className="a-topbar">
+          <button className="icon-button mobile-only" type="button" aria-label="打开导航" aria-expanded={props.mobileNavOpen} onClick={props.onToggleMobileNav}><Menu /></button>
+          <div className="breadcrumbs">
+            <span>项目</span><b>/</b><strong>{props.acceptance?.project.name ?? "Orbit 示例项目"}</strong>
+            <b>/</b><span>{props.acceptance?.application.name ?? "演示应用"}</span>
+          </div>
+          <div className="topbar-actions">
+            <button className="icon-button" type="button" aria-label="搜索（后续切片开放）" disabled><Search /></button>
+            <EnvironmentPill />
+          </div>
+        </header>
+
+        <main className="a-main">
+          <div className="page-heading">
             <div>
-              <p className="eyebrow">新建交付</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                把不可变镜像送入 Kubernetes
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-                一次建立项目、应用和开发目标。API 接纳发布后，Worker 会独立完成资源调和与状态回读。
-              </p>
+              <p className="overline">DELIVERY WORKSPACE</p>
+              <h1>发布到开发环境</h1>
+              <p>配置不可变制品，接纳发布，并观察 Kubernetes 的权威状态。</p>
             </div>
-            <span className="stage-chip">{stageLabel}</span>
+            <div className="heading-meta">
+              <span>目标</span>
+              <strong>development</strong>
+              <small>kind-orbitops-s1 / orbitops-s1</small>
+            </div>
           </div>
 
-          <form className="space-y-7" onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}>
-            <FormSection number="01" title="项目与应用">
-              <div className="field-grid">
-                <Field label="项目名称" error={form.formState.errors.projectName?.message}>
-                  <input {...form.register("projectName")} />
-                </Field>
-                <Field label="项目 Slug" error={form.formState.errors.projectSlug?.message}>
-                  <input {...form.register("projectSlug")} />
-                </Field>
-                <Field label="应用名称" error={form.formState.errors.applicationName?.message}>
-                  <input {...form.register("applicationName")} />
-                </Field>
-                <Field label="应用 Slug" error={form.formState.errors.applicationSlug?.message}>
-                  <input {...form.register("applicationSlug")} />
-                </Field>
+          <div className="a-layout">
+            <form className="a-editor" onSubmit={props.onSubmit}>
+              <EditorHeader index="01" title="交付配置" description="Project、Application 与运行目标" />
+              <div className="form-section">
+                <SectionTitle icon={<Boxes />} title="资源上下文" />
+                <div className="form-grid two">
+                  <FormField label="项目名称" error={props.form.formState.errors.projectName?.message}>
+                    <input {...props.form.register("projectName")} />
+                  </FormField>
+                  <FormField label="项目标识" error={props.form.formState.errors.projectSlug?.message}>
+                    <input className="mono" {...props.form.register("projectSlug")} />
+                  </FormField>
+                  <FormField label="应用名称" error={props.form.formState.errors.applicationName?.message}>
+                    <input {...props.form.register("applicationName")} />
+                  </FormField>
+                  <FormField label="应用标识" error={props.form.formState.errors.applicationSlug?.message}>
+                    <input className="mono" {...props.form.register("applicationSlug")} />
+                  </FormField>
+                </div>
               </div>
-            </FormSection>
-
-            <FormSection number="02" title="运行目标">
-              <div className="field-grid">
-                <Field label="副本数" error={form.formState.errors.replicas?.message}>
-                  <input type="number" min="1" max="5" {...form.register("replicas")} />
-                </Field>
-                <Field label="容器端口" error={form.formState.errors.containerPort?.message}>
-                  <input type="number" min="1" max="65535" {...form.register("containerPort")} />
-                </Field>
+              <div className="form-section">
+                <SectionTitle icon={<Server />} title="运行规格" />
+                <div className="form-grid two">
+                  <FormField label="副本数" error={props.form.formState.errors.replicas?.message} hint="1–5">
+                    <input type="number" min="1" max="5" {...props.form.register("replicas")} />
+                  </FormField>
+                  <FormField label="容器端口" error={props.form.formState.errors.containerPort?.message} hint="ClusterIP">
+                    <input className="mono" type="number" min="1" max="65535" {...props.form.register("containerPort")} />
+                  </FormField>
+                </div>
               </div>
-            </FormSection>
-
-            <FormSection number="03" title="不可变制品">
-              <Field label="OCI 镜像引用" error={form.formState.errors.imageReference?.message}>
-                <textarea rows={3} spellCheck={false} {...form.register("imageReference")} />
-              </Field>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button className="example-button" type="button" onClick={() => form.setValue("imageReference", readyImage, { shouldDirty: true, shouldValidate: true })}>
-                  使用本地可用镜像
-                </button>
-                <button className="example-button" type="button" onClick={() => form.setValue("imageReference", failingImage, { shouldDirty: true, shouldValidate: true })}>
-                  模拟拉取失败
-                </button>
+              <div className="form-section">
+                <SectionTitle icon={<Box />} title="不可变制品" />
+                <FormField label="OCI 镜像引用" error={props.form.formState.errors.imageReference?.message} hint="必须包含 sha256 Digest">
+                  <textarea className="mono" rows={3} spellCheck={false} {...props.form.register("imageReference")} />
+                </FormField>
+                <ImageExamples useImage={props.useImage} />
               </div>
-            </FormSection>
-
-            {createMutation.error instanceof Error && (
-              <div className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-200" role="alert">
-                {createMutation.error.message}
+              <MutationError error={props.error} />
+              <div className="editor-actions">
+                <span><ShieldCheck size={15} /> 仅写入本地受管 Namespace</span>
+                <SubmitButton pending={props.pending} />
               </div>
-            )}
-            <button className="primary-button" type="submit" disabled={createMutation.isPending}>
-              {createMutation.isPending ? "正在接纳发布…" : "创建并发布"}
-              <span aria-hidden="true">→</span>
-            </button>
-          </form>
-        </section>
+            </form>
 
-        <aside className="space-y-6">
-          <OperationCard operation={currentOperation} isFetching={operationQuery.isFetching} />
-          <RuntimeCard snapshot={runtimeQuery.data} error={runtimeQuery.error} />
-          <IdentityCard acceptance={acceptance} />
-        </aside>
-      </main>
+            <aside className="a-observation">
+              <EditorHeader index="02" title="实时状态" description="Operation 与 Kubernetes 观测" />
+              <OperationPanel operation={props.operation} fetching={props.operationFetching} />
+              <RuntimePanel snapshot={props.snapshot} error={props.runtimeError} />
+              <IdentityPanel acceptance={props.acceptance} />
+            </aside>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
 
-function FormSection({ number, title, children }: { number: string; title: string; children: React.ReactNode }) {
-  return (
-    <fieldset>
-      <legend className="mb-4 flex items-center gap-3 text-sm font-medium text-slate-200">
-        <span className="font-mono text-xs text-cyan-300">{number}</span>
-        {title}
-      </legend>
-      {children}
-    </fieldset>
-  );
+function Brand() {
+  return <div className="brand"><span className="brand-mark"><span /></span><span><strong>OrbitOps</strong><small>DELIVERY CONTROL</small></span></div>;
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+function NavSection({ label, children }: { label: string; children: ReactNode }) {
+  return <div className="nav-section"><p>{label}</p>{children}</div>;
+}
+
+function NavButton({ active = false, icon, label, suffix }: { active?: boolean; icon: ReactNode; label: string; suffix?: string }) {
+  return <button className={active ? "active" : ""} type="button" disabled={!active} title={active ? undefined : "后续切片开放"}><span>{icon}</span><b>{label}</b>{suffix && <i>{suffix}</i>}</button>;
+}
+
+function EnvironmentPill() {
+  return <span className="environment-pill"><span /> 本地开发环境</span>;
+}
+
+function EditorHeader({ index, title, description }: { index: string; title: string; description: string }) {
+  return <div className="editor-header"><span>{index}</span><div><h2>{title}</h2><p>{description}</p></div></div>;
+}
+
+function SectionTitle({ icon, title }: { icon: ReactNode; title: string }) {
+  return <div className="section-title"><span>{icon}</span><h3>{title}</h3></div>;
+}
+
+function FormField({ label, error, hint, children }: { label: string; error?: string; hint?: string; children: ReactNode }) {
   return (
-    <label className="field">
-      <span>{label}</span>
+    <label className="form-field">
+      <span><b>{label}</b>{hint && <small>{hint}</small>}</span>
       {children}
-      {error && <small>{error}</small>}
+      {error && <em>{error}</em>}
     </label>
   );
 }
 
-function OperationCard({ operation, isFetching }: { operation?: Operation; isFetching: boolean }) {
+function ImageExamples({ useImage }: { useImage: (image: string) => void }) {
+  return <div className="image-examples"><button type="button" onClick={() => useImage(readyImage)}><CircleDot /> 可用镜像</button><button type="button" onClick={() => useImage(failingImage)}><CircleDot /> 模拟拉取失败</button></div>;
+}
+
+function SubmitButton({ pending }: { pending: boolean }) {
+  return <button className="submit-button" type="submit" disabled={pending}><Rocket />{pending ? "正在接纳发布…" : "创建并发布"}<span>→</span></button>;
+}
+
+function MutationError({ error }: { error?: Error }) {
+  if (!error) return null;
+  return <div className="mutation-error" role="alert">{error.message}</div>;
+}
+
+function OperationPanel({ operation, fetching }: { operation?: Operation; fetching: boolean }) {
   const status = operation?.status ?? "idle";
   return (
-    <section className="panel p-6" aria-label="发布操作">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="eyebrow">Operation</p>
-          <h2 className="mt-2 text-xl font-semibold">发布操作</h2>
-        </div>
-        <StatusBadge status={status} pulse={isFetching && !isTerminal(status)} />
-      </div>
-      {operation === undefined ? (
-        <EmptyState text="创建发布后，这里会显示异步执行状态。" />
-      ) : (
-        <div className="mt-6 space-y-4">
-          <DataRow label="操作 ID" value={operation.id} mono />
-          <DataRow label="尝试次数" value={String(operation.attemptCount)} />
-          {operation.errorCategory && <DataRow label="失败类别" value={operation.errorCategory} danger />}
-          {operation.errorSummary && <p className="rounded-lg bg-rose-400/10 p-3 text-sm leading-6 text-rose-100">{operation.errorSummary}</p>}
-          {operation.attempts.length > 0 && (
-            <div className="border-t border-white/8 pt-4">
-              <p className="mb-3 text-xs uppercase tracking-wider text-slate-500">Attempts</p>
-              {operation.attempts.map((attempt) => (
-                <div className="flex items-center justify-between text-sm" key={attempt.id}>
-                  <span className="text-slate-400">#{attempt.number} · {attempt.workerId}</span>
-                  <span className="text-slate-200">{statusText(attempt.status)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+    <section className="observation-block" aria-label="发布操作">
+      <div className="block-heading"><span><Activity /> Operation</span><StatusBadge status={status} pulse={fetching && !isTerminal(status)} /></div>
+      <div className="operation-id"><span>操作 ID</span><code>{operation?.id ?? "等待创建"}</code></div>
+      <div className="attempt-line"><span>Attempt</span><strong>{operation?.attemptCount ?? 0}</strong><span>Worker</span><strong>{operation?.attempts.at(-1)?.workerId ?? "—"}</strong></div>
+      {operation?.errorCategory && <div className="error-summary"><b>{operation.errorCategory}</b><p>{operation.errorSummary}</p></div>}
     </section>
   );
 }
 
-function RuntimeCard({ snapshot, error }: { snapshot?: RuntimeSnapshot; error: Error | null }) {
+function RuntimePanel({ snapshot, error }: { snapshot?: RuntimeSnapshot; error: Error | null }) {
   return (
-    <section className="panel p-6" aria-label="Kubernetes 实况">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="eyebrow">Runtime Snapshot</p>
-          <h2 className="mt-2 text-xl font-semibold">Kubernetes 实况</h2>
-        </div>
-        {snapshot && <span className={snapshot.freshness === "fresh" ? "freshness fresh" : "freshness unavailable"}>{snapshot.freshness === "fresh" ? "实时" : "不可用"}</span>}
-      </div>
-      {error instanceof Error ? (
-        <p className="mt-5 text-sm text-rose-200">{error.message}</p>
-      ) : snapshot === undefined ? (
-        <EmptyState text="运行时状态只来自 Kubernetes 权威回读。" />
-      ) : (
-        <div className="mt-6">
-          <div className="grid grid-cols-3 gap-3">
-            <Metric label="期望" value={snapshot.desiredReplicas} />
-            <Metric label="已更新" value={snapshot.updatedReplicas} />
-            <Metric label="就绪" value={snapshot.readyReplicas} accent />
-          </div>
-          <div className="mt-5 space-y-3">
-            <DataRow label="Deployment" value={snapshot.deploymentName} mono />
-            <DataRow label="观测时间" value={formatTime(snapshot.observedAt)} />
-            {snapshot.errorCategory && <DataRow label="观测错误" value={snapshot.errorCategory} danger />}
-          </div>
-          {snapshot.pods.length > 0 && (
-            <div className="mt-5 border-t border-white/8 pt-4">
-              <p className="mb-3 text-xs uppercase tracking-wider text-slate-500">Pods</p>
-              {snapshot.pods.map((pod) => (
-                <div className="flex items-center justify-between gap-4 text-sm" key={pod.name}>
-                  <span className="truncate font-mono text-xs text-slate-400">{pod.name}</span>
-                  <span className={pod.ready ? "text-emerald-300" : "text-amber-200"}>{pod.ready ? "Ready" : pod.reason || pod.phase}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+    <section className="observation-block" aria-label="Kubernetes 实况">
+      <div className="block-heading"><span><Server /> Kubernetes</span><span className={`freshness ${snapshot?.freshness ?? "idle"}`}>{snapshot?.freshness === "fresh" ? "实时" : snapshot?.freshness === "unavailable" ? "不可用" : "等待"}</span></div>
+      <div className="runtime-metrics"><Metric label="期望" value={snapshot?.desiredReplicas ?? 0} /><Metric label="已更新" value={snapshot?.updatedReplicas ?? 0} /><Metric label="就绪" value={snapshot?.readyReplicas ?? 0} accent /></div>
+      {snapshot?.pods.map((pod) => <div className="runtime-pod" key={pod.name}><span><CircleDot /> Pod</span><code>{pod.name}</code><strong className={pod.ready ? "ready" : "failed"}>{pod.reason || pod.phase}</strong></div>)}
+      <div className="runtime-detail"><span>Deployment</span><code>{snapshot?.deploymentName ?? "等待首次发布"}</code><span>观测时间</span><strong>{snapshot ? formatTime(snapshot.observedAt) : "—"}</strong></div>
+      {error && <div className="error-summary"><b>runtime_unavailable</b><p>{error.message}</p></div>}
     </section>
   );
 }
 
-function IdentityCard({ acceptance }: { acceptance?: DeliveryAcceptance }) {
-  return (
-    <section className="rounded-2xl border border-white/8 bg-white/[0.025] p-5">
-      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">稳定标识</p>
-      <div className="mt-4 space-y-3">
-        <DataRow label="Project" value={acceptance?.project.id ?? "—"} mono />
-        <DataRow label="Application" value={acceptance?.application.id ?? "—"} mono />
-        <DataRow label="Release" value={acceptance?.release.id ?? "—"} mono />
-      </div>
-    </section>
-  );
+function IdentityPanel({ acceptance }: { acceptance?: DeliveryAcceptance }) {
+  return <section className="identity-panel"><span><Network /> 稳定标识</span><dl><ResourceLine label="Project" value={shortID(acceptance?.project.id)} /><ResourceLine label="Application" value={shortID(acceptance?.application.id)} /><ResourceLine label="Release" value={acceptance?.release.id ?? "—"} /></dl></section>;
 }
 
 function StatusBadge({ status, pulse = false }: { status: string; pulse?: boolean }) {
-  return (
-    <span className={`status status-${status}`} data-testid="operation-status">
-      <span className={pulse ? "status-dot animate-pulse" : "status-dot"} />
-      {statusText(status)}
-    </span>
-  );
+  return <span className={`status status-${status}`} data-testid="operation-status"><i className={pulse ? "pulse" : ""} />{statusText(status)}</span>;
 }
 
 function Metric({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
-  return (
-    <div className="rounded-xl border border-white/8 bg-black/15 p-3 text-center">
-      <strong className={accent ? "text-2xl text-cyan-200" : "text-2xl text-white"}>{value}</strong>
-      <span className="mt-1 block text-xs text-slate-500">{label}</span>
-    </div>
-  );
+  return <div className={accent ? "metric accent" : "metric"}><strong>{value}</strong><span>{label}</span></div>;
 }
 
-function DataRow({ label, value, mono = false, danger = false }: { label: string; value: string; mono?: boolean; danger?: boolean }) {
-  return (
-    <div className="flex items-start justify-between gap-4 text-sm">
-      <span className="shrink-0 text-slate-500">{label}</span>
-      <span className={`${mono ? "font-mono text-xs" : ""} ${danger ? "text-rose-200" : "text-right text-slate-300"} break-all`}>{value}</span>
-    </div>
-  );
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <p className="mt-6 rounded-xl border border-dashed border-white/10 px-4 py-6 text-center text-sm leading-6 text-slate-500">{text}</p>;
+function ResourceLine({ label, value }: { label: string; value: string }) {
+  return <div><dt>{label}</dt><dd title={value}>{value}</dd></div>;
 }
 
 function isTerminal(status?: string): boolean {
@@ -337,19 +346,13 @@ function isTerminal(status?: string): boolean {
 }
 
 function statusText(status: string): string {
-  return {
-    idle: "未开始",
-    pending: "等待中",
-    running: "执行中",
-    succeeded: "已成功",
-    failed: "已失败",
-  }[status] ?? status;
+  return { idle: "未开始", pending: "等待中", running: "执行中", succeeded: "已成功", failed: "已失败" }[status] ?? status;
 }
 
 function formatTime(value: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
+}
+
+function shortID(value?: string): string {
+  return value ? `${value.slice(0, 8)}…${value.slice(-4)}` : "—";
 }

@@ -35,6 +35,20 @@ test("镜像拉取失败显示结构化失败与 Pod 原因", async ({ page }) =
   await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("实时");
 });
 
+test("移动端可以打开和关闭产品导航", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const navigation = page.getByRole("complementary", { name: "产品导航" });
+  await expect(navigation).toBeHidden();
+
+  await page.getByRole("button", { name: "打开导航" }).click();
+  await expect(navigation).toBeVisible();
+
+  await navigation.getByRole("button", { name: "关闭导航" }).click();
+  await expect(navigation).toBeHidden();
+});
+
 async function mockControlPlane(page: Page, terminal: "succeeded" | "failed") {
   let operationPolls = 0;
   await page.route("**/api/v1/**", async (route) => {
