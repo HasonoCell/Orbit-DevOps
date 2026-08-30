@@ -7,6 +7,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/api"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
+	"github.com/HasonoCell/OrbitOps/internal/operation"
 )
 
 func (s *Server) CreateRelease(
@@ -72,9 +73,9 @@ func (s *Server) GetOperation(
 	ctx context.Context,
 	request api.GetOperationRequestObject,
 ) (api.GetOperationResponseObject, error) {
-	operation, err := s.delivery.GetOperation(httpRequestContext(ctx), request.OperationId)
+	operationRecord, err := s.operations.Get(httpRequestContext(ctx), request.OperationId)
 	if err != nil {
-		if errors.Is(err, delivery.ErrOperationNotFound) {
+		if errors.Is(err, operation.ErrNotFound) {
 			return api.GetOperation404JSONResponse{
 				Code:    "operation_not_found",
 				Message: "operation not found",
@@ -83,7 +84,7 @@ func (s *Server) GetOperation(
 		return nil, err
 	}
 
-	return api.GetOperation200JSONResponse(operationResponse(operation)), nil
+	return api.GetOperation200JSONResponse(operationResponse(operationRecord)), nil
 }
 
 func releaseResponse(release delivery.Release) api.Release {
@@ -92,6 +93,7 @@ func releaseResponse(release delivery.Release) api.Release {
 		DeploymentTargetId: release.DeploymentTargetID,
 		ImageReference:     release.ImageReference,
 		TargetSnapshot: api.ReleaseTargetSnapshot{
+			ProjectId:     release.TargetSnapshot.ProjectID,
 			ApplicationId: release.TargetSnapshot.ApplicationID,
 			Stage:         api.ReleaseTargetSnapshotStage(release.TargetSnapshot.Stage),
 			ClusterRef:    release.TargetSnapshot.ClusterRef,
@@ -104,20 +106,38 @@ func releaseResponse(release delivery.Release) api.Release {
 	}
 }
 
-func operationResponse(operation delivery.Operation) api.Operation {
+func operationResponse(record operation.Record) api.Operation {
 	return api.Operation{
-		Id:             operation.ID,
-		Type:           api.OperationType(operation.Type),
-		ReleaseId:      operation.ReleaseID,
-		CreatedBy:      operation.CreatedBy,
-		IdempotencyKey: operation.IdempotencyKey,
-		Status:         api.OperationStatus(operation.Status),
-		AttemptCount:   operation.AttemptCount,
-		ErrorCategory:  operation.ErrorCategory,
-		ErrorSummary:   operation.ErrorSummary,
-		CreatedAt:      operation.CreatedAt,
-		UpdatedAt:      operation.UpdatedAt,
-		StartedAt:      operation.StartedAt,
-		FinishedAt:     operation.FinishedAt,
+		Id:             record.ID,
+		Type:           api.OperationType(record.Type),
+		ReleaseId:      record.ReleaseID,
+		CreatedBy:      record.CreatedBy,
+		IdempotencyKey: record.IdempotencyKey,
+		Status:         api.OperationStatus(record.Status),
+		AttemptCount:   record.AttemptCount,
+		ErrorCategory:  record.ErrorCategory,
+		ErrorSummary:   record.ErrorSummary,
+		CreatedAt:      record.CreatedAt,
+		UpdatedAt:      record.UpdatedAt,
+		StartedAt:      record.StartedAt,
+		FinishedAt:     record.FinishedAt,
+		Attempts:       operationAttemptResponses(record.Attempts),
 	}
+}
+
+func operationAttemptResponses(attempts []operation.Attempt) []api.OperationAttempt {
+	responses := make([]api.OperationAttempt, 0, len(attempts))
+	for _, attempt := range attempts {
+		responses = append(responses, api.OperationAttempt{
+			Id:            attempt.ID,
+			Number:        attempt.Number,
+			WorkerId:      attempt.WorkerID,
+			Status:        api.OperationAttemptStatus(attempt.Status),
+			ErrorCategory: attempt.ErrorCategory,
+			ErrorSummary:  attempt.ErrorSummary,
+			StartedAt:     attempt.StartedAt,
+			FinishedAt:    attempt.FinishedAt,
+		})
+	}
+	return responses
 }

@@ -489,6 +489,7 @@ components:
       type: object
       additionalProperties: false
       required:
+        - projectId
         - applicationId
         - stage
         - clusterRef
@@ -496,6 +497,9 @@ components:
         - replicas
         - containerPort
       properties:
+        projectId:
+          type: string
+          format: uuid
         applicationId:
           type: string
           format: uuid
@@ -550,6 +554,7 @@ components:
         - attemptCount
         - createdAt
         - updatedAt
+        - attempts
       properties:
         id:
           type: string
@@ -585,6 +590,44 @@ components:
         updatedAt:
           type: string
           format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        attempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperationAttempt"
+    OperationAttempt:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - number
+        - workerId
+        - status
+        - startedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: integer
+          minimum: 1
+        workerId:
+          type: string
+        status:
+          type: string
+          enum:
+            - running
+            - succeeded
+            - failed
+        errorCategory:
+          type: string
+        errorSummary:
+          type: string
         startedAt:
           type: string
           format: date-time

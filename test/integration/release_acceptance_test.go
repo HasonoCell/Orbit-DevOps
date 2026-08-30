@@ -39,6 +39,7 @@ func TestReleaseAcceptanceAtomicallyCreatesPendingOperation(t *testing.T) {
 		t.Errorf("imageReference = %q, want %q", acceptance.Release.ImageReference, imageReference)
 	}
 	wantSnapshot := releaseTargetSnapshot{
+		ProjectID:     target.ProjectID,
 		ApplicationID: target.ApplicationID,
 		Stage:         target.Stage,
 		ClusterRef:    target.ClusterRef,
@@ -137,5 +138,7 @@ func createDeploymentTarget(
 		t.Fatalf("create target status = %d, want %d", response.StatusCode, http.StatusCreated)
 	}
 
-	return decodeDeploymentTarget(t, response)
+	target := decodeDeploymentTarget(t, response)
+	target.ProjectID = project.ID
+	return target
 }

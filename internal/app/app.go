@@ -9,6 +9,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/api"
 	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
+	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/platform/database"
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/HasonoCell/OrbitOps/internal/transport/httpapi"
@@ -71,11 +72,13 @@ func New(ctx context.Context, config Config) (*Runtime, error) {
 		ClusterRef: config.LocalClusterRef,
 		Namespace:  config.LocalNamespace,
 	})
-	deliveryModule := delivery.New(db)
+	operationModule := operation.New(db)
+	deliveryModule := delivery.New(db, operationModule)
 	server := httpapi.NewServer(
 		projectModule,
 		catalogModule,
 		deliveryModule,
+		operationModule,
 		config.LocalActorID,
 	)
 	strictHandler := api.NewStrictHandler(server, nil)

@@ -54,22 +54,22 @@ func (e DeploymentTargetStage) Valid() bool {
 
 // Defines values for OperationStatus.
 const (
-	Failed    OperationStatus = "failed"
-	Pending   OperationStatus = "pending"
-	Running   OperationStatus = "running"
-	Succeeded OperationStatus = "succeeded"
+	OperationStatusFailed    OperationStatus = "failed"
+	OperationStatusPending   OperationStatus = "pending"
+	OperationStatusRunning   OperationStatus = "running"
+	OperationStatusSucceeded OperationStatus = "succeeded"
 )
 
 // Valid indicates whether the value is a known member of the OperationStatus enum.
 func (e OperationStatus) Valid() bool {
 	switch e {
-	case Failed:
+	case OperationStatusFailed:
 		return true
-	case Pending:
+	case OperationStatusPending:
 		return true
-	case Running:
+	case OperationStatusRunning:
 		return true
-	case Succeeded:
+	case OperationStatusSucceeded:
 		return true
 	default:
 		return false
@@ -85,6 +85,27 @@ const (
 func (e OperationType) Valid() bool {
 	switch e {
 	case ReleaseDeploy:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperationAttemptStatus.
+const (
+	OperationAttemptStatusFailed    OperationAttemptStatus = "failed"
+	OperationAttemptStatusRunning   OperationAttemptStatus = "running"
+	OperationAttemptStatusSucceeded OperationAttemptStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the OperationAttemptStatus enum.
+func (e OperationAttemptStatus) Valid() bool {
+	switch e {
+	case OperationAttemptStatusFailed:
+		return true
+	case OperationAttemptStatusRunning:
+		return true
+	case OperationAttemptStatusSucceeded:
 		return true
 	default:
 		return false
@@ -170,6 +191,7 @@ type Error struct {
 // Operation defines model for Operation.
 type Operation struct {
 	AttemptCount   int                `json:"attemptCount"`
+	Attempts       []OperationAttempt `json:"attempts"`
 	CreatedAt      time.Time          `json:"createdAt"`
 	CreatedBy      string             `json:"createdBy"`
 	ErrorCategory  *string            `json:"errorCategory,omitempty"`
@@ -189,6 +211,21 @@ type OperationStatus string
 
 // OperationType defines model for Operation.Type.
 type OperationType string
+
+// OperationAttempt defines model for OperationAttempt.
+type OperationAttempt struct {
+	ErrorCategory *string                `json:"errorCategory,omitempty"`
+	ErrorSummary  *string                `json:"errorSummary,omitempty"`
+	FinishedAt    *time.Time             `json:"finishedAt,omitempty"`
+	Id            openapi_types.UUID     `json:"id"`
+	Number        int                    `json:"number"`
+	StartedAt     time.Time              `json:"startedAt"`
+	Status        OperationAttemptStatus `json:"status"`
+	WorkerId      string                 `json:"workerId"`
+}
+
+// OperationAttemptStatus defines model for OperationAttempt.Status.
+type OperationAttemptStatus string
 
 // Project defines model for Project.
 type Project struct {
@@ -221,6 +258,7 @@ type ReleaseTargetSnapshot struct {
 	ClusterRef    string                     `json:"clusterRef"`
 	ContainerPort int                        `json:"containerPort"`
 	Namespace     string                     `json:"namespace"`
+	ProjectId     openapi_types.UUID         `json:"projectId"`
 	Replicas      int                        `json:"replicas"`
 	Stage         ReleaseTargetSnapshotStage `json:"stage"`
 }
@@ -1567,34 +1605,36 @@ func (sh *strictHandler) GetRelease(ctx *gin.Context, releaseId openapi_types.UU
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"dnqA799nu7N19Q7HRfN/BwAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

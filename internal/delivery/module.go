@@ -11,24 +11,20 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/audit"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
+	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/distribution/reference"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
 
-const (
-	OperationTypeDeploy = "release.deploy"
-	OperationPending    = "pending"
-)
-
 var (
 	ErrDeploymentTargetNotFound = errors.New("deployment target not found")
 	ErrInvalidImageReference    = errors.New("image reference must contain an OCI digest")
-	ErrOperationNotFound        = errors.New("operation not found")
 	ErrReleaseNotFound          = errors.New("release not found")
 )
 
 type TargetSnapshot struct {
+	ProjectID     uuid.UUID `json:"projectId"`
 	ApplicationID uuid.UUID `json:"applicationId"`
 	Stage         string    `json:"stage"`
 	ClusterRef    string    `json:"clusterRef"`
@@ -71,25 +67,9 @@ type Release struct {
 	CreatedAt          time.Time      `db:"created_at"`
 }
 
-type Operation struct {
-	ID             uuid.UUID  `db:"id"`
-	Type           string     `db:"operation_type"`
-	ReleaseID      uuid.UUID  `db:"release_id"`
-	CreatedBy      string     `db:"actor_id"`
-	IdempotencyKey string     `db:"idempotency_key"`
-	Status         string     `db:"status"`
-	AttemptCount   int        `db:"attempt_count"`
-	ErrorCategory  *string    `db:"error_category"`
-	ErrorSummary   *string    `db:"error_summary"`
-	CreatedAt      time.Time  `db:"created_at"`
-	UpdatedAt      time.Time  `db:"updated_at"`
-	StartedAt      *time.Time `db:"started_at"`
-	FinishedAt     *time.Time `db:"finished_at"`
-}
-
 type Acceptance struct {
 	Release   Release
-	Operation Operation
+	Operation operation.Record
 }
 
 type CreateReleaseCommand struct {
@@ -100,6 +80,7 @@ type CreateReleaseCommand struct {
 }
 
 type targetRecord struct {
+	ProjectID     uuid.UUID `db:"project_id"`
 	ApplicationID uuid.UUID `db:"application_id"`
 	Stage         string    `db:"stage"`
 	ClusterRef    string    `db:"cluster_ref"`
@@ -109,11 +90,12 @@ type targetRecord struct {
 }
 
 type Module struct {
-	db *sqlx.DB
+	db         *sqlx.DB
+	operations *operation.Module
 }
 
-func New(db *sqlx.DB) *Module {
-	return &Module{db: db}
+func New(db *sqlx.DB, operations *operation.Module) *Module {
+	return &Module{db: db, operations: operations}
 }
 
 func (m *Module) CreateRelease(
@@ -147,9 +129,13 @@ func (m *Module) CreateRelease(
 	if err := tx.GetContext(
 		ctx,
 		&target,
-		`SELECT application_id, stage, cluster_ref, namespace, replicas, container_port
+		`SELECT applications.project_id, deployment_targets.application_id,
+		        deployment_targets.stage, deployment_targets.cluster_ref,
+		        deployment_targets.namespace, deployment_targets.replicas,
+		        deployment_targets.container_port
 		 FROM deployment_targets
-		 WHERE id = $1`,
+		 JOIN applications ON applications.id = deployment_targets.application_id
+		 WHERE deployment_targets.id = $1`,
 		command.DeploymentTargetID,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -164,6 +150,7 @@ func (m *Module) CreateRelease(
 		DeploymentTargetID: command.DeploymentTargetID,
 		ImageReference:     command.ImageReference,
 		TargetSnapshot: TargetSnapshot{
+			ProjectID:     target.ProjectID,
 			ApplicationID: target.ApplicationID,
 			Stage:         target.Stage,
 			ClusterRef:    target.ClusterRef,
@@ -174,18 +161,6 @@ func (m *Module) CreateRelease(
 		CreatedBy: command.ActorID,
 		CreatedAt: createdAt,
 	}
-	operation := Operation{
-		ID:             uuid.New(),
-		Type:           OperationTypeDeploy,
-		ReleaseID:      release.ID,
-		CreatedBy:      command.ActorID,
-		IdempotencyKey: command.IdempotencyKey,
-		Status:         OperationPending,
-		AttemptCount:   0,
-		CreatedAt:      createdAt,
-		UpdatedAt:      createdAt,
-	}
-
 	resourceID, isNew, err := idempotency.Claim(
 		ctx,
 		tx,
@@ -202,7 +177,7 @@ func (m *Module) CreateRelease(
 		return Acceptance{}, err
 	}
 	if !isNew {
-		return replayReleaseCreate(ctx, tx, resourceID)
+		return m.replayReleaseCreate(ctx, tx, resourceID)
 	}
 
 	if _, err := tx.ExecContext(
@@ -220,23 +195,19 @@ func (m *Module) CreateRelease(
 		return Acceptance{}, fmt.Errorf("insert release: %w", err)
 	}
 
-	if _, err := tx.ExecContext(
+	createdOperation, err := m.operations.CreatePending(
 		ctx,
-		`INSERT INTO operations
-		 (id, operation_type, release_id, actor_id, idempotency_key, status,
-		  attempt_count, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		operation.ID,
-		operation.Type,
-		operation.ReleaseID,
-		operation.CreatedBy,
-		operation.IdempotencyKey,
-		operation.Status,
-		operation.AttemptCount,
-		operation.CreatedAt,
-		operation.UpdatedAt,
-	); err != nil {
-		return Acceptance{}, fmt.Errorf("insert release operation: %w", err)
+		tx,
+		operation.CreatePendingCommand{
+			ID:             uuid.New(),
+			ReleaseID:      release.ID,
+			ActorID:        command.ActorID,
+			IdempotencyKey: command.IdempotencyKey,
+			CreatedAt:      createdAt,
+		},
+	)
+	if err != nil {
+		return Acceptance{}, err
 	}
 
 	if err := audit.Append(
@@ -250,7 +221,7 @@ func (m *Module) CreateRelease(
 			Summary: map[string]string{
 				"deploymentTargetId": command.DeploymentTargetID.String(),
 				"idempotencyKey":     command.IdempotencyKey,
-				"operationId":        operation.ID.String(),
+				"operationId":        createdOperation.ID.String(),
 			},
 			CreatedAt: createdAt,
 		},
@@ -262,7 +233,7 @@ func (m *Module) CreateRelease(
 		return Acceptance{}, fmt.Errorf("commit create release: %w", err)
 	}
 
-	return Acceptance{Release: release, Operation: operation}, nil
+	return Acceptance{Release: release, Operation: createdOperation}, nil
 }
 
 func (m *Module) GetRelease(ctx context.Context, id uuid.UUID) (Release, error) {
@@ -285,24 +256,7 @@ func (m *Module) GetRelease(ctx context.Context, id uuid.UUID) (Release, error) 
 	return release, nil
 }
 
-func (m *Module) GetOperation(ctx context.Context, id uuid.UUID) (Operation, error) {
-	var operation Operation
-	if err := m.db.GetContext(
-		ctx,
-		&operation,
-		operationSelect+` WHERE id = $1`,
-		id,
-	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Operation{}, ErrOperationNotFound
-		}
-		return Operation{}, fmt.Errorf("get operation: %w", err)
-	}
-
-	return operation, nil
-}
-
-func replayReleaseCreate(
+func (m *Module) replayReleaseCreate(
 	ctx context.Context,
 	tx *sqlx.Tx,
 	releaseID uuid.UUID,
@@ -320,13 +274,8 @@ func replayReleaseCreate(
 		return Acceptance{}, fmt.Errorf("load idempotent release result: %w", err)
 	}
 
-	var operation Operation
-	if err := tx.GetContext(
-		ctx,
-		&operation,
-		operationSelect+` WHERE release_id = $1`,
-		releaseID,
-	); err != nil {
+	existingOperation, err := m.operations.GetByReleaseInTransaction(ctx, tx, releaseID)
+	if err != nil {
 		return Acceptance{}, fmt.Errorf("load idempotent operation result: %w", err)
 	}
 
@@ -334,7 +283,7 @@ func replayReleaseCreate(
 		return Acceptance{}, fmt.Errorf("commit release replay: %w", err)
 	}
 
-	return Acceptance{Release: release, Operation: operation}, nil
+	return Acceptance{Release: release, Operation: existingOperation}, nil
 }
 
 func validateImageReference(imageReference string) error {
@@ -347,8 +296,3 @@ func validateImageReference(imageReference string) error {
 	}
 	return nil
 }
-
-const operationSelect = `SELECT id, operation_type, release_id, actor_id, idempotency_key,
-       status, attempt_count,
-       error_category, error_summary, created_at, updated_at, started_at, finished_at
- FROM operations`
