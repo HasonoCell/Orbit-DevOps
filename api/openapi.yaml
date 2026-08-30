@@ -1,0 +1,92 @@
+openapi: 3.0.3
+info:
+  title: OrbitOps API
+  version: 0.1.0
+  description: OrbitOps 应用交付控制平面的公开 HTTP 契约。
+paths:
+  /api/v1/projects:
+    post:
+      operationId: createProject
+      summary: 创建项目
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: 项目已创建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 当前操作者与写操作范围内的幂等标识。
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+  schemas:
+    CreateProjectRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - slug
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 63
+          pattern: "^[a-z][a-z0-9-]*$"
+    Project:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - slug
+        - createdBy
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
