@@ -3,11 +3,11 @@ package catalog
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/HasonoCell/OrbitOps/internal/audit"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -156,19 +156,21 @@ func (m *Module) CreateApplication(
 		return Application{}, fmt.Errorf("insert application: %w", err)
 	}
 
-	if err := insertAuditRecord(
+	if err := audit.Append(
 		ctx,
 		tx,
-		command.ActorID,
-		"application.create",
-		"application",
-		created.ID,
-		map[string]string{
-			"applicationSlug": command.Slug,
-			"idempotencyKey":  command.IdempotencyKey,
-			"projectId":       command.ProjectID.String(),
+		audit.Entry{
+			ActorID:    command.ActorID,
+			Action:     "application.create",
+			TargetType: "application",
+			TargetID:   created.ID,
+			Summary: map[string]string{
+				"applicationSlug": command.Slug,
+				"idempotencyKey":  command.IdempotencyKey,
+				"projectId":       command.ProjectID.String(),
+			},
+			CreatedAt: createdAt,
 		},
-		createdAt,
 	); err != nil {
 		return Application{}, err
 	}
@@ -292,19 +294,21 @@ func (m *Module) CreateDeploymentTarget(
 		return DeploymentTarget{}, fmt.Errorf("insert deployment target: %w", err)
 	}
 
-	if err := insertAuditRecord(
+	if err := audit.Append(
 		ctx,
 		tx,
-		command.ActorID,
-		"deployment_target.create",
-		"deployment_target",
-		created.ID,
-		map[string]string{
-			"applicationId":  command.ApplicationID.String(),
-			"idempotencyKey": command.IdempotencyKey,
-			"stage":          command.Stage,
+		audit.Entry{
+			ActorID:    command.ActorID,
+			Action:     "deployment_target.create",
+			TargetType: "deployment_target",
+			TargetID:   created.ID,
+			Summary: map[string]string{
+				"applicationId":  command.ApplicationID.String(),
+				"idempotencyKey": command.IdempotencyKey,
+				"stage":          command.Stage,
+			},
+			CreatedAt: createdAt,
 		},
-		createdAt,
 	); err != nil {
 		return DeploymentTarget{}, err
 	}
@@ -386,38 +390,4 @@ func replayDeploymentTargetCreate(
 	}
 
 	return target, nil
-}
-
-func insertAuditRecord(
-	ctx context.Context,
-	tx *sqlx.Tx,
-	actorID string,
-	action string,
-	targetType string,
-	targetID uuid.UUID,
-	summary map[string]string,
-	createdAt time.Time,
-) error {
-	encodedSummary, err := json.Marshal(summary)
-	if err != nil {
-		return fmt.Errorf("encode %s audit summary: %w", targetType, err)
-	}
-
-	if _, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO audit_records
-		 (id, actor_id, action, target_type, target_id, summary, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		uuid.New(),
-		actorID,
-		action,
-		targetType,
-		targetID,
-		encodedSummary,
-		createdAt,
-	); err != nil {
-		return fmt.Errorf("insert %s audit record: %w", targetType, err)
-	}
-
-	return nil
 }

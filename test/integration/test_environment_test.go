@@ -47,6 +47,45 @@ type deploymentTargetDocument struct {
 	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
+type releaseDocument struct {
+	ID                 string                `json:"id"`
+	DeploymentTargetID string                `json:"deploymentTargetId"`
+	ImageReference     string                `json:"imageReference"`
+	TargetSnapshot     releaseTargetSnapshot `json:"targetSnapshot"`
+	CreatedBy          string                `json:"createdBy"`
+	CreatedAt          time.Time             `json:"createdAt"`
+}
+
+type releaseTargetSnapshot struct {
+	ApplicationID string `json:"applicationId"`
+	Stage         string `json:"stage"`
+	ClusterRef    string `json:"clusterRef"`
+	Namespace     string `json:"namespace"`
+	Replicas      int    `json:"replicas"`
+	ContainerPort int    `json:"containerPort"`
+}
+
+type operationDocument struct {
+	ID             string     `json:"id"`
+	Type           string     `json:"type"`
+	ReleaseID      string     `json:"releaseId"`
+	CreatedBy      string     `json:"createdBy"`
+	IdempotencyKey string     `json:"idempotencyKey"`
+	Status         string     `json:"status"`
+	AttemptCount   int        `json:"attemptCount"`
+	ErrorCategory  *string    `json:"errorCategory"`
+	ErrorSummary   *string    `json:"errorSummary"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+	StartedAt      *time.Time `json:"startedAt"`
+	FinishedAt     *time.Time `json:"finishedAt"`
+}
+
+type releaseAcceptanceDocument struct {
+	Release   releaseDocument   `json:"release"`
+	Operation operationDocument `json:"operation"`
+}
+
 func newTestEnvironment(t *testing.T) *testEnvironment {
 	t.Helper()
 
@@ -187,4 +226,40 @@ func decodeDeploymentTarget(
 	}
 
 	return target
+}
+
+func decodeReleaseAcceptance(
+	t *testing.T,
+	response *http.Response,
+) releaseAcceptanceDocument {
+	t.Helper()
+
+	var acceptance releaseAcceptanceDocument
+	if err := json.NewDecoder(response.Body).Decode(&acceptance); err != nil {
+		t.Fatalf("decode release acceptance response: %v", err)
+	}
+
+	return acceptance
+}
+
+func decodeRelease(t *testing.T, response *http.Response) releaseDocument {
+	t.Helper()
+
+	var release releaseDocument
+	if err := json.NewDecoder(response.Body).Decode(&release); err != nil {
+		t.Fatalf("decode release response: %v", err)
+	}
+
+	return release
+}
+
+func decodeOperation(t *testing.T, response *http.Response) operationDocument {
+	t.Helper()
+
+	var operation operationDocument
+	if err := json.NewDecoder(response.Body).Decode(&operation); err != nil {
+		t.Fatalf("decode operation response: %v", err)
+	}
+
+	return operation
 }

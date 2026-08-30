@@ -52,6 +52,60 @@ func (e DeploymentTargetStage) Valid() bool {
 	}
 }
 
+// Defines values for OperationStatus.
+const (
+	Failed    OperationStatus = "failed"
+	Pending   OperationStatus = "pending"
+	Running   OperationStatus = "running"
+	Succeeded OperationStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the OperationStatus enum.
+func (e OperationStatus) Valid() bool {
+	switch e {
+	case Failed:
+		return true
+	case Pending:
+		return true
+	case Running:
+		return true
+	case Succeeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperationType.
+const (
+	ReleaseDeploy OperationType = "release.deploy"
+)
+
+// Valid indicates whether the value is a known member of the OperationType enum.
+func (e OperationType) Valid() bool {
+	switch e {
+	case ReleaseDeploy:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReleaseTargetSnapshotStage.
+const (
+	ReleaseTargetSnapshotStageDevelopment ReleaseTargetSnapshotStage = "development"
+)
+
+// Valid indicates whether the value is a known member of the ReleaseTargetSnapshotStage enum.
+func (e ReleaseTargetSnapshotStage) Valid() bool {
+	switch e {
+	case ReleaseTargetSnapshotStageDevelopment:
+		return true
+	default:
+		return false
+	}
+}
+
 // Application defines model for Application.
 type Application struct {
 	CreatedAt time.Time          `json:"createdAt"`
@@ -84,6 +138,12 @@ type CreateProjectRequest struct {
 	Slug string `json:"slug"`
 }
 
+// CreateReleaseRequest defines model for CreateReleaseRequest.
+type CreateReleaseRequest struct {
+	// ImageReference 包含 sha256 Digest 的不可变 OCI 镜像引用。
+	ImageReference string `json:"imageReference"`
+}
+
 // DeploymentTarget defines model for DeploymentTarget.
 type DeploymentTarget struct {
 	ApplicationId openapi_types.UUID    `json:"applicationId"`
@@ -107,6 +167,29 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// Operation defines model for Operation.
+type Operation struct {
+	AttemptCount   int                `json:"attemptCount"`
+	CreatedAt      time.Time          `json:"createdAt"`
+	CreatedBy      string             `json:"createdBy"`
+	ErrorCategory  *string            `json:"errorCategory,omitempty"`
+	ErrorSummary   *string            `json:"errorSummary,omitempty"`
+	FinishedAt     *time.Time         `json:"finishedAt,omitempty"`
+	Id             openapi_types.UUID `json:"id"`
+	IdempotencyKey string             `json:"idempotencyKey"`
+	ReleaseId      openapi_types.UUID `json:"releaseId"`
+	StartedAt      *time.Time         `json:"startedAt,omitempty"`
+	Status         OperationStatus    `json:"status"`
+	Type           OperationType      `json:"type"`
+	UpdatedAt      time.Time          `json:"updatedAt"`
+}
+
+// OperationStatus defines model for Operation.Status.
+type OperationStatus string
+
+// OperationType defines model for Operation.Type.
+type OperationType string
+
 // Project defines model for Project.
 type Project struct {
 	CreatedAt time.Time          `json:"createdAt"`
@@ -116,11 +199,46 @@ type Project struct {
 	Slug      string             `json:"slug"`
 }
 
+// Release defines model for Release.
+type Release struct {
+	CreatedAt          time.Time             `json:"createdAt"`
+	CreatedBy          string                `json:"createdBy"`
+	DeploymentTargetId openapi_types.UUID    `json:"deploymentTargetId"`
+	Id                 openapi_types.UUID    `json:"id"`
+	ImageReference     string                `json:"imageReference"`
+	TargetSnapshot     ReleaseTargetSnapshot `json:"targetSnapshot"`
+}
+
+// ReleaseAcceptance defines model for ReleaseAcceptance.
+type ReleaseAcceptance struct {
+	Operation Operation `json:"operation"`
+	Release   Release   `json:"release"`
+}
+
+// ReleaseTargetSnapshot defines model for ReleaseTargetSnapshot.
+type ReleaseTargetSnapshot struct {
+	ApplicationId openapi_types.UUID         `json:"applicationId"`
+	ClusterRef    string                     `json:"clusterRef"`
+	ContainerPort int                        `json:"containerPort"`
+	Namespace     string                     `json:"namespace"`
+	Replicas      int                        `json:"replicas"`
+	Stage         ReleaseTargetSnapshotStage `json:"stage"`
+}
+
+// ReleaseTargetSnapshotStage defines model for ReleaseTargetSnapshot.Stage.
+type ReleaseTargetSnapshotStage string
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
 // CreateDeploymentTargetParams defines parameters for CreateDeploymentTarget.
 type CreateDeploymentTargetParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CreateReleaseParams defines parameters for CreateRelease.
+type CreateReleaseParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
@@ -140,6 +258,9 @@ type CreateApplicationParams struct {
 // CreateDeploymentTargetJSONRequestBody defines body for CreateDeploymentTarget for application/json ContentType.
 type CreateDeploymentTargetJSONRequestBody = CreateDeploymentTargetRequest
 
+// CreateReleaseJSONRequestBody defines body for CreateRelease for application/json ContentType.
+type CreateReleaseJSONRequestBody = CreateReleaseRequest
+
 // CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
 type CreateProjectJSONRequestBody = CreateProjectRequest
 
@@ -157,6 +278,12 @@ type ServerInterface interface {
 	// GetDeploymentTarget 查询部署目标
 	// (GET /api/v1/deployment-targets/{deploymentTargetId})
 	GetDeploymentTarget(c *gin.Context, deploymentTargetId openapi_types.UUID)
+	// CreateRelease 创建发布并接纳异步操作
+	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
+	CreateRelease(c *gin.Context, deploymentTargetId openapi_types.UUID, params CreateReleaseParams)
+	// GetOperation 查询异步操作
+	// (GET /api/v1/operations/{operationId})
+	GetOperation(c *gin.Context, operationId openapi_types.UUID)
 	// CreateProject 创建项目
 	// (POST /api/v1/projects)
 	CreateProject(c *gin.Context, params CreateProjectParams)
@@ -166,6 +293,9 @@ type ServerInterface interface {
 	// CreateApplication 创建应用
 	// (POST /api/v1/projects/{projectId}/applications)
 	CreateApplication(c *gin.Context, projectId openapi_types.UUID, params CreateApplicationParams)
+	// GetRelease 查询发布
+	// (GET /api/v1/releases/{releaseId})
+	GetRelease(c *gin.Context, releaseId openapi_types.UUID)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -277,6 +407,83 @@ func (siw *ServerInterfaceWrapper) GetDeploymentTarget(c *gin.Context) {
 	}
 
 	siw.Handler.GetDeploymentTarget(c, deploymentTargetId)
+}
+
+// CreateRelease operation middleware
+func (siw *ServerInterfaceWrapper) CreateRelease(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deploymentTargetId" -------------
+	var deploymentTargetId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deploymentTargetId", c.Param("deploymentTargetId"), &deploymentTargetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deploymentTargetId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateReleaseParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateRelease(c, deploymentTargetId, params)
+}
+
+// GetOperation operation middleware
+func (siw *ServerInterfaceWrapper) GetOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operationId" -------------
+	var operationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operationId", c.Param("operationId"), &operationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOperation(c, operationId)
 }
 
 // CreateProject operation middleware
@@ -399,6 +606,31 @@ func (siw *ServerInterfaceWrapper) CreateApplication(c *gin.Context) {
 	siw.Handler.CreateApplication(c, projectId, params)
 }
 
+// GetRelease operation middleware
+func (siw *ServerInterfaceWrapper) GetRelease(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "releaseId" -------------
+	var releaseId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "releaseId", c.Param("releaseId"), &releaseId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter releaseId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetRelease(c, releaseId)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -432,6 +664,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/v1/applications/:applicationId", wrapper.GetApplication)
 	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/deployment-targets", wrapper.CreateDeploymentTarget)
 	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.GetDeploymentTarget)
+	router.POST(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/releases", wrapper.CreateRelease)
+	router.GET(options.BaseURL+"/api/v1/releases/:releaseId", wrapper.GetRelease)
+	router.GET(options.BaseURL+"/api/v1/operations/:operationId", wrapper.GetOperation)
 }
 
 type GetApplicationRequestObject struct {
@@ -598,6 +833,142 @@ type GetDeploymentTargetdefaultJSONResponse struct {
 }
 
 func (response GetDeploymentTargetdefaultJSONResponse) VisitGetDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateReleaseRequestObject struct {
+	DeploymentTargetId openapi_types.UUID `json:"deploymentTargetId"`
+	Params             CreateReleaseParams
+	Body               *CreateReleaseJSONRequestBody
+}
+
+type CreateReleaseResponseObject interface {
+	VisitCreateReleaseResponse(w http.ResponseWriter) error
+}
+
+type CreateRelease201JSONResponse ReleaseAcceptance
+
+func (response CreateRelease201JSONResponse) VisitCreateReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRelease400JSONResponse Error
+
+func (response CreateRelease400JSONResponse) VisitCreateReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRelease404JSONResponse Error
+
+func (response CreateRelease404JSONResponse) VisitCreateReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRelease409JSONResponse Error
+
+func (response CreateRelease409JSONResponse) VisitCreateReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateReleasedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateReleasedefaultJSONResponse) VisitCreateReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperationRequestObject struct {
+	OperationId openapi_types.UUID `json:"operationId"`
+}
+
+type GetOperationResponseObject interface {
+	VisitGetOperationResponse(w http.ResponseWriter) error
+}
+
+type GetOperation200JSONResponse Operation
+
+func (response GetOperation200JSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperation404JSONResponse Error
+
+func (response GetOperation404JSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetOperationdefaultJSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -785,6 +1156,59 @@ func (response CreateApplicationdefaultJSONResponse) VisitCreateApplicationRespo
 	return err
 }
 
+type GetReleaseRequestObject struct {
+	ReleaseId openapi_types.UUID `json:"releaseId"`
+}
+
+type GetReleaseResponseObject interface {
+	VisitGetReleaseResponse(w http.ResponseWriter) error
+}
+
+type GetRelease200JSONResponse Release
+
+func (response GetRelease200JSONResponse) VisitGetReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRelease404JSONResponse Error
+
+func (response GetRelease404JSONResponse) VisitGetReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReleasedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetReleasedefaultJSONResponse) VisitGetReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// GetApplication 查询应用
@@ -796,6 +1220,12 @@ type StrictServerInterface interface {
 	// GetDeploymentTarget 查询部署目标
 	// (GET /api/v1/deployment-targets/{deploymentTargetId})
 	GetDeploymentTarget(ctx context.Context, request GetDeploymentTargetRequestObject) (GetDeploymentTargetResponseObject, error)
+	// CreateRelease 创建发布并接纳异步操作
+	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
+	CreateRelease(ctx context.Context, request CreateReleaseRequestObject) (CreateReleaseResponseObject, error)
+	// GetOperation 查询异步操作
+	// (GET /api/v1/operations/{operationId})
+	GetOperation(ctx context.Context, request GetOperationRequestObject) (GetOperationResponseObject, error)
 	// CreateProject 创建项目
 	// (POST /api/v1/projects)
 	CreateProject(ctx context.Context, request CreateProjectRequestObject) (CreateProjectResponseObject, error)
@@ -805,6 +1235,9 @@ type StrictServerInterface interface {
 	// CreateApplication 创建应用
 	// (POST /api/v1/projects/{projectId}/applications)
 	CreateApplication(ctx context.Context, request CreateApplicationRequestObject) (CreateApplicationResponseObject, error)
+	// GetRelease 查询发布
+	// (GET /api/v1/releases/{releaseId})
+	GetRelease(ctx context.Context, request GetReleaseRequestObject) (GetReleaseResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx *gin.Context, request any) (any, error)
@@ -950,6 +1383,66 @@ func (sh *strictHandler) GetDeploymentTarget(ctx *gin.Context, deploymentTargetI
 	}
 }
 
+// CreateRelease operation middleware
+func (sh *strictHandler) CreateRelease(ctx *gin.Context, deploymentTargetId openapi_types.UUID, params CreateReleaseParams) {
+	var request CreateReleaseRequestObject
+
+	request.DeploymentTargetId = deploymentTargetId
+	request.Params = params
+
+	var body CreateReleaseJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateRelease(ctx, request.(CreateReleaseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateRelease")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateReleaseResponseObject); ok {
+		if err := validResponse.VisitCreateReleaseResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOperation operation middleware
+func (sh *strictHandler) GetOperation(ctx *gin.Context, operationId openapi_types.UUID) {
+	var request GetOperationRequestObject
+
+	request.OperationId = operationId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOperation(ctx, request.(GetOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetOperationResponseObject); ok {
+		if err := validResponse.VisitGetOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateProject operation middleware
 func (sh *strictHandler) CreateProject(ctx *gin.Context, params CreateProjectParams) {
 	var request CreateProjectRequestObject
@@ -1043,31 +1536,65 @@ func (sh *strictHandler) CreateApplication(ctx *gin.Context, projectId openapi_t
 	}
 }
 
+// GetRelease operation middleware
+func (sh *strictHandler) GetRelease(ctx *gin.Context, releaseId openapi_types.UUID) {
+	var request GetReleaseRequestObject
+
+	request.ReleaseId = releaseId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetRelease(ctx, request.(GetReleaseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetRelease")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetReleaseResponseObject); ok {
+		if err := validResponse.VisitGetReleaseResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7FhfTxtHEP8qaJun6syZAFHiN9JWLWqloIg3RKXN3WA28t1tdvdQXeskBIUkUqCtwkNaUjWNQspDAwqN",
-	"SoDyacrZ5ltUu+c/e3+MMaWOq+YFsb6bnZ3f/OY3s1dBludQzwVXcFSoIIoZdkAAU6tJGxzqCXCt8udQ",
-	"lr/YwC1GqCCeiwooPH4cPlyrPl47OX5aX1w5ebserv7QWD5aDjffhKsrtR+/CQ+Waq8eVp/dr++u/rW4",
-	"hAxEpPU8YBsYMpCLHUAF3VtOujMQg3s+YWCjgmA+GIhb8+BgeQ4Hf/UFuEUxjwojV68byCFuc33dQKJM",
-	"5YZcMOIWURAETVMV1QSlJWLhKIYKwrZN5P+4NMU8CkwQ4Kgwh0scDES1nyrIYoAF2BNCLuY85mCBCsjG",
-	"AnKCOIBSno2myU2FXuopsWM7+T6xszaJAMqwp8y7C5aYPN82vOQXM7YJdKBnkLJtb9zw3rDWAzI0PGZb",
-	"7rw70lC6+0g91dC+Dfd84KJH0JvB6ynP52MpHzkjWM3s2mjSimIhgEkyfjmDc1/Pyj/53I3c7IdX0gAm",
-	"cNJh6Rz+x0BLXtkBV0xjVgRxMQwszxWYuMCmPCYaURHHd1Dh2vj46LgKK1q3oSCugCIwpI6tcsBjll2t",
-	"uMBFhTy48p0ZZMMClDwqg9Ei7gBPZK35NhJRdMZsKiLf/4suSaL0GDZul9k51cAq+VwAuw1zmdKSolya",
-	"IO9SDjnFVrYm6mT/x6Q2kE/t3oLMktN4doxWcWg50MM6o2o6CbB+0Cx6fcKYx3pWHTsbYgc4b8B4dvBq",
-	"h/b7WQdrFPt/vRP30Fsv1k/lVsSd89JT2C12h4hblA+Fhxu1je2TwxcnR0+q67+GD/4ID34//em5HMFW",
-	"fgv/XBz6bHp6aijc+r52+DIaxAQRJdD3mJiaRAZaAMajzfPDI8N5GaBHwcWUoAIaHc4PjyKlhvMqGSam",
-	"xFwYMTWWc7MS43wg32uomsxjS6jQpyD0gcyIjaAzlWhUlK7ag2KymjqPiV3yGcxKY049l0e0uprPN9ut",
-	"1IO4rpp3eTQxtve/wqR6og/M9hRtNiZNU49KZS8xO6tk1XdfVpdXJL5j+bFLcx0Ve0enJ2/XwldPwqfb",
-	"SL0wh/2S+Pd913f3q6+Xwhev62+2VGFw33EwK6MCqv68Vd99Hh1OPToPo0y71TFzQrXM6Abj8QyWZQ9j",
-	"fWabkY1c+whm4sIV8VNNQTc9u3xpOTp7NA3iqiWjDFJ1MnJph0klJYM7p8vbteO92uZO9dn9cH8vfLAZ",
-	"Hh2+y6oZy9/og191bz7d2An392pH3yptX5fH+O5RVEyDUr9RPvQkxao4XahmxU5kvUuLuFDlpn0MbLPo",
-	"tQj63Dd01wPaPTqyr/Epo2tzaA6iKWYNkmYnrsZ9luomRFkM+eWgtrmT0Ob3GpnSSAVTJj/NSuuj25lS",
-	"2JGnGQqof8YbTOHrSql+K51yOqgadz72xMbmbrLX6+Xrcig1YKNwxkfqPkvruW6L/R99M8rhvaynZb11",
-	"dQ2CvwMAAP//",
+	"7FpbbxNHFP4r1pSndp11rgU/EULVRq2UKOQtCtKwe+ws8l6YmUVNLUsoN0AiF0SQUpIKigiN1IaIiyAJ",
+	"0D/TrJ38i2p21vasd+3YITiuykuUtWfmzPnOOd+5rPNIs03HtsBiFKXzyMEEm8CA+E/DOpiOzcDSpn+E",
+	"af6JDlQjhsMM20Jp5H184N1dLD5YPPi4cXhr/mB3yVv4NXi8N+utv/EW5kuP5ry9mdL23eKT24c7C//c",
+	"mkEKMvjuKcA6EKQgC5uA0rK0JBenIAI3XIOAjtKMuKAgqk2Bifk9TPzzT2Bl2RRKd/ecV5BpWOXn8wpi",
+	"0w4/kDJiWFlUKBTKW32tBh0nZ2hY6JBHWNcN/j/OjRLbAcIMoCidwTkKCnKkj/JII4AZ6IOMP2RsYmKG",
+	"0kjHDJLMMAFFJCvlLZd89CLfGnroJNc19LhDBEAx+x1iXweNDTd3DM252ZhjCjLQE8jfWz04kB7slhVS",
+	"JDwmK+Lsa3wjFzfkfyuhPQY3XKCsRdDLyssmT6VCJu9uoKy0baC3dpeDGQPCnfHqBE7+Msn/pJIXkpNf",
+	"n4sCWIOTDEt99S+Dk7OnTbDYOCZZYCfDQLMthg0LyKhNWKCVYbomSg/09/f2+2qJ5yoUhsUgCwT51/Zt",
+	"QEM7j91FGc76yIPF10wgHW5Czna4MpLGdeARuyXZSo0W9TEbFc73f3SXMcgBpnAy1Q0TZ2EMMkDA0iCG",
+	"ru/Neyt/JugU7ukfSFw2skBZovRo7mB30Vve8ZbXEiNDw4mjhxve7LL34WFpdUuwtYRJf3dPCJRve8Oo",
+	"XJ1IUwdrkJ68OPnNRSEpPYGTmVTywmR+oK9wPFA1WsRhVRtULeKEq5TUJHNqOZcyIGOQiaXhSHhGg+ks",
+	"U4dvkdhDZGL4ZAJQkOvorSkZl3rC1lEqRCLZQFarAcPUS1byRePc6ztCbNIyQ+vxEJtAaQBjY+X9E6rr",
+	"4y424gA5Sd3CA9R02JDtWiJ7lHk/pbTDVYHjOYQZZG3SYMUV1zRxnQUZwzLoVGuXajJCjEiRGxMmPis3",
+	"W2YxTFrEjzLMXCqHmgOWzr9UEHEtS/xHXU0D0IFLzWAjB3psFIoPqkcFt+/Sfdb8fIHrL5HBCsdfDc4V",
+	"pZWwe7YSqEGh8F+v4luoy09aiwd1xVkjpdck7uFmQ7S5ZZH6JxobvtgrFnbolO2rdY7wpI6+UquNsBo0",
+	"i2qA2nh4U6xhYjSLXCgi/gQWHNQ0cBgO9GvBlracOxopXU0yVeZrEqgINOXtiiS+gXLjEet0eFXXxuqq",
+	"BtnTq5Ki9uCyDCtjRzuIEXLNYCMOTXj7q6XVrYP9Zwfv14pLf3h33np7r49+e1p6NOfN/+V9uJX4YXx8",
+	"NOFt3i/tPxddBDNYDuQzBkeHkYJuAqHi8FRXd1eKI2M7YGHHQGnU25Xq6kV+izHlw6hix1BvdquS+lTN",
+	"h8Ao8HVBU1DxOu4R6Htg8uxHCU27JvJiKsVFVWdStTDXn0gd422FSb6ZOrZFhbv2pFLlzh5EVSbJUq9T",
+	"EajV8xuFn6yVb72avs831uHO8+LsPMe3L9V3aqJFrVxXKG8tt9e8jS3B/hns5tjnl3248674csZ79vLw",
+	"zaYfObRcWqLi483Dnaficv5XzXiUWmX3pKBwMSy1aYyXxc992uxtSjxy1SuoNbNd4Z/+1OGSrU+fmo0a",
+	"T8EKYVrjWhYicdJ9apeJGCXGd45mt0ofX5XWXxSf3PbevfLurHvv988yavpSF9og1x/RH62+8N69Kr1f",
+	"9rl9iV9j5Z4Ipk6JX2EP2UihKI4GqpqPlmYNU8SJIje2/OvMZNFqELQ5b8iiOzR7fKr3qUFZfGwSGauU",
+	"z233wA5LIDVz8TbnjWjvFUehy/e93dmD3SXv73nv2VxpZUG8CeVJZOmxt70ip5JUGwJJmuMf7C4W13aK",
+	"G3eLD+9EBv5iydkH+JdEF010wqm8vbfFpc3S/mvvw0xxe1P4VYh5KuxB1bzEJA0TXbXRb4Zf5O2dmtqk",
+	"0UUU6+B3Ce3NZkJop3ZB9bwpePt/bH4qz18j/tNJqaPmbXKbU0cZojgi/H2vtP6ipsf4QoGRWt+HKdY/",
+	"1XzldyoNma6un8bwnPzLl85kuWNdqt0Vuy+0U2v15rwnNP45jvZaHSKejkt1WEUe87uuNlNrU1PP9o9w",
+	"YsLhC63HVLbREWy5LVbzlXfIDWm9lfZYfivdmbRefYdWp7Vs9wA/6Gc7s3T1L8e3Fv4NAAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

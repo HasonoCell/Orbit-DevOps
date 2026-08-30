@@ -3,11 +3,11 @@ package project
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/HasonoCell/OrbitOps/internal/audit"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -103,29 +103,22 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 		return Project{}, fmt.Errorf("insert project: %w", err)
 	}
 
-	auditSummary, err := json.Marshal(map[string]string{
-		"idempotencyKey": command.IdempotencyKey,
-		"projectSlug":    command.Slug,
-	})
-	if err != nil {
-		return Project{}, fmt.Errorf("encode project audit summary: %w", err)
-	}
-
-	_, err = tx.ExecContext(
+	if err := audit.Append(
 		ctx,
-		`INSERT INTO audit_records
-		 (id, actor_id, action, target_type, target_id, summary, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		uuid.New(),
-		command.ActorID,
-		"project.create",
-		"project",
-		createdProject.ID,
-		auditSummary,
-		createdAt,
-	)
-	if err != nil {
-		return Project{}, fmt.Errorf("insert project audit record: %w", err)
+		tx,
+		audit.Entry{
+			ActorID:    command.ActorID,
+			Action:     "project.create",
+			TargetType: "project",
+			TargetID:   createdProject.ID,
+			Summary: map[string]string{
+				"idempotencyKey": command.IdempotencyKey,
+				"projectSlug":    command.Slug,
+			},
+			CreatedAt: createdAt,
+		},
+	); err != nil {
+		return Project{}, err
 	}
 
 	if err := tx.Commit(); err != nil {

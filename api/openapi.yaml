@@ -211,6 +211,115 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/deployment-targets/{deploymentTargetId}/releases:
+    post:
+      operationId: createRelease
+      summary: 创建发布并接纳异步操作
+      parameters:
+        - name: deploymentTargetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReleaseRequest"
+      responses:
+        "201":
+          description: 发布与待处理操作已原子创建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseAcceptance"
+        "400":
+          description: 镜像引用不是有效的不可变 OCI 引用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 部署目标不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 幂等键已经用于不同请求
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/releases/{releaseId}:
+    get:
+      operationId: getRelease
+      summary: 查询发布
+      parameters:
+        - name: releaseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 发布详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+        "404":
+          description: 发布不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/operations/{operationId}:
+    get:
+      operationId: getOperation
+      summary: 查询异步操作
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 操作详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "404":
+          description: 操作不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   parameters:
     IdempotencyKey:
@@ -364,6 +473,135 @@ components:
         updatedAt:
           type: string
           format: date-time
+    CreateReleaseRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - imageReference
+      properties:
+        imageReference:
+          type: string
+          minLength: 73
+          maxLength: 512
+          pattern: "^[^[:space:]@]+@sha256:[a-f0-9]{64}$"
+          description: 包含 sha256 Digest 的不可变 OCI 镜像引用。
+    ReleaseTargetSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - applicationId
+        - stage
+        - clusterRef
+        - namespace
+        - replicas
+        - containerPort
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        stage:
+          type: string
+          enum:
+            - development
+        clusterRef:
+          type: string
+        namespace:
+          type: string
+        replicas:
+          type: integer
+        containerPort:
+          type: integer
+    Release:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - deploymentTargetId
+        - imageReference
+        - targetSnapshot
+        - createdBy
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        deploymentTargetId:
+          type: string
+          format: uuid
+        imageReference:
+          type: string
+        targetSnapshot:
+          $ref: "#/components/schemas/ReleaseTargetSnapshot"
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    Operation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - type
+        - releaseId
+        - createdBy
+        - idempotencyKey
+        - status
+        - attemptCount
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - release.deploy
+        releaseId:
+          type: string
+          format: uuid
+        createdBy:
+          type: string
+        idempotencyKey:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - succeeded
+            - failed
+        attemptCount:
+          type: integer
+          minimum: 0
+        errorCategory:
+          type: string
+        errorSummary:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+    ReleaseAcceptance:
+      type: object
+      additionalProperties: false
+      required:
+        - release
+        - operation
+      properties:
+        release:
+          $ref: "#/components/schemas/Release"
+        operation:
+          $ref: "#/components/schemas/Operation"
     Error:
       type: object
       additionalProperties: false
