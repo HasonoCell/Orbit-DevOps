@@ -65,6 +65,152 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/projects/{projectId}/applications:
+    post:
+      operationId: createApplication
+      summary: 创建应用
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApplicationRequest"
+      responses:
+        "201":
+          description: 应用已创建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "404":
+          description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 幂等键已经用于不同请求
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/applications/{applicationId}:
+    get:
+      operationId: getApplication
+      summary: 查询应用
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 应用详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "404":
+          description: 应用不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/applications/{applicationId}/deployment-targets:
+    post:
+      operationId: createDeploymentTarget
+      summary: 创建部署目标
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDeploymentTargetRequest"
+      responses:
+        "201":
+          description: 部署目标已创建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentTarget"
+        "404":
+          description: 应用不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 幂等键已经用于不同请求
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/deployment-targets/{deploymentTargetId}:
+    get:
+      operationId: getDeploymentTarget
+      summary: 查询部署目标
+      parameters:
+        - name: deploymentTargetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 部署目标详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentTarget"
+        "404":
+          description: 部署目标不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   parameters:
     IdempotencyKey:
@@ -113,6 +259,109 @@ components:
         createdBy:
           type: string
         createdAt:
+          type: string
+          format: date-time
+    CreateApplicationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - slug
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 63
+          pattern: "^[a-z][a-z0-9-]*$"
+    Application:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - projectId
+        - name
+        - slug
+        - createdBy
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    CreateDeploymentTargetRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - stage
+        - replicas
+        - containerPort
+      properties:
+        stage:
+          type: string
+          enum:
+            - development
+        replicas:
+          type: integer
+          minimum: 1
+          maximum: 5
+        containerPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+    DeploymentTarget:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - applicationId
+        - stage
+        - clusterRef
+        - namespace
+        - replicas
+        - containerPort
+        - createdBy
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        stage:
+          type: string
+          enum:
+            - development
+        clusterRef:
+          type: string
+        namespace:
+          type: string
+        replicas:
+          type: integer
+        containerPort:
+          type: integer
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
           type: string
           format: date-time
     Error:

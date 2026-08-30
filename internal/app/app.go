@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/HasonoCell/OrbitOps/internal/api"
+	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/platform/database"
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/HasonoCell/OrbitOps/internal/transport/httpapi"
@@ -17,9 +18,11 @@ import (
 )
 
 type Config struct {
-	DatabaseURL   string
-	LocalActorID  string
-	MigrateOnBoot bool
+	DatabaseURL     string
+	LocalActorID    string
+	LocalClusterRef string
+	LocalNamespace  string
+	MigrateOnBoot   bool
 }
 
 type Runtime struct {
@@ -33,6 +36,12 @@ func New(ctx context.Context, config Config) (*Runtime, error) {
 	}
 	if config.LocalActorID == "" {
 		return nil, errors.New("local actor ID is required")
+	}
+	if config.LocalClusterRef == "" {
+		return nil, errors.New("local cluster reference is required")
+	}
+	if config.LocalNamespace == "" {
+		return nil, errors.New("local namespace is required")
 	}
 
 	if config.MigrateOnBoot {
@@ -57,7 +66,11 @@ func New(ctx context.Context, config Config) (*Runtime, error) {
 	}
 
 	projectModule := project.New(db)
-	server := httpapi.NewServer(projectModule, config.LocalActorID)
+	catalogModule := catalog.New(db, catalog.Config{
+		ClusterRef: config.LocalClusterRef,
+		Namespace:  config.LocalNamespace,
+	})
+	server := httpapi.NewServer(projectModule, catalogModule, config.LocalActorID)
 	strictHandler := api.NewStrictHandler(server, nil)
 
 	router := gin.New()

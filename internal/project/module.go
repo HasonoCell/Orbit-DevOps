@@ -1,21 +1,20 @@
 package project
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/HasonoCell/OrbitOps/internal/idempotency"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
 
 var (
-	ErrIdempotencyConflict = errors.New("idempotency key was already used with a different request")
+	ErrIdempotencyConflict = idempotency.ErrConflict
 	ErrNotFound            = errors.New("project not found")
 )
 
@@ -38,19 +37,20 @@ type Module struct {
 	db *sqlx.DB
 }
 
-type idempotencyRecord struct {
-	RequestHash []byte    `db:"request_hash"`
-	ResourceID  uuid.UUID `db:"resource_id"`
-}
-
 func New(db *sqlx.DB) *Module {
 	return &Module{db: db}
 }
 
 func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, error) {
-	requestHash, err := createRequestHash(command)
+	requestHash, err := idempotency.Fingerprint(struct {
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	}{
+		Name: command.Name,
+		Slug: command.Slug,
+	})
 	if err != nil {
-		return Project{}, err
+		return Project{}, fmt.Errorf("fingerprint create project: %w", err)
 	}
 
 	createdAt := time.Now().UTC()
@@ -70,29 +70,23 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 		_ = tx.Rollback()
 	}()
 
-	result, err := tx.ExecContext(
+	resourceID, isNew, err := idempotency.Claim(
 		ctx,
-		`INSERT INTO idempotency_records
-		 (actor_id, operation, idempotency_key, request_hash, resource_id, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)
-		 ON CONFLICT (actor_id, operation, idempotency_key) DO NOTHING`,
-		command.ActorID,
-		"project.create",
-		command.IdempotencyKey,
+		tx,
+		idempotency.Scope{
+			ActorID:   command.ActorID,
+			Operation: "project.create",
+			Key:       command.IdempotencyKey,
+		},
 		requestHash,
 		createdProject.ID,
 		createdAt,
 	)
 	if err != nil {
-		return Project{}, fmt.Errorf("claim idempotency key: %w", err)
+		return Project{}, err
 	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return Project{}, fmt.Errorf("inspect idempotency claim: %w", err)
-	}
-	if rowsAffected == 0 {
-		return replayProjectCreate(ctx, tx, command, requestHash)
+	if !isNew {
+		return replayProjectCreate(ctx, tx, resourceID)
 	}
 
 	_, err = tx.ExecContext(
@@ -160,46 +154,11 @@ func (m *Module) Get(ctx context.Context, id uuid.UUID) (Project, error) {
 	return existingProject, nil
 }
 
-func createRequestHash(command CreateCommand) ([]byte, error) {
-	payload, err := json.Marshal(struct {
-		Name string `json:"name"`
-		Slug string `json:"slug"`
-	}{
-		Name: command.Name,
-		Slug: command.Slug,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("encode project request fingerprint: %w", err)
-	}
-
-	requestHash := sha256.Sum256(payload)
-	return requestHash[:], nil
-}
-
 func replayProjectCreate(
 	ctx context.Context,
 	tx *sqlx.Tx,
-	command CreateCommand,
-	requestHash []byte,
+	resourceID uuid.UUID,
 ) (Project, error) {
-	var record idempotencyRecord
-	if err := tx.GetContext(
-		ctx,
-		&record,
-		`SELECT request_hash, resource_id
-		 FROM idempotency_records
-		 WHERE actor_id = $1 AND operation = $2 AND idempotency_key = $3`,
-		command.ActorID,
-		"project.create",
-		command.IdempotencyKey,
-	); err != nil {
-		return Project{}, fmt.Errorf("load idempotency record: %w", err)
-	}
-
-	if !bytes.Equal(record.RequestHash, requestHash) {
-		return Project{}, ErrIdempotencyConflict
-	}
-
 	var existingProject Project
 	if err := tx.GetContext(
 		ctx,
@@ -207,7 +166,7 @@ func replayProjectCreate(
 		`SELECT id, name, slug, created_by, created_at
 		 FROM projects
 		 WHERE id = $1`,
-		record.ResourceID,
+		resourceID,
 	); err != nil {
 		return Project{}, fmt.Errorf("load idempotent project result: %w", err)
 	}

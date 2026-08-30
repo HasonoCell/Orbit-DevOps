@@ -22,11 +22,84 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for CreateDeploymentTargetRequestStage.
+const (
+	CreateDeploymentTargetRequestStageDevelopment CreateDeploymentTargetRequestStage = "development"
+)
+
+// Valid indicates whether the value is a known member of the CreateDeploymentTargetRequestStage enum.
+func (e CreateDeploymentTargetRequestStage) Valid() bool {
+	switch e {
+	case CreateDeploymentTargetRequestStageDevelopment:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeploymentTargetStage.
+const (
+	DeploymentTargetStageDevelopment DeploymentTargetStage = "development"
+)
+
+// Valid indicates whether the value is a known member of the DeploymentTargetStage enum.
+func (e DeploymentTargetStage) Valid() bool {
+	switch e {
+	case DeploymentTargetStageDevelopment:
+		return true
+	default:
+		return false
+	}
+}
+
+// Application defines model for Application.
+type Application struct {
+	CreatedAt time.Time          `json:"createdAt"`
+	CreatedBy string             `json:"createdBy"`
+	Id        openapi_types.UUID `json:"id"`
+	Name      string             `json:"name"`
+	ProjectId openapi_types.UUID `json:"projectId"`
+	Slug      string             `json:"slug"`
+}
+
+// CreateApplicationRequest defines model for CreateApplicationRequest.
+type CreateApplicationRequest struct {
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+// CreateDeploymentTargetRequest defines model for CreateDeploymentTargetRequest.
+type CreateDeploymentTargetRequest struct {
+	ContainerPort int                                `json:"containerPort"`
+	Replicas      int                                `json:"replicas"`
+	Stage         CreateDeploymentTargetRequestStage `json:"stage"`
+}
+
+// CreateDeploymentTargetRequestStage defines model for CreateDeploymentTargetRequest.Stage.
+type CreateDeploymentTargetRequestStage string
+
 // CreateProjectRequest defines model for CreateProjectRequest.
 type CreateProjectRequest struct {
 	Name string `json:"name"`
 	Slug string `json:"slug"`
 }
+
+// DeploymentTarget defines model for DeploymentTarget.
+type DeploymentTarget struct {
+	ApplicationId openapi_types.UUID    `json:"applicationId"`
+	ClusterRef    string                `json:"clusterRef"`
+	ContainerPort int                   `json:"containerPort"`
+	CreatedAt     time.Time             `json:"createdAt"`
+	CreatedBy     string                `json:"createdBy"`
+	Id            openapi_types.UUID    `json:"id"`
+	Namespace     string                `json:"namespace"`
+	Replicas      int                   `json:"replicas"`
+	Stage         DeploymentTargetStage `json:"stage"`
+	UpdatedAt     time.Time             `json:"updatedAt"`
+}
+
+// DeploymentTargetStage defines model for DeploymentTarget.Stage.
+type DeploymentTargetStage string
 
 // Error defines model for Error.
 type Error struct {
@@ -46,23 +119,53 @@ type Project struct {
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
+// CreateDeploymentTargetParams defines parameters for CreateDeploymentTarget.
+type CreateDeploymentTargetParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // CreateProjectParams defines parameters for CreateProject.
 type CreateProjectParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// CreateApplicationParams defines parameters for CreateApplication.
+type CreateApplicationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CreateDeploymentTargetJSONRequestBody defines body for CreateDeploymentTarget for application/json ContentType.
+type CreateDeploymentTargetJSONRequestBody = CreateDeploymentTargetRequest
+
 // CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
 type CreateProjectJSONRequestBody = CreateProjectRequest
 
+// CreateApplicationJSONRequestBody defines body for CreateApplication for application/json ContentType.
+type CreateApplicationJSONRequestBody = CreateApplicationRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetApplication 查询应用
+	// (GET /api/v1/applications/{applicationId})
+	GetApplication(c *gin.Context, applicationId openapi_types.UUID)
+	// CreateDeploymentTarget 创建部署目标
+	// (POST /api/v1/applications/{applicationId}/deployment-targets)
+	CreateDeploymentTarget(c *gin.Context, applicationId openapi_types.UUID, params CreateDeploymentTargetParams)
+	// GetDeploymentTarget 查询部署目标
+	// (GET /api/v1/deployment-targets/{deploymentTargetId})
+	GetDeploymentTarget(c *gin.Context, deploymentTargetId openapi_types.UUID)
 	// CreateProject 创建项目
 	// (POST /api/v1/projects)
 	CreateProject(c *gin.Context, params CreateProjectParams)
 	// GetProject 查询项目
 	// (GET /api/v1/projects/{projectId})
 	GetProject(c *gin.Context, projectId openapi_types.UUID)
+	// CreateApplication 创建应用
+	// (POST /api/v1/projects/{projectId}/applications)
+	CreateApplication(c *gin.Context, projectId openapi_types.UUID, params CreateApplicationParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -73,6 +176,108 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetApplication operation middleware
+func (siw *ServerInterfaceWrapper) GetApplication(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "applicationId" -------------
+	var applicationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "applicationId", c.Param("applicationId"), &applicationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter applicationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetApplication(c, applicationId)
+}
+
+// CreateDeploymentTarget operation middleware
+func (siw *ServerInterfaceWrapper) CreateDeploymentTarget(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "applicationId" -------------
+	var applicationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "applicationId", c.Param("applicationId"), &applicationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter applicationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateDeploymentTargetParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateDeploymentTarget(c, applicationId, params)
+}
+
+// GetDeploymentTarget operation middleware
+func (siw *ServerInterfaceWrapper) GetDeploymentTarget(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deploymentTargetId" -------------
+	var deploymentTargetId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deploymentTargetId", c.Param("deploymentTargetId"), &deploymentTargetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deploymentTargetId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetDeploymentTarget(c, deploymentTargetId)
+}
 
 // CreateProject operation middleware
 func (siw *ServerInterfaceWrapper) CreateProject(c *gin.Context) {
@@ -142,6 +347,58 @@ func (siw *ServerInterfaceWrapper) GetProject(c *gin.Context) {
 	siw.Handler.GetProject(c, projectId)
 }
 
+// CreateApplication operation middleware
+func (siw *ServerInterfaceWrapper) CreateApplication(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateApplicationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateApplication(c, projectId, params)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -171,6 +428,185 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 
 	router.POST(options.BaseURL+"/api/v1/projects", wrapper.CreateProject)
 	router.GET(options.BaseURL+"/api/v1/projects/:projectId", wrapper.GetProject)
+	router.POST(options.BaseURL+"/api/v1/projects/:projectId/applications", wrapper.CreateApplication)
+	router.GET(options.BaseURL+"/api/v1/applications/:applicationId", wrapper.GetApplication)
+	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/deployment-targets", wrapper.CreateDeploymentTarget)
+	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.GetDeploymentTarget)
+}
+
+type GetApplicationRequestObject struct {
+	ApplicationId openapi_types.UUID `json:"applicationId"`
+}
+
+type GetApplicationResponseObject interface {
+	VisitGetApplicationResponse(w http.ResponseWriter) error
+}
+
+type GetApplication200JSONResponse Application
+
+func (response GetApplication200JSONResponse) VisitGetApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetApplication404JSONResponse Error
+
+func (response GetApplication404JSONResponse) VisitGetApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetApplicationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetApplicationdefaultJSONResponse) VisitGetApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploymentTargetRequestObject struct {
+	ApplicationId openapi_types.UUID `json:"applicationId"`
+	Params        CreateDeploymentTargetParams
+	Body          *CreateDeploymentTargetJSONRequestBody
+}
+
+type CreateDeploymentTargetResponseObject interface {
+	VisitCreateDeploymentTargetResponse(w http.ResponseWriter) error
+}
+
+type CreateDeploymentTarget201JSONResponse DeploymentTarget
+
+func (response CreateDeploymentTarget201JSONResponse) VisitCreateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploymentTarget404JSONResponse Error
+
+func (response CreateDeploymentTarget404JSONResponse) VisitCreateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploymentTarget409JSONResponse Error
+
+func (response CreateDeploymentTarget409JSONResponse) VisitCreateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploymentTargetdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateDeploymentTargetdefaultJSONResponse) VisitCreateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeploymentTargetRequestObject struct {
+	DeploymentTargetId openapi_types.UUID `json:"deploymentTargetId"`
+}
+
+type GetDeploymentTargetResponseObject interface {
+	VisitGetDeploymentTargetResponse(w http.ResponseWriter) error
+}
+
+type GetDeploymentTarget200JSONResponse DeploymentTarget
+
+func (response GetDeploymentTarget200JSONResponse) VisitGetDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeploymentTarget404JSONResponse Error
+
+func (response GetDeploymentTarget404JSONResponse) VisitGetDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeploymentTargetdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetDeploymentTargetdefaultJSONResponse) VisitGetDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type CreateProjectRequestObject struct {
@@ -280,14 +716,95 @@ func (response GetProjectdefaultJSONResponse) VisitGetProjectResponse(w http.Res
 	return err
 }
 
+type CreateApplicationRequestObject struct {
+	ProjectId openapi_types.UUID `json:"projectId"`
+	Params    CreateApplicationParams
+	Body      *CreateApplicationJSONRequestBody
+}
+
+type CreateApplicationResponseObject interface {
+	VisitCreateApplicationResponse(w http.ResponseWriter) error
+}
+
+type CreateApplication201JSONResponse Application
+
+func (response CreateApplication201JSONResponse) VisitCreateApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApplication404JSONResponse Error
+
+func (response CreateApplication404JSONResponse) VisitCreateApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApplication409JSONResponse Error
+
+func (response CreateApplication409JSONResponse) VisitCreateApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApplicationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateApplicationdefaultJSONResponse) VisitCreateApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// GetApplication 查询应用
+	// (GET /api/v1/applications/{applicationId})
+	GetApplication(ctx context.Context, request GetApplicationRequestObject) (GetApplicationResponseObject, error)
+	// CreateDeploymentTarget 创建部署目标
+	// (POST /api/v1/applications/{applicationId}/deployment-targets)
+	CreateDeploymentTarget(ctx context.Context, request CreateDeploymentTargetRequestObject) (CreateDeploymentTargetResponseObject, error)
+	// GetDeploymentTarget 查询部署目标
+	// (GET /api/v1/deployment-targets/{deploymentTargetId})
+	GetDeploymentTarget(ctx context.Context, request GetDeploymentTargetRequestObject) (GetDeploymentTargetResponseObject, error)
 	// CreateProject 创建项目
 	// (POST /api/v1/projects)
 	CreateProject(ctx context.Context, request CreateProjectRequestObject) (CreateProjectResponseObject, error)
 	// GetProject 查询项目
 	// (GET /api/v1/projects/{projectId})
 	GetProject(ctx context.Context, request GetProjectRequestObject) (GetProjectResponseObject, error)
+	// CreateApplication 创建应用
+	// (POST /api/v1/projects/{projectId}/applications)
+	CreateApplication(ctx context.Context, request CreateApplicationRequestObject) (CreateApplicationResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx *gin.Context, request any) (any, error)
@@ -345,6 +862,92 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictGinServerOptions
+}
+
+// GetApplication operation middleware
+func (sh *strictHandler) GetApplication(ctx *gin.Context, applicationId openapi_types.UUID) {
+	var request GetApplicationRequestObject
+
+	request.ApplicationId = applicationId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetApplication(ctx, request.(GetApplicationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetApplication")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetApplicationResponseObject); ok {
+		if err := validResponse.VisitGetApplicationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateDeploymentTarget operation middleware
+func (sh *strictHandler) CreateDeploymentTarget(ctx *gin.Context, applicationId openapi_types.UUID, params CreateDeploymentTargetParams) {
+	var request CreateDeploymentTargetRequestObject
+
+	request.ApplicationId = applicationId
+	request.Params = params
+
+	var body CreateDeploymentTargetJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateDeploymentTarget(ctx, request.(CreateDeploymentTargetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateDeploymentTarget")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateDeploymentTargetResponseObject); ok {
+		if err := validResponse.VisitCreateDeploymentTargetResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetDeploymentTarget operation middleware
+func (sh *strictHandler) GetDeploymentTarget(ctx *gin.Context, deploymentTargetId openapi_types.UUID) {
+	var request GetDeploymentTargetRequestObject
+
+	request.DeploymentTargetId = deploymentTargetId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetDeploymentTarget(ctx, request.(GetDeploymentTargetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDeploymentTarget")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetDeploymentTargetResponseObject); ok {
+		if err := validResponse.VisitGetDeploymentTargetResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // CreateProject operation middleware
@@ -406,25 +1009,65 @@ func (sh *strictHandler) GetProject(ctx *gin.Context, projectId openapi_types.UU
 	}
 }
 
+// CreateApplication operation middleware
+func (sh *strictHandler) CreateApplication(ctx *gin.Context, projectId openapi_types.UUID, params CreateApplicationParams) {
+	var request CreateApplicationRequestObject
+
+	request.ProjectId = projectId
+	request.Params = params
+
+	var body CreateApplicationJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateApplication(ctx, request.(CreateApplicationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateApplication")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateApplicationResponseObject); ok {
+		if err := validResponse.VisitCreateApplicationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"zFVRbxtFEP4r0dAndPadmwq199YiBBZItVDfIiNtfWN7K9/ddnevwlgnRSkOrdQEUPNQSBFQNaUPFKtQ",
-	"0cahvwav7fwLtLt2fLYvQZESxIvl27uZ+Wa+b77tQC0OWRxhJAX4HWCEkxAlcvNUDjBkscSo1v4Y2/ok",
-	"QFHjlEkaR+CDevtQ3d8aPtwavH08Xu8O3myrze8mjw/uqt1XarM7+v5Ltb8xenF/+NNX497m3+sb4ADV",
-	"0U0kAXJwICIhgp+tVtDlHOB4O6EcA/AlT9ABUWtiSDSOkHz+CUYN2QS/dPGyAyGNps+XHZBtphMKyWnU",
-	"gDRNp6Gmq/c5EokVHt/CmvwUbycopD4nQUB1Y6RV4TFDLikK8OukJdABljnqTBDPw/C8ORilJRgOiFbS",
-	"WAh7b3UxihEpkesBfbZGCl9U9Y9XuFKovnsBllvLDmnN4prUqR59HN/UnWoAH3Ae81P2WosD0+tSNyEK",
-	"QRp57xZQmQyz7/OATdg4LTTDZHDVxNVjHhIJPgREYkFSM4kl0JOQa+3clmgwlylJaJCXZEr/sQSfPA+T",
-	"NEtVFpaT6Wp5UjoVjerx8i5e5zepvM7EiurvjHaeD/pPBwePhtu/qHt/qv0/Dn94ohex+6v6a33loxs3",
-	"Kitq79tR/5ldR0llC7M5rlbK4MAd5MIm94qloqcbjBlGhFHwYbXoFVfByLVpyHAJo+6dksssldZOYrta",
-	"mjSigZYD8OcX0KSYmc5aBy5wrIMP77gza3Jnn7gLppRW7XBRyGtx0LaKjSRGVkyMtWjNlHZvCd1LJ+Mi",
-	"eZUmRuHmukQ6T6V2JXMgWBwJq8mLXunMMExHZMrO03348/5o9zf1+nd1b1cd9DU3l7wrZ1bZGkVOXevl",
-	"hzu69Ojga6O07cGbLfXNg3Hv9fDlBpiQOkla8vzR2JLq6cvxqz2zZiIJQ8LbGqiZix2TebWoT7cz+VcO",
-	"Ug2ggTlS/RDlsTo1l5iW/+wKO8p44uX1L/5iFT0nKe+/k9S492x4t2v1dOn8GbRFtYBePFKPn/9f1DP8",
-	"cW/ce3KknjT9JwAA//8=",
+	"7FhfTxtHEP8qaJun6syZAFHiN9JWLWqloIg3RKXN3WA28t1tdvdQXeskBIUkUqCtwkNaUjWNQspDAwqN",
+	"SoDyacrZ5ltUu+c/e3+MMaWOq+YFsb6bnZ3f/OY3s1dBludQzwVXcFSoIIoZdkAAU6tJGxzqCXCt8udQ",
+	"lr/YwC1GqCCeiwooPH4cPlyrPl47OX5aX1w5ebserv7QWD5aDjffhKsrtR+/CQ+Waq8eVp/dr++u/rW4",
+	"hAxEpPU8YBsYMpCLHUAF3VtOujMQg3s+YWCjgmA+GIhb8+BgeQ4Hf/UFuEUxjwojV68byCFuc33dQKJM",
+	"5YZcMOIWURAETVMV1QSlJWLhKIYKwrZN5P+4NMU8CkwQ4Kgwh0scDES1nyrIYoAF2BNCLuY85mCBCsjG",
+	"AnKCOIBSno2myU2FXuopsWM7+T6xszaJAMqwp8y7C5aYPN82vOQXM7YJdKBnkLJtb9zw3rDWAzI0PGZb",
+	"7rw70lC6+0g91dC+Dfd84KJH0JvB6ynP52MpHzkjWM3s2mjSimIhgEkyfjmDc1/Pyj/53I3c7IdX0gAm",
+	"cNJh6Rz+x0BLXtkBV0xjVgRxMQwszxWYuMCmPCYaURHHd1Dh2vj46LgKK1q3oSCugCIwpI6tcsBjll2t",
+	"uMBFhTy48p0ZZMMClDwqg9Ei7gBPZK35NhJRdMZsKiLf/4suSaL0GDZul9k51cAq+VwAuw1zmdKSolya",
+	"IO9SDjnFVrYm6mT/x6Q2kE/t3oLMktN4doxWcWg50MM6o2o6CbB+0Cx6fcKYx3pWHTsbYgc4b8B4dvBq",
+	"h/b7WQdrFPt/vRP30Fsv1k/lVsSd89JT2C12h4hblA+Fhxu1je2TwxcnR0+q67+GD/4ID34//em5HMFW",
+	"fgv/XBz6bHp6aijc+r52+DIaxAQRJdD3mJiaRAZaAMajzfPDI8N5GaBHwcWUoAIaHc4PjyKlhvMqGSam",
+	"xFwYMTWWc7MS43wg32uomsxjS6jQpyD0gcyIjaAzlWhUlK7ag2KymjqPiV3yGcxKY049l0e0uprPN9ut",
+	"1IO4rpp3eTQxtve/wqR6og/M9hRtNiZNU49KZS8xO6tk1XdfVpdXJL5j+bFLcx0Ve0enJ2/XwldPwqfb",
+	"SL0wh/2S+Pd913f3q6+Xwhev62+2VGFw33EwK6MCqv68Vd99Hh1OPToPo0y71TFzQrXM6Abj8QyWZQ9j",
+	"fWabkY1c+whm4sIV8VNNQTc9u3xpOTp7NA3iqiWjDFJ1MnJph0klJYM7p8vbteO92uZO9dn9cH8vfLAZ",
+	"Hh2+y6oZy9/og191bz7d2An392pH3yptX5fH+O5RVEyDUr9RPvQkxao4XahmxU5kvUuLuFDlpn0MbLPo",
+	"tQj63Dd01wPaPTqyr/Epo2tzaA6iKWYNkmYnrsZ9luomRFkM+eWgtrmT0Ob3GpnSSAVTJj/NSuuj25lS",
+	"2JGnGQqof8YbTOHrSql+K51yOqgadz72xMbmbrLX6+Xrcig1YKNwxkfqPkvruW6L/R99M8rhvaynZb11",
+	"dQ2CvwMAAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -5,12 +5,14 @@ import (
 	"errors"
 
 	"github.com/HasonoCell/OrbitOps/internal/api"
+	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/gin-gonic/gin"
 )
 
 type Server struct {
 	projects     *project.Module
+	catalog      *catalog.Module
 	localActorID string
 }
 
@@ -18,10 +20,7 @@ func (s *Server) GetProject(
 	ctx context.Context,
 	request api.GetProjectRequestObject,
 ) (api.GetProjectResponseObject, error) {
-	requestContext := ctx
-	if ginContext, ok := ctx.(*gin.Context); ok {
-		requestContext = ginContext.Request.Context()
-	}
+	requestContext := httpRequestContext(ctx)
 
 	existingProject, err := s.projects.Get(requestContext, request.ProjectId)
 	if err != nil {
@@ -43,9 +42,14 @@ func (s *Server) GetProject(
 	}, nil
 }
 
-func NewServer(projects *project.Module, localActorID string) *Server {
+func NewServer(
+	projects *project.Module,
+	catalogModule *catalog.Module,
+	localActorID string,
+) *Server {
 	return &Server{
 		projects:     projects,
+		catalog:      catalogModule,
 		localActorID: localActorID,
 	}
 }
@@ -54,10 +58,7 @@ func (s *Server) CreateProject(
 	ctx context.Context,
 	request api.CreateProjectRequestObject,
 ) (api.CreateProjectResponseObject, error) {
-	requestContext := ctx
-	if ginContext, ok := ctx.(*gin.Context); ok {
-		requestContext = ginContext.Request.Context()
-	}
+	requestContext := httpRequestContext(ctx)
 
 	createdProject, err := s.projects.Create(requestContext, project.CreateCommand{
 		Name:           request.Body.Name,
@@ -82,4 +83,11 @@ func (s *Server) CreateProject(
 		CreatedBy: createdProject.CreatedBy,
 		CreatedAt: createdProject.CreatedAt,
 	}, nil
+}
+
+func httpRequestContext(ctx context.Context) context.Context {
+	if ginContext, ok := ctx.(*gin.Context); ok {
+		return ginContext.Request.Context()
+	}
+	return ctx
 }
