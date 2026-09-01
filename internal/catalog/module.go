@@ -136,9 +136,9 @@ func (m *Module) CreateApplication(
 		ctx,
 		tx,
 		idempotency.Scope{
-			ActorID:   command.ActorID,
-			Operation: "application.create",
-			Key:       command.IdempotencyKey,
+			ActorID:     command.ActorID,
+			CommandType: "application.create",
+			Key:         command.IdempotencyKey,
 		},
 		requestHash,
 		created.ID,
@@ -270,9 +270,9 @@ func (m *Module) CreateDeploymentTarget(
 		ctx,
 		tx,
 		idempotency.Scope{
-			ActorID:   command.ActorID,
-			Operation: "deployment_target.create",
-			Key:       command.IdempotencyKey,
+			ActorID:     command.ActorID,
+			CommandType: "deployment_target.create",
+			Key:         command.IdempotencyKey,
 		},
 		requestHash,
 		created.ID,
@@ -409,9 +409,9 @@ func (m *Module) UpdateDeploymentTarget(
 	}
 
 	scope := idempotency.Scope{
-		ActorID:   command.ActorID,
-		Operation: "deployment_target.update",
-		Key:       command.IdempotencyKey,
+		ActorID:     command.ActorID,
+		CommandType: "deployment_target.update",
+		Key:         command.IdempotencyKey,
 	}
 	updatedAt := time.Now().UTC()
 	_, isNew, err := idempotency.Claim(

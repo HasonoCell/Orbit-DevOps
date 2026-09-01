@@ -16,9 +16,9 @@ import (
 var ErrConflict = errors.New("idempotency key was already used with a different request")
 
 type Scope struct {
-	ActorID   string
-	Operation string
-	Key       string
+	ActorID     string
+	CommandType string
+	Key         string
 }
 
 type record struct {
@@ -47,11 +47,11 @@ func Claim(
 	result, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO idempotency_records
-		 (actor_id, operation, idempotency_key, request_hash, resource_id, created_at)
+		 (actor_id, command_type, idempotency_key, request_hash, resource_id, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6)
-		 ON CONFLICT (actor_id, operation, idempotency_key) DO NOTHING`,
+		 ON CONFLICT (actor_id, command_type, idempotency_key) DO NOTHING`,
 		scope.ActorID,
-		scope.Operation,
+		scope.CommandType,
 		scope.Key,
 		requestHash,
 		proposedResourceID,
@@ -75,9 +75,9 @@ func Claim(
 		&existing,
 		`SELECT request_hash, resource_id
 		 FROM idempotency_records
-		 WHERE actor_id = $1 AND operation = $2 AND idempotency_key = $3`,
+		 WHERE actor_id = $1 AND command_type = $2 AND idempotency_key = $3`,
 		scope.ActorID,
-		scope.Operation,
+		scope.CommandType,
 		scope.Key,
 	); err != nil {
 		return uuid.Nil, false, fmt.Errorf("load idempotency record: %w", err)
@@ -104,10 +104,10 @@ func StoreResponse(
 		ctx,
 		`UPDATE idempotency_records
 		 SET response_payload = $1
-		 WHERE actor_id = $2 AND operation = $3 AND idempotency_key = $4`,
+		 WHERE actor_id = $2 AND command_type = $3 AND idempotency_key = $4`,
 		payload,
 		scope.ActorID,
-		scope.Operation,
+		scope.CommandType,
 		scope.Key,
 	)
 	if err != nil {
@@ -135,9 +135,9 @@ func LoadResponse(
 		&payload,
 		`SELECT response_payload
 		 FROM idempotency_records
-		 WHERE actor_id = $1 AND operation = $2 AND idempotency_key = $3`,
+		 WHERE actor_id = $1 AND command_type = $2 AND idempotency_key = $3`,
 		scope.ActorID,
-		scope.Operation,
+		scope.CommandType,
 		scope.Key,
 	); err != nil {
 		return fmt.Errorf("load idempotent response: %w", err)

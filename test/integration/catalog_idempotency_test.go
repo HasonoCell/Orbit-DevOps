@@ -1,8 +1,10 @@
 package integration_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
 )
 
@@ -98,5 +100,23 @@ func TestCatalogWritesAreScopedAndIdempotent(t *testing.T) {
 	}
 	if errorDocument.Code != "idempotency_conflict" {
 		t.Errorf("conflict code = %q, want %q", errorDocument.Code, "idempotency_conflict")
+	}
+
+	db := openTestDatabase(t, environment.databaseURL)
+	var commandTypes []string
+	if err := db.SelectContext(
+		context.Background(),
+		&commandTypes,
+		`SELECT command_type FROM idempotency_records ORDER BY command_type`,
+	); err != nil {
+		t.Fatalf("load idempotency command types: %v", err)
+	}
+	wantCommandTypes := []string{
+		"application.create",
+		"deployment_target.create",
+		"project.create",
+	}
+	if !slices.Equal(commandTypes, wantCommandTypes) {
+		t.Errorf("command types = %q, want %q", commandTypes, wantCommandTypes)
 	}
 }

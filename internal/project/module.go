@@ -74,9 +74,9 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 		ctx,
 		tx,
 		idempotency.Scope{
-			ActorID:   command.ActorID,
-			Operation: "project.create",
-			Key:       command.IdempotencyKey,
+			ActorID:     command.ActorID,
+			CommandType: "project.create",
+			Key:         command.IdempotencyKey,
 		},
 		requestHash,
 		createdProject.ID,

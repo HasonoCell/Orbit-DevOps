@@ -167,9 +167,9 @@ func (m *Module) CreateRelease(
 		ctx,
 		tx,
 		idempotency.Scope{
-			ActorID:   command.ActorID,
-			Operation: "release.create",
-			Key:       command.IdempotencyKey,
+			ActorID:     command.ActorID,
+			CommandType: "release.create",
+			Key:         command.IdempotencyKey,
 		},
 		requestHash,
 		release.ID,
