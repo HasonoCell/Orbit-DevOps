@@ -17,6 +17,7 @@ var ErrConflict = errors.New("idempotency key was already used with a different 
 
 type conflictRecorderKey struct{}
 
+// ConflictRecorder 只接收稳定命令类型，避免幂等键和请求内容进入指标标签。
 type ConflictRecorder interface {
 	RecordIdempotencyConflict(commandType string)
 }

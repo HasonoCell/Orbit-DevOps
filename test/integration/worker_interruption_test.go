@@ -104,6 +104,13 @@ func TestWorkerRecoversAcrossRealProcessInterruptions(t *testing.T) {
 					testCase.wantObserveCalls,
 				)
 			}
+			snapshot, err := operations.ReadMetricsSnapshot(context.Background())
+			if err != nil {
+				t.Fatalf("read recovery metrics snapshot: %v", err)
+			}
+			if got := labeledCount(snapshot.Events, "operation.reclaimed"); got != 1 {
+				t.Errorf("operation.reclaimed metric = %d, want 1", got)
+			}
 		})
 	}
 }
@@ -200,4 +207,13 @@ func (p processInterruptionPublisher) Publish(ctx context.Context, _ worker.Publ
 		return ctx.Err()
 	}
 	return nil
+}
+
+func labeledCount(counts []operation.LabeledCount, label string) int {
+	for _, count := range counts {
+		if count.Label == label {
+			return count.Count
+		}
+	}
+	return 0
 }

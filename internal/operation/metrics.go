@@ -10,6 +10,7 @@ type LabeledCount struct {
 	Count int    `db:"count"`
 }
 
+// MetricsSnapshot 汇总可以从 PostgreSQL 重新构建的低基数 Operation 事实。
 type MetricsSnapshot struct {
 	Statuses          []LabeledCount
 	PendingAvailable  int
@@ -36,19 +37,30 @@ func (m *Module) ReadMetricsSnapshot(ctx context.Context) (MetricsSnapshot, erro
 	if err := m.db.QueryRowxContext(
 		ctx,
 		`SELECT
-		 count(*) FILTER (WHERE status = 'pending' AND available_at <= now())::integer,
-		 count(*) FILTER (WHERE status = 'pending' AND available_at > now())::integer
+		 count(*) FILTER (WHERE status = 'pending' AND available_at <= $1)::integer,
+		 count(*) FILTER (WHERE status = 'pending' AND available_at > $1)::integer
 		 FROM operations`,
+		m.now(),
 	).Scan(&snapshot.PendingAvailable, &snapshot.PendingDelayed); err != nil {
 		return MetricsSnapshot{}, fmt.Errorf("count pending availability: %w", err)
 	}
 	if err := m.db.SelectContext(
 		ctx,
 		&snapshot.Events,
-		`SELECT action AS label, count(*)::integer AS count
-		 FROM audit_records
-		 WHERE target_type = 'operation'
-		 GROUP BY action`,
+		`SELECT label, sum(count)::integer AS count
+		 FROM (
+		   SELECT action AS label, count(*)::integer AS count
+		   FROM audit_records
+		   WHERE target_type = 'operation'
+		   GROUP BY action
+		   UNION ALL
+		   SELECT 'operation.reclaimed' AS label, count(*)::integer AS count
+		   FROM audit_records
+		   WHERE target_type = 'operation'
+		     AND action = 'operation.claimed'
+		     AND summary->>'recovery' = 'true'
+		 ) AS event_counts
+		 GROUP BY label`,
 	); err != nil {
 		return MetricsSnapshot{}, fmt.Errorf("count operation events: %w", err)
 	}

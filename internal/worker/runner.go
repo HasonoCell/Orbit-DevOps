@@ -45,6 +45,7 @@ type OperationRecorder interface {
 	RecordOperation(status string, category string, duration time.Duration)
 }
 
+// OperationPhaseRecorder 可选地记录 Worker 各固定执行阶段耗时。
 type OperationPhaseRecorder interface {
 	RecordOperationPhase(phase string, duration time.Duration)
 }

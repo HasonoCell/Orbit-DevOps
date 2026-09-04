@@ -27,6 +27,7 @@ type Permission string
 
 type denialRecorderKey struct{}
 
+// DenialRecorder 记录稳定授权拒绝原因，不暴露 Actor 或项目标识。
 type DenialRecorder interface {
 	RecordAuthorizationDenial(reason string)
 }

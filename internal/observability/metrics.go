@@ -15,6 +15,8 @@ import (
 )
 
 type PendingCounter func(context.Context) (int, error)
+
+// OperationSnapshotReader 读取由数据库权威事实重建的 Operation 指标快照。
 type OperationSnapshotReader func(context.Context) (operation.MetricsSnapshot, error)
 
 type Metrics struct {
@@ -112,6 +114,7 @@ func NewMetrics(pending PendingCounter) *Metrics {
 	return metrics
 }
 
+// RegisterOperations 注册数据库快照读取器；同一个 Metrics 实例只绑定一个运行时。
 func (m *Metrics) RegisterOperations(reader OperationSnapshotReader) {
 	if reader == nil {
 		return
@@ -158,6 +161,7 @@ func (m *Metrics) RecordOperation(status string, category string, duration time.
 	m.operationTerminal.WithLabelValues(status, category).Inc()
 }
 
+// RecordOperationPhase 记录固定阶段集合的耗时，调用方不得把动态值作为 phase。
 func (m *Metrics) RecordOperationPhase(phase string, duration time.Duration) {
 	m.operationPhase.WithLabelValues(phase).Observe(duration.Seconds())
 }
@@ -166,10 +170,12 @@ func (m *Metrics) RecordKubernetesReadFailure() {
 	m.kubernetesReadFail.Inc()
 }
 
+// RecordAuthorizationDenial 记录受控拒绝类别，不接收 Actor 或资源标识。
 func (m *Metrics) RecordAuthorizationDenial(reason string) {
 	m.authorizationDeny.WithLabelValues(reason).Inc()
 }
 
+// RecordIdempotencyConflict 按稳定命令类型记录指纹冲突。
 func (m *Metrics) RecordIdempotencyConflict(commandType string) {
 	m.idempotencyConflict.WithLabelValues(commandType).Inc()
 }

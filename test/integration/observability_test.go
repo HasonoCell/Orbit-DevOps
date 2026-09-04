@@ -64,6 +64,13 @@ func TestHealthAndMetricsExposeControlPlaneState(t *testing.T) {
 	if conflict.StatusCode != http.StatusConflict {
 		t.Fatalf("metrics idempotency conflict status = %d", conflict.StatusCode)
 	}
+	snapshot, err := operations.ReadMetricsSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("read operation metrics snapshot: %v", err)
+	}
+	if snapshot.PendingAvailable != 1 || snapshot.PendingDelayed != 1 {
+		t.Fatalf("pending operation metrics snapshot = %#v", snapshot)
+	}
 
 	health := environment.get(t, "/healthz")
 	defer health.Body.Close()

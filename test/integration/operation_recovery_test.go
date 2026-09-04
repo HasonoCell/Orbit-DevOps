@@ -286,6 +286,16 @@ func TestDeveloperCanReconcileButOnlyOwnerCanForceFail(t *testing.T) {
 		*reconciled.ErrorCode != "ownership_conflict" {
 		t.Fatalf("developer reconciliation = %#v", reconciled)
 	}
+	developerRetry := requestJSON(
+		t,
+		developerServer,
+		http.MethodPost,
+		"/api/v1/operations/"+acceptance.Operation.ID+"/retry",
+		"developer-retry-unknown-operation",
+		"",
+	)
+	defer developerRetry.Body.Close()
+	assertError(t, developerRetry, http.StatusForbidden, "project_permission_denied")
 
 	developerFail := requestJSON(
 		t,
