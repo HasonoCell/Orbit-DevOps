@@ -25,7 +25,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 		operationTimeout  time.Duration
 		wantStatus        string
 		wantAttemptStatus string
-		wantErrorCategory string
+		wantErrorCode     string
 	}{
 		{
 			name:              "successful rollout",
@@ -39,7 +39,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 			operationTimeout:  2 * time.Second,
 			wantStatus:        operation.StatusFailed,
 			wantAttemptStatus: operation.AttemptFailed,
-			wantErrorCategory: "image_pull_failed",
+			wantErrorCode:     "image_pull_failed",
 		},
 		{
 			name:              "rollout timeout",
@@ -47,7 +47,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 			operationTimeout:  100 * time.Millisecond,
 			wantStatus:        operation.StatusFailed,
 			wantAttemptStatus: operation.AttemptFailed,
-			wantErrorCategory: "rollout_timeout",
+			wantErrorCode:     "rollout_timeout",
 		},
 	}
 
@@ -139,16 +139,26 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 			if current.FinishedAt == nil || attempt.FinishedAt == nil {
 				t.Error("terminal operation or attempt has no finishedAt")
 			}
-			if testCase.wantErrorCategory == "" {
-				if current.ErrorCategory != nil || attempt.ErrorCategory != nil {
-					t.Error("successful operation contains an error category")
+			if testCase.wantErrorCode == "" {
+				if current.ErrorCode != nil || attempt.ErrorCode != nil {
+					t.Error("successful operation contains an error code")
 				}
 			} else {
-				if current.ErrorCategory == nil || *current.ErrorCategory != testCase.wantErrorCategory {
-					t.Errorf("operation error category = %v, want %q", current.ErrorCategory, testCase.wantErrorCategory)
+				if current.ErrorCode == nil || *current.ErrorCode != testCase.wantErrorCode {
+					t.Errorf("operation error code = %v, want %q", current.ErrorCode, testCase.wantErrorCode)
 				}
-				if attempt.ErrorCategory == nil || *attempt.ErrorCategory != testCase.wantErrorCategory {
-					t.Errorf("attempt error category = %v, want %q", attempt.ErrorCategory, testCase.wantErrorCategory)
+				if attempt.ErrorCode == nil || *attempt.ErrorCode != testCase.wantErrorCode {
+					t.Errorf("attempt error code = %v, want %q", attempt.ErrorCode, testCase.wantErrorCode)
+				}
+				if current.RetryDisposition == nil ||
+					*current.RetryDisposition != operation.NonRetryable ||
+					attempt.RetryDisposition == nil ||
+					*attempt.RetryDisposition != operation.NonRetryable {
+					t.Errorf(
+						"retry dispositions = operation %v, attempt %v; want non_retryable",
+						current.RetryDisposition,
+						attempt.RetryDisposition,
+					)
 				}
 			}
 
@@ -158,7 +168,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read worker metrics: %v", err)
 			}
-			category := testCase.wantErrorCategory
+			category := testCase.wantErrorCode
 			if category == "" {
 				category = "none"
 			}

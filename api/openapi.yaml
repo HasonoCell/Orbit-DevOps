@@ -913,6 +913,12 @@ components:
         createdAt:
           type: string
           format: date-time
+    RetryDisposition:
+      type: string
+      enum:
+        - retryable
+        - non_retryable
+        - unknown_outcome
     Operation:
       type: object
       additionalProperties: false
@@ -920,10 +926,14 @@ components:
         - id
         - type
         - releaseId
+        - deploymentTargetId
         - createdBy
         - idempotencyKey
         - status
         - attemptCount
+        - automaticRetryCount
+        - queuedAt
+        - availableAt
         - createdAt
         - updatedAt
         - attempts
@@ -938,6 +948,9 @@ components:
         releaseId:
           type: string
           format: uuid
+        deploymentTargetId:
+          type: string
+          format: uuid
         createdBy:
           type: string
         idempotencyKey:
@@ -947,15 +960,29 @@ components:
           enum:
             - pending
             - running
+            - cancel_requested
             - succeeded
             - failed
+            - canceled
+            - attention_required
         attemptCount:
           type: integer
           minimum: 0
-        errorCategory:
+        automaticRetryCount:
+          type: integer
+          minimum: 0
+        errorCode:
           type: string
         errorSummary:
           type: string
+        retryDisposition:
+          $ref: "#/components/schemas/RetryDisposition"
+        queuedAt:
+          type: string
+          format: date-time
+        availableAt:
+          type: string
+          format: date-time
         createdAt:
           type: string
           format: date-time
@@ -996,10 +1023,14 @@ components:
             - running
             - succeeded
             - failed
-        errorCategory:
+            - canceled
+            - outcome_unknown
+        errorCode:
           type: string
         errorSummary:
           type: string
+        retryDisposition:
+          $ref: "#/components/schemas/RetryDisposition"
         startedAt:
           type: string
           format: date-time

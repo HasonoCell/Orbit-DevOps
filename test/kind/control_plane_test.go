@@ -78,8 +78,8 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 		if current.Status != operation.StatusFailed {
 			t.Errorf("operation status = %q, want failed", current.Status)
 		}
-		if current.ErrorCategory == nil || *current.ErrorCategory != "image_pull_failed" {
-			t.Errorf("operation errorCategory = %v, want image_pull_failed", current.ErrorCategory)
+		if current.ErrorCode == nil || *current.ErrorCode != "image_pull_failed" {
+			t.Errorf("operation errorCode = %v, want image_pull_failed", current.ErrorCode)
 		}
 		if len(current.Attempts) != 1 || current.Attempts[0].Status != operation.AttemptFailed {
 			t.Errorf("operation attempts = %#v, want one failed attempt", current.Attempts)
@@ -107,10 +107,10 @@ type releaseAcceptance struct {
 }
 
 type operationResponse struct {
-	Status        string                     `json:"status"`
-	AttemptCount  int                        `json:"attemptCount"`
-	ErrorCategory *string                    `json:"errorCategory"`
-	Attempts      []operationAttemptResponse `json:"attempts"`
+	Status       string                     `json:"status"`
+	AttemptCount int                        `json:"attemptCount"`
+	ErrorCode    *string                    `json:"errorCode"`
+	Attempts     []operationAttemptResponse `json:"attempts"`
 }
 
 type operationAttemptResponse struct {

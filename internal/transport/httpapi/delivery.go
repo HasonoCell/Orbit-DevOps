@@ -156,20 +156,25 @@ func releaseResponse(release delivery.Release) api.Release {
 
 func operationResponse(record operation.Record) api.Operation {
 	return api.Operation{
-		Id:             record.ID,
-		Type:           api.OperationType(record.Type),
-		ReleaseId:      record.ReleaseID,
-		CreatedBy:      record.CreatedBy,
-		IdempotencyKey: record.IdempotencyKey,
-		Status:         api.OperationStatus(record.Status),
-		AttemptCount:   record.AttemptCount,
-		ErrorCategory:  record.ErrorCategory,
-		ErrorSummary:   record.ErrorSummary,
-		CreatedAt:      record.CreatedAt,
-		UpdatedAt:      record.UpdatedAt,
-		StartedAt:      record.StartedAt,
-		FinishedAt:     record.FinishedAt,
-		Attempts:       operationAttemptResponses(record.Attempts),
+		Id:                  record.ID,
+		Type:                api.OperationType(record.Type),
+		ReleaseId:           record.ReleaseID,
+		DeploymentTargetId:  record.DeploymentTargetID,
+		CreatedBy:           record.CreatedBy,
+		IdempotencyKey:      record.IdempotencyKey,
+		Status:              api.OperationStatus(record.Status),
+		AttemptCount:        record.AttemptCount,
+		AutomaticRetryCount: record.AutomaticRetryCount,
+		ErrorCode:           record.ErrorCode,
+		ErrorSummary:        record.ErrorSummary,
+		RetryDisposition:    operationRetryDisposition(record.RetryDisposition),
+		QueuedAt:            record.QueuedAt,
+		AvailableAt:         record.AvailableAt,
+		CreatedAt:           record.CreatedAt,
+		UpdatedAt:           record.UpdatedAt,
+		StartedAt:           record.StartedAt,
+		FinishedAt:          record.FinishedAt,
+		Attempts:            operationAttemptResponses(record.Attempts),
 	}
 }
 
@@ -177,15 +182,24 @@ func operationAttemptResponses(attempts []operation.Attempt) []api.OperationAtte
 	responses := make([]api.OperationAttempt, 0, len(attempts))
 	for _, attempt := range attempts {
 		responses = append(responses, api.OperationAttempt{
-			Id:            attempt.ID,
-			Number:        attempt.Number,
-			WorkerId:      attempt.WorkerID,
-			Status:        api.OperationAttemptStatus(attempt.Status),
-			ErrorCategory: attempt.ErrorCategory,
-			ErrorSummary:  attempt.ErrorSummary,
-			StartedAt:     attempt.StartedAt,
-			FinishedAt:    attempt.FinishedAt,
+			Id:               attempt.ID,
+			Number:           attempt.Number,
+			WorkerId:         attempt.WorkerID,
+			Status:           api.OperationAttemptStatus(attempt.Status),
+			ErrorCode:        attempt.ErrorCode,
+			ErrorSummary:     attempt.ErrorSummary,
+			RetryDisposition: operationRetryDisposition(attempt.RetryDisposition),
+			StartedAt:        attempt.StartedAt,
+			FinishedAt:       attempt.FinishedAt,
 		})
 	}
 	return responses
+}
+
+func operationRetryDisposition(value *string) *api.RetryDisposition {
+	if value == nil {
+		return nil
+	}
+	disposition := api.RetryDisposition(*value)
+	return &disposition
 }

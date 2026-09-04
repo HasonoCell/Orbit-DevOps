@@ -54,24 +54,35 @@ type Publisher interface {
 }
 
 type FailureError struct {
-	category string
-	summary  string
+	code        string
+	summary     string
+	disposition string
 }
 
-func NewFailure(category string, summary string) *FailureError {
-	return &FailureError{category: category, summary: summary}
+// NewFailure 创建不可自动重试的稳定失败，适用于配置、资源或所有权问题。
+func NewFailure(code string, summary string) *FailureError {
+	return &FailureError{code: code, summary: summary, disposition: operation.NonRetryable}
+}
+
+// NewRetryableFailure 创建可由调度器自动重试的瞬时失败。
+func NewRetryableFailure(code string, summary string) *FailureError {
+	return &FailureError{code: code, summary: summary, disposition: operation.Retryable}
 }
 
 func (e *FailureError) Error() string {
 	return e.summary
 }
 
-func (e *FailureError) Category() string {
-	return e.category
+func (e *FailureError) Code() string {
+	return e.code
 }
 
 func (e *FailureError) Summary() string {
 	return e.summary
+}
+
+func (e *FailureError) Disposition() string {
+	return e.disposition
 }
 
 type Runner struct {
@@ -181,15 +192,16 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 	release, err := r.releases.GetRelease(attemptContext, lease.ReleaseID)
 	if err != nil {
 		failure := operation.Failure{
-			Category: "release_load_failed",
-			Summary:  "accepted release could not be loaded for delivery",
+			Code:        "release_load_failed",
+			Summary:     "accepted release could not be loaded for delivery",
+			Disposition: operation.NonRetryable,
 		}
-		if completionErr := r.operations.Fail(attemptContext, lease, failure); completionErr != nil {
+		if _, completionErr := r.operations.Fail(attemptContext, lease, failure); completionErr != nil {
 			return true, errors.Join(err, completionErr)
 		}
-		r.recordTerminal(operation.StatusFailed, failure.Category, attemptStartedAt)
+		r.recordTerminal(operation.StatusFailed, failure.Code, attemptStartedAt)
 		span.RecordError(err)
-		span.SetStatus(codes.Error, failure.Category)
+		span.SetStatus(codes.Error, failure.Code)
 		return true, fmt.Errorf("load claimed release: %w", err)
 	}
 
@@ -258,20 +270,33 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 	}
 
 	failure := classifyFailure(publishErr, executionErr)
-	if err := r.operations.Fail(attemptContext, lease, failure); err != nil {
+	failureResult, err := r.operations.Fail(attemptContext, lease, failure)
+	if err != nil {
 		return true, err
 	}
-	r.recordTerminal(operation.StatusFailed, failure.Category, attemptStartedAt)
 	if publishErr != nil {
 		span.RecordError(publishErr)
 	}
-	span.SetStatus(codes.Error, failure.Category)
+	span.SetStatus(codes.Error, failure.Code)
+	if failureResult.RetryScheduled {
+		r.logger.WarnContext(attemptContext, "发布操作失败，已安排自动重试",
+			"operation_id", lease.OperationID,
+			"attempt_id", lease.AttemptID,
+			"release_id", release.ID,
+			"deployment_target_id", release.DeploymentTargetID,
+			"error_code", failure.Code,
+			"error_summary", failure.Summary,
+			"available_at", failureResult.AvailableAt,
+		)
+		return true, nil
+	}
+	r.recordTerminal(operation.StatusFailed, failure.Code, attemptStartedAt)
 	r.logger.WarnContext(attemptContext, "发布操作失败",
 		"operation_id", lease.OperationID,
 		"attempt_id", lease.AttemptID,
 		"release_id", release.ID,
 		"deployment_target_id", release.DeploymentTargetID,
-		"error_category", failure.Category,
+		"error_code", failure.Code,
 		"error_summary", failure.Summary,
 	)
 	return true, nil
@@ -309,22 +334,25 @@ func classifyFailure(publishErr error, executionErr error) operation.Failure {
 	if errors.Is(executionErr, context.DeadlineExceeded) ||
 		errors.Is(publishErr, context.DeadlineExceeded) {
 		return operation.Failure{
-			Category: "rollout_timeout",
-			Summary:  "delivery did not reach a terminal result before the operation timeout",
+			Code:        "rollout_timeout",
+			Summary:     "delivery did not reach a terminal result before the operation timeout",
+			Disposition: operation.NonRetryable,
 		}
 	}
 
 	var failure *FailureError
-	if errors.As(publishErr, &failure) && failure.category != "" && failure.summary != "" {
+	if errors.As(publishErr, &failure) && failure.code != "" && failure.summary != "" {
 		return operation.Failure{
-			Category: safeText(failure.category, 64),
-			Summary:  safeText(failure.summary, maxFailureSummaryLength),
+			Code:        safeText(failure.code, 64),
+			Summary:     safeText(failure.summary, maxFailureSummaryLength),
+			Disposition: failure.disposition,
 		}
 	}
 
 	return operation.Failure{
-		Category: "delivery_failed",
-		Summary:  "delivery publisher returned an unexpected error",
+		Code:        "delivery_failed",
+		Summary:     "delivery publisher returned an unexpected error",
+		Disposition: operation.NonRetryable,
 	}
 }
 

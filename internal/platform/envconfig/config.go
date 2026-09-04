@@ -30,13 +30,15 @@ type API struct {
 }
 
 type Worker struct {
-	Address          string
-	DatabaseURL      string
-	WorkerID         string
-	PollInterval     time.Duration
-	LeaseDuration    time.Duration
-	OperationTimeout time.Duration
-	Kubernetes       Kubernetes
+	Address                 string
+	DatabaseURL             string
+	WorkerID                string
+	PollInterval            time.Duration
+	LeaseDuration           time.Duration
+	OperationTimeout        time.Duration
+	MaximumAutomaticRetries int
+	RetryBaseDelay          time.Duration
+	Kubernetes              Kubernetes
 }
 
 func LoadAPI() (API, error) {
@@ -74,18 +76,31 @@ func LoadWorker() (Worker, error) {
 	if err != nil {
 		return Worker{}, err
 	}
+	maximumAutomaticRetries, err := nonNegativeInteger(
+		"ORBITOPS_MAX_AUTOMATIC_RETRIES",
+		2,
+	)
+	if err != nil {
+		return Worker{}, err
+	}
+	retryBaseDelay, err := duration("ORBITOPS_RETRY_BASE_DELAY", time.Second)
+	if err != nil {
+		return Worker{}, err
+	}
 	hostname, err := os.Hostname()
 	if err != nil {
 		return Worker{}, fmt.Errorf("read hostname: %w", err)
 	}
 	return Worker{
-		Address:          value("ORBITOPS_WORKER_ADDRESS", "127.0.0.1:9091"),
-		DatabaseURL:      value("ORBITOPS_DATABASE_URL", defaultDatabaseURL),
-		WorkerID:         value("ORBITOPS_WORKER_ID", hostname),
-		PollInterval:     pollInterval,
-		LeaseDuration:    leaseDuration,
-		OperationTimeout: operationTimeout,
-		Kubernetes:       kubernetes,
+		Address:                 value("ORBITOPS_WORKER_ADDRESS", "127.0.0.1:9091"),
+		DatabaseURL:             value("ORBITOPS_DATABASE_URL", defaultDatabaseURL),
+		WorkerID:                value("ORBITOPS_WORKER_ID", hostname),
+		PollInterval:            pollInterval,
+		LeaseDuration:           leaseDuration,
+		OperationTimeout:        operationTimeout,
+		MaximumAutomaticRetries: maximumAutomaticRetries,
+		RetryBaseDelay:          retryBaseDelay,
+		Kubernetes:              kubernetes,
 	}, nil
 }
 
@@ -134,6 +149,21 @@ func boolean(name string, fallback bool) (bool, error) {
 	parsed, err := strconv.ParseBool(configured)
 	if err != nil {
 		return false, fmt.Errorf("parse %s: %w", name, err)
+	}
+	return parsed, nil
+}
+
+func nonNegativeInteger(name string, fallback int) (int, error) {
+	configured := os.Getenv(name)
+	if configured == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(configured)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", name, err)
+	}
+	if parsed < 0 {
+		return 0, fmt.Errorf("%s must not be negative", name)
 	}
 	return parsed, nil
 }

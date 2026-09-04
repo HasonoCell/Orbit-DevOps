@@ -94,8 +94,8 @@ func TestKindDeliveryScenarios(t *testing.T) {
 		if !errors.As(err, &failure) {
 			t.Fatalf("publish error = %v, want structured failure", err)
 		}
-		if failure.Category() != "image_pull_failed" {
-			t.Errorf("failure category = %q, want image_pull_failed", failure.Category())
+		if failure.Code() != "image_pull_failed" {
+			t.Errorf("failure code = %q, want image_pull_failed", failure.Code())
 		}
 
 		snapshot := adapter.Observe(context.Background(), kube.ObserveRequest{
@@ -152,7 +152,7 @@ func TestKindDeliveryScenarios(t *testing.T) {
 
 		err := adapter.Publish(context.Background(), request)
 		var failure *worker.FailureError
-		if !errors.As(err, &failure) || failure.Category() != "ownership_conflict" {
+		if !errors.As(err, &failure) || failure.Code() != "ownership_conflict" {
 			t.Fatalf("publish error = %v, want ownership_conflict", err)
 		}
 		preserved, err := client.AppsV1().Deployments(kindNamespace).Get(

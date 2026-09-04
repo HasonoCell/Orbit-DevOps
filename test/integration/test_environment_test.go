@@ -94,31 +94,37 @@ type releaseTargetSnapshot struct {
 }
 
 type operationDocument struct {
-	ID             string                     `json:"id"`
-	Type           string                     `json:"type"`
-	ReleaseID      string                     `json:"releaseId"`
-	CreatedBy      string                     `json:"createdBy"`
-	IdempotencyKey string                     `json:"idempotencyKey"`
-	Status         string                     `json:"status"`
-	AttemptCount   int                        `json:"attemptCount"`
-	ErrorCategory  *string                    `json:"errorCategory"`
-	ErrorSummary   *string                    `json:"errorSummary"`
-	CreatedAt      time.Time                  `json:"createdAt"`
-	UpdatedAt      time.Time                  `json:"updatedAt"`
-	StartedAt      *time.Time                 `json:"startedAt"`
-	FinishedAt     *time.Time                 `json:"finishedAt"`
-	Attempts       []operationAttemptDocument `json:"attempts"`
+	ID                  string                     `json:"id"`
+	Type                string                     `json:"type"`
+	ReleaseID           string                     `json:"releaseId"`
+	DeploymentTargetID  string                     `json:"deploymentTargetId"`
+	CreatedBy           string                     `json:"createdBy"`
+	IdempotencyKey      string                     `json:"idempotencyKey"`
+	Status              string                     `json:"status"`
+	AttemptCount        int                        `json:"attemptCount"`
+	AutomaticRetryCount int                        `json:"automaticRetryCount"`
+	ErrorCode           *string                    `json:"errorCode"`
+	ErrorSummary        *string                    `json:"errorSummary"`
+	RetryDisposition    *string                    `json:"retryDisposition"`
+	QueuedAt            time.Time                  `json:"queuedAt"`
+	AvailableAt         time.Time                  `json:"availableAt"`
+	CreatedAt           time.Time                  `json:"createdAt"`
+	UpdatedAt           time.Time                  `json:"updatedAt"`
+	StartedAt           *time.Time                 `json:"startedAt"`
+	FinishedAt          *time.Time                 `json:"finishedAt"`
+	Attempts            []operationAttemptDocument `json:"attempts"`
 }
 
 type operationAttemptDocument struct {
-	ID            string     `json:"id"`
-	Number        int        `json:"number"`
-	WorkerID      string     `json:"workerId"`
-	Status        string     `json:"status"`
-	ErrorCategory *string    `json:"errorCategory"`
-	ErrorSummary  *string    `json:"errorSummary"`
-	StartedAt     time.Time  `json:"startedAt"`
-	FinishedAt    *time.Time `json:"finishedAt"`
+	ID               string     `json:"id"`
+	Number           int        `json:"number"`
+	WorkerID         string     `json:"workerId"`
+	Status           string     `json:"status"`
+	ErrorCode        *string    `json:"errorCode"`
+	ErrorSummary     *string    `json:"errorSummary"`
+	RetryDisposition *string    `json:"retryDisposition"`
+	StartedAt        time.Time  `json:"startedAt"`
+	FinishedAt       *time.Time `json:"finishedAt"`
 }
 
 type releaseAcceptanceDocument struct {

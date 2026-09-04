@@ -53,7 +53,23 @@ func run(logger *slog.Logger) error {
 	if err := db.PingContext(ctx); err != nil {
 		return err
 	}
-	operations := operation.New(db)
+	operations := operation.New(
+		db,
+		operation.WithAutomaticRetryPolicy(
+			config.MaximumAutomaticRetries,
+			func(retryNumber int) time.Duration {
+				// 每次重试成倍退避，避免 Kubernetes 短暂不可用时形成请求风暴。
+				delay := config.RetryBaseDelay
+				for current := 1; current < retryNumber && delay < 30*time.Second; current++ {
+					delay *= 2
+					if delay > 30*time.Second {
+						return 30 * time.Second
+					}
+				}
+				return delay
+			},
+		),
+	)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	metrics := observability.NewMetrics(operations.CountPending)
 	tracing := observability.NewTracing(logger)

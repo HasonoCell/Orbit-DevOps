@@ -13,6 +13,8 @@ func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 		"ORBITOPS_KUBERNETES_CONTEXT",
 		"ORBITOPS_CLUSTER_REF",
 		"ORBITOPS_NAMESPACE",
+		"ORBITOPS_MAX_AUTOMATIC_RETRIES",
+		"ORBITOPS_RETRY_BASE_DELAY",
 	} {
 		t.Setenv(name, "")
 	}
@@ -35,6 +37,16 @@ func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 		apiConfig.Kubernetes.ClusterRef != "kind-orbitops-s1" ||
 		apiConfig.Kubernetes.Namespace != "orbitops-s1" {
 		t.Errorf("API Kubernetes defaults = %#v, want S1 local boundary", apiConfig.Kubernetes)
+	}
+	if workerConfig.MaximumAutomaticRetries != 2 || workerConfig.RetryBaseDelay.String() != "1s" {
+		t.Errorf("Worker retry defaults = %#v, want 2 retries with 1s base delay", workerConfig)
+	}
+}
+
+func TestWorkerRejectsNegativeAutomaticRetryCount(t *testing.T) {
+	t.Setenv("ORBITOPS_MAX_AUTOMATIC_RETRIES", "-1")
+	if _, err := envconfig.LoadWorker(); err == nil {
+		t.Fatal("negative automatic retry count was accepted")
 	}
 }
 

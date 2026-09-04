@@ -308,7 +308,7 @@ function OperationPanel({ operation, fetching }: { operation?: Operation; fetchi
       <div className="block-heading"><span><Activity /> Operation</span><StatusBadge status={status} pulse={fetching && !isTerminal(status)} /></div>
       <div className="operation-id"><span>操作 ID</span><code>{operation?.id ?? "等待创建"}</code></div>
       <div className="attempt-line"><span>Attempt</span><strong>{operation?.attemptCount ?? 0}</strong><span>Worker</span><strong>{operation?.attempts.at(-1)?.workerId ?? "—"}</strong></div>
-      {operation?.errorCategory && <div className="error-summary"><b>{operation.errorCategory}</b><p>{operation.errorSummary}</p></div>}
+      {operation?.errorCode && <div className="error-summary"><b>{operation.errorCode}</b><p>{operation.errorSummary}</p></div>}
     </section>
   );
 }

@@ -319,6 +319,8 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        /** @enum {string} */
+        RetryDisposition: "retryable" | "non_retryable" | "unknown_outcome";
         Operation: {
             /** Format: uuid */
             id: string;
@@ -326,13 +328,21 @@ export interface components {
             type: "release.deploy";
             /** Format: uuid */
             releaseId: string;
+            /** Format: uuid */
+            deploymentTargetId: string;
             createdBy: string;
             idempotencyKey: string;
             /** @enum {string} */
-            status: "pending" | "running" | "succeeded" | "failed";
+            status: "pending" | "running" | "cancel_requested" | "succeeded" | "failed" | "canceled" | "attention_required";
             attemptCount: number;
-            errorCategory?: string;
+            automaticRetryCount: number;
+            errorCode?: string;
             errorSummary?: string;
+            retryDisposition?: components["schemas"]["RetryDisposition"];
+            /** Format: date-time */
+            queuedAt: string;
+            /** Format: date-time */
+            availableAt: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -349,9 +359,10 @@ export interface components {
             number: number;
             workerId: string;
             /** @enum {string} */
-            status: "running" | "succeeded" | "failed";
-            errorCategory?: string;
+            status: "running" | "succeeded" | "failed" | "canceled" | "outcome_unknown";
+            errorCode?: string;
             errorSummary?: string;
+            retryDisposition?: components["schemas"]["RetryDisposition"];
             /** Format: date-time */
             startedAt: string;
             /** Format: date-time */

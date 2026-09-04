@@ -75,6 +75,9 @@ func TestOperationLeaseHasOneOwnerAndRecoversAfterExpiry(t *testing.T) {
 	if secondLease.AttemptNumber != 2 {
 		t.Errorf("recovery attempt number = %d, want 2", secondLease.AttemptNumber)
 	}
+	if !secondLease.Recovery {
+		t.Error("recovery lease was not marked as recovery")
+	}
 	if err := operations.Succeed(context.Background(), firstLease); !errors.Is(err, operation.ErrLeaseLost) {
 		t.Errorf("stale worker completion error = %v, want ErrLeaseLost", err)
 	}
@@ -89,12 +92,12 @@ func TestOperationLeaseHasOneOwnerAndRecoversAfterExpiry(t *testing.T) {
 	if len(current.Attempts) != 2 {
 		t.Fatalf("attempt count = %d, want 2", len(current.Attempts))
 	}
-	if current.Attempts[0].Status != operation.AttemptFailed {
-		t.Errorf("first attempt status = %q, want %q", current.Attempts[0].Status, operation.AttemptFailed)
+	if current.Attempts[0].Status != operation.AttemptOutcomeUnknown {
+		t.Errorf("first attempt status = %q, want %q", current.Attempts[0].Status, operation.AttemptOutcomeUnknown)
 	}
-	if current.Attempts[0].ErrorCategory == nil ||
-		*current.Attempts[0].ErrorCategory != operation.FailureLeaseExpired {
-		t.Errorf("first attempt error category = %v, want lease expiry", current.Attempts[0].ErrorCategory)
+	if current.Attempts[0].ErrorCode == nil ||
+		*current.Attempts[0].ErrorCode != operation.FailureLeaseExpired {
+		t.Errorf("first attempt error code = %v, want lease expiry", current.Attempts[0].ErrorCode)
 	}
 	if current.Attempts[1].Status != operation.AttemptRunning {
 		t.Errorf("second attempt status = %q, want %q", current.Attempts[1].Status, operation.AttemptRunning)

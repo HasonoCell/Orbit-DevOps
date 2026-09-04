@@ -70,6 +70,13 @@ func TestReleaseAcceptanceAtomicallyCreatesPendingOperation(t *testing.T) {
 			acceptance.Release.ID,
 		)
 	}
+	if acceptance.Operation.DeploymentTargetID != target.ID {
+		t.Errorf(
+			"operation deploymentTargetId = %q, want %q",
+			acceptance.Operation.DeploymentTargetID,
+			target.ID,
+		)
+	}
 	if acceptance.Operation.CreatedBy != "local-developer" {
 		t.Errorf("operation createdBy = %q, want %q", acceptance.Operation.CreatedBy, "local-developer")
 	}
@@ -86,7 +93,14 @@ func TestReleaseAcceptanceAtomicallyCreatesPendingOperation(t *testing.T) {
 	if acceptance.Operation.AttemptCount != 0 {
 		t.Errorf("attemptCount = %d, want 0", acceptance.Operation.AttemptCount)
 	}
-	if acceptance.Operation.ErrorCategory != nil || acceptance.Operation.ErrorSummary != nil {
+	if acceptance.Operation.AutomaticRetryCount != 0 {
+		t.Errorf("automaticRetryCount = %d, want 0", acceptance.Operation.AutomaticRetryCount)
+	}
+	if acceptance.Operation.QueuedAt.IsZero() || acceptance.Operation.AvailableAt.IsZero() {
+		t.Error("pending operation has no scheduling timestamps")
+	}
+	if acceptance.Operation.ErrorCode != nil || acceptance.Operation.ErrorSummary != nil ||
+		acceptance.Operation.RetryDisposition != nil {
 		t.Error("pending operation contains terminal error")
 	}
 	if acceptance.Operation.StartedAt != nil || acceptance.Operation.FinishedAt != nil {

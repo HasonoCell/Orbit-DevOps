@@ -47,8 +47,8 @@ func TestPublisherRefusesForeignResourceBeforeApply(t *testing.T) {
 	if !errors.As(err, &failure) {
 		t.Fatalf("publish error = %v, want structured failure", err)
 	}
-	if failure.Category() != "ownership_conflict" {
-		t.Errorf("failure category = %q, want ownership_conflict", failure.Category())
+	if failure.Code() != "ownership_conflict" {
+		t.Errorf("failure code = %q, want ownership_conflict", failure.Code())
 	}
 	for _, action := range client.Actions() {
 		if action.GetVerb() == "patch" {

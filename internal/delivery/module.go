@@ -218,13 +218,14 @@ func (m *Module) CreateRelease(
 		ctx,
 		tx,
 		operation.CreatePendingCommand{
-			ID:             uuid.New(),
-			ReleaseID:      release.ID,
-			ActorID:        command.ActorID,
-			IdempotencyKey: command.IdempotencyKey,
-			TraceParent:    command.TraceParent,
-			TraceState:     command.TraceState,
-			CreatedAt:      createdAt,
+			ID:                 uuid.New(),
+			ReleaseID:          release.ID,
+			DeploymentTargetID: release.DeploymentTargetID,
+			ActorID:            command.ActorID,
+			IdempotencyKey:     command.IdempotencyKey,
+			TraceParent:        command.TraceParent,
+			TraceState:         command.TraceState,
+			CreatedAt:          createdAt,
 		},
 	)
 	if err != nil {
