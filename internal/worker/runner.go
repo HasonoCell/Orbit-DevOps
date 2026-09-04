@@ -53,10 +53,34 @@ type Publisher interface {
 	Publish(ctx context.Context, request PublishRequest) error
 }
 
+type RecoveryAction string
+
+const (
+	RecoverySucceeded       RecoveryAction = "succeeded"
+	RecoveryObserve         RecoveryAction = "observe"
+	RecoveryApply           RecoveryAction = "apply"
+	RecoveryReleaseObserved RecoveryAction = "release_observed"
+	RecoveryAttention       RecoveryAction = "attention_required"
+)
+
+type RecoveryObservation struct {
+	Action            RecoveryAction
+	ObservedReleaseID *uuid.UUID
+	ErrorCode         string
+	ErrorSummary      string
+}
+
+// RecoveryPublisher 在任何恢复写入前给出 Kubernetes 权威事实，并支持纯观察已有 Rollout。
+type RecoveryPublisher interface {
+	InspectRecovery(ctx context.Context, request PublishRequest) (RecoveryObservation, error)
+	ObserveRecovery(ctx context.Context, request PublishRequest) error
+}
+
 type FailureError struct {
-	code        string
-	summary     string
-	disposition string
+	code             string
+	summary          string
+	disposition      string
+	retryRecommended bool
 }
 
 // NewFailure 创建不可自动重试的稳定失败，适用于配置、资源或所有权问题。
@@ -67,6 +91,14 @@ func NewFailure(code string, summary string) *FailureError {
 // NewRetryableFailure 创建可由调度器自动重试的瞬时失败。
 func NewRetryableFailure(code string, summary string) *FailureError {
 	return &FailureError{code: code, summary: summary, disposition: operation.Retryable}
+}
+
+// NewUnknownOutcome 表示外部写入结果不能确认；retry 控制是否在预算内继续调和。
+func NewUnknownOutcome(code string, summary string, retry bool) *FailureError {
+	return &FailureError{
+		code: code, summary: summary, disposition: operation.UnknownOutcome,
+		retryRecommended: retry,
+	}
 }
 
 func (e *FailureError) Error() string {
@@ -83,6 +115,10 @@ func (e *FailureError) Summary() string {
 
 func (e *FailureError) Disposition() string {
 	return e.disposition
+}
+
+func (e *FailureError) RetryRecommended() bool {
+	return e.retryRecommended
 }
 
 type Runner struct {
@@ -251,7 +287,7 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 		}
 	}()
 
-	publishErr := r.publisher.Publish(executionContext, request)
+	publishErr := r.executeDelivery(executionContext, lease, request)
 	executionErr := executionContext.Err()
 	cancelExecution()
 	stopHeartbeat()
@@ -291,6 +327,47 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 	}
 
 	failure := classifyFailure(publishErr, executionErr)
+	if failure.Disposition == operation.UnknownOutcome {
+		failureResult, err := r.operations.HandleUnknownOutcome(
+			attemptContext,
+			lease,
+			failure,
+			failure.RetryRecommended,
+		)
+		if err != nil {
+			if errors.Is(err, operation.ErrLeaseLost) {
+				if cancelErr := r.finishCancellation(
+					attemptContext,
+					lease,
+					release.ID,
+					attemptStartedAt,
+				); cancelErr == nil {
+					return true, nil
+				}
+			}
+			return true, err
+		}
+		if publishErr != nil {
+			span.RecordError(publishErr)
+		}
+		span.SetStatus(codes.Error, failure.Code)
+		if failureResult.RetryScheduled {
+			r.logger.WarnContext(attemptContext, "发布结果未知，已安排调和重试",
+				"operation_id", lease.OperationID,
+				"attempt_id", lease.AttemptID,
+				"error_code", failure.Code,
+				"available_at", failureResult.AvailableAt,
+			)
+			return true, nil
+		}
+		r.logger.ErrorContext(attemptContext, "发布结果未知，需要人工处理",
+			"operation_id", lease.OperationID,
+			"attempt_id", lease.AttemptID,
+			"error_code", failure.Code,
+			"error_summary", failure.Summary,
+		)
+		return true, nil
+	}
 	failureResult, err := r.operations.Fail(attemptContext, lease, failure)
 	if err != nil {
 		if errors.Is(err, operation.ErrLeaseLost) {
@@ -331,6 +408,81 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 		"error_summary", failure.Summary,
 	)
 	return true, nil
+}
+
+// executeDelivery 将租约接管与普通发布分流；恢复路径没有权威读结论前不会调用 Apply。
+func (r *Runner) executeDelivery(
+	ctx context.Context,
+	lease operation.Lease,
+	request PublishRequest,
+) error {
+	if !lease.Recovery {
+		return r.publisher.Publish(ctx, request)
+	}
+	recoveryPublisher, ok := r.publisher.(RecoveryPublisher)
+	if !ok {
+		return NewUnknownOutcome(
+			"recovery_inspection_unavailable",
+			"delivery publisher cannot inspect external state before recovery",
+			false,
+		)
+	}
+	observation, err := recoveryPublisher.InspectRecovery(ctx, request)
+	if err != nil {
+		return err
+	}
+	switch observation.Action {
+	case RecoverySucceeded:
+		return nil
+	case RecoveryObserve:
+		return recoveryPublisher.ObserveRecovery(ctx, request)
+	case RecoveryApply:
+		return r.publisher.Publish(ctx, request)
+	case RecoveryReleaseObserved:
+		if observation.ObservedReleaseID == nil {
+			return NewUnknownOutcome(
+				"recovery_state_invalid",
+				"recovery observation omitted the observed release identifier",
+				false,
+			)
+		}
+		known, err := r.releases.IsKnownReleaseForTarget(
+			ctx,
+			*observation.ObservedReleaseID,
+			request.DeploymentTargetID,
+		)
+		if err != nil {
+			return NewUnknownOutcome(
+				"release_history_unavailable",
+				"release history could not be checked during recovery",
+				true,
+			)
+		}
+		if known {
+			return r.publisher.Publish(ctx, request)
+		}
+		return NewUnknownOutcome(
+			"unexpected_release_observed",
+			"Kubernetes resources reference a release outside this deployment target history",
+			false,
+		)
+	case RecoveryAttention:
+		code := observation.ErrorCode
+		if code == "" {
+			code = "recovery_state_conflict"
+		}
+		summary := observation.ErrorSummary
+		if summary == "" {
+			summary = "Kubernetes state cannot be safely reconciled with this release"
+		}
+		return NewUnknownOutcome(code, summary, false)
+	default:
+		return NewUnknownOutcome(
+			"recovery_state_invalid",
+			"delivery publisher returned an unsupported recovery decision",
+			false,
+		)
+	}
 }
 
 func (r *Runner) recordTerminal(status string, category string, startedAt time.Time) {
@@ -383,21 +535,22 @@ func (r *Runner) maintainLease(ctx context.Context, lease operation.Lease) (bool
 }
 
 func classifyFailure(publishErr error, executionErr error) operation.Failure {
+	var failure *FailureError
+	if errors.As(publishErr, &failure) && failure.code != "" && failure.summary != "" {
+		return operation.Failure{
+			Code:             safeText(failure.code, 64),
+			Summary:          safeText(failure.summary, maxFailureSummaryLength),
+			Disposition:      failure.disposition,
+			RetryRecommended: failure.retryRecommended,
+		}
+	}
+
 	if errors.Is(executionErr, context.DeadlineExceeded) ||
 		errors.Is(publishErr, context.DeadlineExceeded) {
 		return operation.Failure{
 			Code:        "rollout_timeout",
 			Summary:     "delivery did not reach a terminal result before the operation timeout",
 			Disposition: operation.NonRetryable,
-		}
-	}
-
-	var failure *FailureError
-	if errors.As(publishErr, &failure) && failure.code != "" && failure.summary != "" {
-		return operation.Failure{
-			Code:        safeText(failure.code, 64),
-			Summary:     safeText(failure.summary, maxFailureSummaryLength),
-			Disposition: failure.disposition,
 		}
 	}
 

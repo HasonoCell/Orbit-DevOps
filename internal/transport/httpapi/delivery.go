@@ -165,6 +165,7 @@ func operationResponse(record operation.Record) api.Operation {
 		Status:              api.OperationStatus(record.Status),
 		AttemptCount:        record.AttemptCount,
 		AutomaticRetryCount: record.AutomaticRetryCount,
+		RecoveryRequired:    record.RecoveryRequired,
 		ErrorCode:           record.ErrorCode,
 		ErrorSummary:        record.ErrorSummary,
 		RetryDisposition:    operationRetryDisposition(record.RetryDisposition),

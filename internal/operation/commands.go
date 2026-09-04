@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/HasonoCell/OrbitOps/internal/audit"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
@@ -17,6 +19,7 @@ import (
 var (
 	ErrInvalidTransition     = errors.New("operation state does not allow this command")
 	ErrAuthorizerUnavailable = errors.New("operation authorizer is not configured")
+	ErrStaleObservation      = errors.New("operation changed after external observation")
 )
 
 // Authorizer 把项目角色校验保持在 Operation 状态事务内，避免授权与写入之间出现竞态。
@@ -31,9 +34,11 @@ type Authorizer interface {
 }
 
 type RetryCommand struct {
-	OperationID    uuid.UUID
-	ActorID        string
-	IdempotencyKey string
+	OperationID        uuid.UUID
+	ActorID            string
+	IdempotencyKey     string
+	AttentionConfirmed bool
+	ExpectedUpdatedAt  time.Time
 }
 
 type CancelCommand struct {
@@ -44,20 +49,34 @@ type CancelCommand struct {
 
 // Retry 将确定失败的同一个 Operation 放回目标队尾，并保留其全部 Attempt 历史。
 func (m *Module) Retry(ctx context.Context, command RetryCommand) (Record, error) {
+	permission := projectauth.PermissionDevelop
+	expectedStatus := StatusFailed
+	if command.AttentionConfirmed {
+		permission = projectauth.PermissionResolveUnknown
+		expectedStatus = StatusAttentionRequired
+	}
 	return m.executeUserCommand(
 		ctx,
 		command.OperationID,
 		command.ActorID,
 		command.IdempotencyKey,
 		"operation.retry",
+		permission,
+		struct {
+			OperationID uuid.UUID `json:"operationId"`
+		}{command.OperationID},
 		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
-			if current.Status != StatusFailed {
+			if current.Status != expectedStatus {
 				return ErrInvalidTransition
+			}
+			if command.AttentionConfirmed && !current.UpdatedAt.Equal(command.ExpectedUpdatedAt) {
+				return ErrStaleObservation
 			}
 			if _, err := tx.ExecContext(
 				ctx,
 				`UPDATE operations
 				 SET status = 'pending', automatic_retry_count = 0,
+				     recovery_required = false,
 				     queued_at = $1, available_at = $1,
 				     lease_owner = NULL, lease_expires_at = NULL,
 				     error_code = NULL, error_summary = NULL, retry_disposition = NULL,
@@ -81,13 +100,18 @@ func (m *Module) Cancel(ctx context.Context, command CancelCommand) (Record, err
 		command.ActorID,
 		command.IdempotencyKey,
 		"operation.cancel",
+		projectauth.PermissionDevelop,
+		struct {
+			OperationID uuid.UUID `json:"operationId"`
+		}{command.OperationID},
 		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
 			switch current.Status {
 			case StatusPending:
 				if _, err := tx.ExecContext(
 					ctx,
 					`UPDATE operations
-					 SET status = 'canceled', updated_at = $1, finished_at = $1
+					 SET status = 'canceled', recovery_required = false,
+					     updated_at = $1, finished_at = $1
 					 WHERE id = $2`,
 					now,
 					current.ID,
@@ -113,6 +137,148 @@ func (m *Module) Cancel(ctx context.Context, command CancelCommand) (Record, err
 	)
 }
 
+const (
+	ReconcileSucceeded = "succeeded"
+	ReconcileFailed    = "failed"
+	ReconcileUnclear   = "unclear"
+)
+
+type ReconcileEvidence struct {
+	Resolution        string
+	ErrorCode         string
+	ErrorSummary      string
+	ExpectedUpdatedAt time.Time
+}
+
+type ReconcileCommand struct {
+	OperationID    uuid.UUID
+	ActorID        string
+	IdempotencyKey string
+	Evidence       ReconcileEvidence
+}
+
+// ReconcileAttention 只持久化外部只读检查的结论，不触发任何 Kubernetes 写入。
+func (m *Module) ReconcileAttention(
+	ctx context.Context,
+	command ReconcileCommand,
+) (Record, error) {
+	if command.Evidence.ErrorCode == "" || command.Evidence.ErrorSummary == "" ||
+		utf8.RuneCountInString(command.Evidence.ErrorCode) > 64 ||
+		utf8.RuneCountInString(command.Evidence.ErrorSummary) > 512 {
+		return Record{}, errors.New("invalid reconciliation evidence")
+	}
+	return m.executeUserCommand(
+		ctx,
+		command.OperationID,
+		command.ActorID,
+		command.IdempotencyKey,
+		"operation.reconcile",
+		projectauth.PermissionDevelop,
+		struct {
+			OperationID uuid.UUID `json:"operationId"`
+		}{command.OperationID},
+		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
+			if current.Status != StatusAttentionRequired {
+				return ErrInvalidTransition
+			}
+			if !current.UpdatedAt.Equal(command.Evidence.ExpectedUpdatedAt) {
+				return ErrStaleObservation
+			}
+			switch command.Evidence.Resolution {
+			case ReconcileSucceeded:
+				_, err := tx.ExecContext(
+					ctx,
+					`UPDATE operations
+					 SET status = 'succeeded', recovery_required = false,
+					     error_code = NULL, error_summary = NULL, retry_disposition = NULL,
+					     updated_at = $1, finished_at = $1
+					 WHERE id = $2`,
+					now,
+					current.ID,
+				)
+				return err
+			case ReconcileFailed:
+				_, err := tx.ExecContext(
+					ctx,
+					`UPDATE operations
+					 SET status = 'failed', recovery_required = false,
+					     error_code = $1, error_summary = $2,
+					     retry_disposition = 'non_retryable', updated_at = $3, finished_at = $3
+					 WHERE id = $4`,
+					command.Evidence.ErrorCode,
+					command.Evidence.ErrorSummary,
+					now,
+					current.ID,
+				)
+				return err
+			case ReconcileUnclear:
+				_, err := tx.ExecContext(
+					ctx,
+					`UPDATE operations
+					 SET error_code = $1, error_summary = $2,
+					     retry_disposition = 'unknown_outcome', updated_at = $3, finished_at = $3
+					 WHERE id = $4`,
+					command.Evidence.ErrorCode,
+					command.Evidence.ErrorSummary,
+					now,
+					current.ID,
+				)
+				return err
+			default:
+				return errors.New("invalid reconciliation resolution")
+			}
+		},
+	)
+}
+
+type ForceFailCommand struct {
+	OperationID    uuid.UUID
+	ActorID        string
+	IdempotencyKey string
+	Reason         string
+}
+
+// ForceFailAttention 允许 owner 用明确原因结束无法自动判断的 Operation，解除目标阻塞。
+func (m *Module) ForceFailAttention(
+	ctx context.Context,
+	command ForceFailCommand,
+) (Record, error) {
+	if strings.TrimSpace(command.Reason) == "" || utf8.RuneCountInString(command.Reason) > 512 {
+		return Record{}, errors.New("invalid manual failure reason")
+	}
+	return m.executeUserCommand(
+		ctx,
+		command.OperationID,
+		command.ActorID,
+		command.IdempotencyKey,
+		"operation.fail",
+		projectauth.PermissionResolveUnknown,
+		struct {
+			OperationID uuid.UUID `json:"operationId"`
+			Reason      string    `json:"reason"`
+		}{command.OperationID, command.Reason},
+		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
+			if current.Status != StatusAttentionRequired {
+				return ErrInvalidTransition
+			}
+			if _, err := tx.ExecContext(
+				ctx,
+				`UPDATE operations
+				 SET status = 'failed', recovery_required = false,
+				     error_code = 'manual_resolution', error_summary = $1,
+				     retry_disposition = 'non_retryable', updated_at = $2, finished_at = $2
+				 WHERE id = $3`,
+				command.Reason,
+				now,
+				current.ID,
+			); err != nil {
+				return fmt.Errorf("force fail operation: %w", err)
+			}
+			return nil
+		},
+	)
+}
+
 type userTransition func(
 	ctx context.Context,
 	tx *sqlx.Tx,
@@ -127,6 +293,8 @@ func (m *Module) executeUserCommand(
 	actorID string,
 	idempotencyKey string,
 	commandType string,
+	permission projectauth.Permission,
+	fingerprintValue any,
 	transition userTransition,
 ) (Record, error) {
 	if m.authorizer == nil {
@@ -148,13 +316,11 @@ func (m *Module) executeUserCommand(
 		tx,
 		projectID,
 		actorID,
-		projectauth.PermissionDevelop,
+		permission,
 	); err != nil {
 		return Record{}, err
 	}
-	requestHash, err := idempotency.Fingerprint(struct {
-		OperationID uuid.UUID `json:"operationId"`
-	}{OperationID: operationID})
+	requestHash, err := idempotency.Fingerprint(fingerprintValue)
 	if err != nil {
 		return Record{}, fmt.Errorf("fingerprint %s: %w", commandType, err)
 	}
@@ -186,12 +352,19 @@ func (m *Module) executeUserCommand(
 	if err := idempotency.StoreResponse(ctx, tx, scope, updated); err != nil {
 		return Record{}, err
 	}
+	auditSummary := map[string]any{
+		"fromStatus": current.Status,
+		"toStatus":   updated.Status,
+	}
+	if updated.ErrorCode != nil {
+		auditSummary["errorCode"] = *updated.ErrorCode
+	}
+	if updated.ErrorSummary != nil {
+		auditSummary["errorSummary"] = *updated.ErrorSummary
+	}
 	if err := audit.Append(ctx, tx, audit.Entry{
 		ActorID: actorID, Action: commandType, TargetType: "operation", TargetID: operationID,
-		Summary: map[string]any{
-			"fromStatus": current.Status,
-			"toStatus":   updated.Status,
-		},
+		Summary:   auditSummary,
 		CreatedAt: now,
 	}); err != nil {
 		return Record{}, err

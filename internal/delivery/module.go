@@ -279,6 +279,28 @@ func (m *Module) GetRelease(ctx context.Context, id uuid.UUID) (Release, error) 
 	return release, nil
 }
 
+// IsKnownReleaseForTarget 只回答历史归属事实，供恢复流程判断当前资源是否是可安全覆盖的前序发布。
+func (m *Module) IsKnownReleaseForTarget(
+	ctx context.Context,
+	releaseID uuid.UUID,
+	deploymentTargetID uuid.UUID,
+) (bool, error) {
+	var exists bool
+	if err := m.db.GetContext(
+		ctx,
+		&exists,
+		`SELECT EXISTS (
+		    SELECT 1 FROM releases
+		    WHERE id = $1 AND deployment_target_id = $2
+		)`,
+		releaseID,
+		deploymentTargetID,
+	); err != nil {
+		return false, fmt.Errorf("check release target history: %w", err)
+	}
+	return exists, nil
+}
+
 func (m *Module) replayReleaseCreate(
 	ctx context.Context,
 	tx *sqlx.Tx,

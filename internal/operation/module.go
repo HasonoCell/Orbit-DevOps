@@ -56,6 +56,7 @@ type Record struct {
 	Status              string     `db:"status"`
 	AttemptCount        int        `db:"attempt_count"`
 	AutomaticRetryCount int        `db:"automatic_retry_count"`
+	RecoveryRequired    bool       `db:"recovery_required"`
 	ErrorCode           *string    `db:"error_code"`
 	ErrorSummary        *string    `db:"error_summary"`
 	RetryDisposition    *string    `db:"retry_disposition"`
@@ -115,9 +116,10 @@ type Renewal struct {
 }
 
 type Failure struct {
-	Code        string
-	Summary     string
-	Disposition string
+	Code             string
+	Summary          string
+	Disposition      string
+	RetryRecommended bool
 }
 
 // FailureResult 告诉 Worker 本次失败是终结了 Operation，还是已进入自动重试等待。
@@ -134,6 +136,7 @@ type claimCandidate struct {
 	Status              string    `db:"status"`
 	AttemptCount        int       `db:"attempt_count"`
 	AutomaticRetryCount int       `db:"automatic_retry_count"`
+	RecoveryRequired    bool      `db:"recovery_required"`
 	TraceParent         string    `db:"traceparent"`
 	TraceState          string    `db:"tracestate"`
 }
@@ -216,6 +219,7 @@ func (m *Module) CreatePending(
 		Status:              StatusPending,
 		AttemptCount:        0,
 		AutomaticRetryCount: 0,
+		RecoveryRequired:    false,
 		QueuedAt:            command.CreatedAt,
 		AvailableAt:         command.CreatedAt,
 		CreatedAt:           command.CreatedAt,
@@ -228,8 +232,9 @@ func (m *Module) CreatePending(
 		`INSERT INTO operations
 		 (id, operation_type, release_id, deployment_target_id, actor_id,
 		  idempotency_key, traceparent, tracestate, status, attempt_count,
-		  automatic_retry_count, queued_at, available_at, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		  automatic_retry_count, recovery_required, queued_at, available_at,
+		  created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 		record.ID,
 		record.Type,
 		record.ReleaseID,
@@ -241,6 +246,7 @@ func (m *Module) CreatePending(
 		record.Status,
 		record.AttemptCount,
 		record.AutomaticRetryCount,
+		record.RecoveryRequired,
 		record.QueuedAt,
 		record.AvailableAt,
 		record.CreatedAt,
@@ -342,7 +348,8 @@ func (m *Module) ClaimNext(
 		&candidate,
 		`SELECT candidate.id, candidate.release_id, candidate.deployment_target_id,
 		        candidate.status, candidate.attempt_count,
-		        candidate.automatic_retry_count, candidate.traceparent, candidate.tracestate
+		        candidate.automatic_retry_count, candidate.recovery_required,
+		        candidate.traceparent, candidate.tracestate
 		 FROM operations AS candidate
 		 WHERE ((candidate.status = 'pending' AND candidate.available_at <= $1)
 		        OR (candidate.status IN ('running', 'cancel_requested')
@@ -368,7 +375,7 @@ func (m *Module) ClaimNext(
 	}
 
 	leaseExpired := candidate.Status == StatusRunning || candidate.Status == StatusCancelRequested
-	recovery := candidate.Status == StatusRunning
+	recovery := candidate.Status == StatusRunning || candidate.RecoveryRequired
 	if leaseExpired {
 		failureSummary := "worker lease expired before the attempt reached a terminal state"
 		result, err := tx.ExecContext(
@@ -466,6 +473,9 @@ func (m *Module) ClaimNext(
 		}
 		candidate.AutomaticRetryCount++
 	}
+	if candidate.Status == StatusPending && candidate.RecoveryRequired {
+		candidate.AutomaticRetryCount++
+	}
 
 	attemptNumber := candidate.AttemptCount + 1
 	attemptID := uuid.New()
@@ -474,6 +484,7 @@ func (m *Module) ClaimNext(
 		ctx,
 		`UPDATE operations
 		 SET status = 'running', attempt_count = $1, automatic_retry_count = $2,
+		     recovery_required = false,
 		     lease_owner = $3, lease_expires_at = $4, error_code = NULL,
 		     error_summary = NULL, retry_disposition = NULL,
 		     started_at = COALESCE(started_at, $5), finished_at = NULL, updated_at = $5
@@ -603,7 +614,7 @@ func (m *Module) ConfirmCanceled(ctx context.Context, lease Lease) error {
 		ctx,
 		`UPDATE operations
 		 SET status = 'canceled', lease_owner = NULL, lease_expires_at = NULL,
-		     updated_at = $1, finished_at = $1
+		     recovery_required = false, updated_at = $1, finished_at = $1
 		 WHERE id = $2`,
 		now,
 		lease.OperationID,
@@ -675,7 +686,8 @@ func (m *Module) Fail(
 		if _, err := tx.ExecContext(
 			ctx,
 			`UPDATE operations
-			 SET status = 'pending', automatic_retry_count = $1, available_at = $2,
+			 SET status = 'pending', automatic_retry_count = $1,
+			     recovery_required = false, available_at = $2,
 			     lease_owner = NULL, lease_expires_at = NULL, error_code = NULL,
 			     error_summary = NULL, retry_disposition = NULL,
 			     updated_at = $3, finished_at = NULL
@@ -697,7 +709,8 @@ func (m *Module) Fail(
 		if _, err := tx.ExecContext(
 			ctx,
 			`UPDATE operations
-			 SET status = 'failed', lease_owner = NULL, lease_expires_at = NULL,
+			 SET status = 'failed', recovery_required = false,
+			     lease_owner = NULL, lease_expires_at = NULL,
 			     error_code = $1, error_summary = $2, retry_disposition = $3,
 			     updated_at = $4, finished_at = $4
 			 WHERE id = $5`,
@@ -728,6 +741,97 @@ func (m *Module) Fail(
 	return result, nil
 }
 
+// HandleUnknownOutcome 关闭结果未知的 Attempt；可恢复时保留队头并等待下一次调和，
+// 否则进入 attention_required，阻止同目标的新发布越过不确定状态。
+func (m *Module) HandleUnknownOutcome(
+	ctx context.Context,
+	lease Lease,
+	failure Failure,
+	retry bool,
+) (FailureResult, error) {
+	if failure.Code == "" || failure.Summary == "" {
+		return FailureResult{}, errors.New("unknown outcome requires an error code and summary")
+	}
+	if utf8.RuneCountInString(failure.Code) > 64 ||
+		utf8.RuneCountInString(failure.Summary) > 512 {
+		return FailureResult{}, errors.New("unknown outcome evidence exceeds maximum length")
+	}
+	if failure.Disposition != UnknownOutcome {
+		return FailureResult{}, errors.New("unknown outcome requires unknown_outcome disposition")
+	}
+	now := m.now()
+	tx, automaticRetryCount, err := m.lockCompletion(ctx, lease, now)
+	if err != nil {
+		return FailureResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := completeAttempt(ctx, tx, lease, AttemptOutcomeUnknown, failure, now); err != nil {
+		return FailureResult{}, err
+	}
+
+	result := FailureResult{Status: StatusAttentionRequired}
+	action := "operation.attention_required"
+	if retry && automaticRetryCount < m.maximumAutomaticRetries {
+		nextRecoveryNumber := automaticRetryCount + 1
+		delay := m.retryDelay(nextRecoveryNumber)
+		if delay < 0 {
+			delay = 0
+		}
+		availableAt := now.Add(delay)
+		if _, err := tx.ExecContext(
+			ctx,
+			`UPDATE operations
+			 SET status = 'pending', recovery_required = true, available_at = $1,
+			     lease_owner = NULL, lease_expires_at = NULL,
+			     error_code = NULL, error_summary = NULL, retry_disposition = NULL,
+			     updated_at = $2, finished_at = NULL
+			 WHERE id = $3`,
+			availableAt,
+			now,
+			lease.OperationID,
+		); err != nil {
+			return FailureResult{}, fmt.Errorf("schedule outcome reconciliation: %w", err)
+		}
+		result = FailureResult{
+			Status:         StatusPending,
+			RetryScheduled: true,
+			AvailableAt:    &availableAt,
+		}
+		action = "operation.reconciliation_scheduled"
+	} else {
+		if _, err := tx.ExecContext(
+			ctx,
+			`UPDATE operations
+			 SET status = 'attention_required', recovery_required = false,
+			     lease_owner = NULL, lease_expires_at = NULL,
+			     error_code = $1, error_summary = $2,
+			     retry_disposition = 'unknown_outcome', updated_at = $3, finished_at = $3
+			 WHERE id = $4`,
+			failure.Code,
+			failure.Summary,
+			now,
+			lease.OperationID,
+		); err != nil {
+			return FailureResult{}, fmt.Errorf("require attention for unknown outcome: %w", err)
+		}
+	}
+	if err := appendCompletionAudit(
+		ctx,
+		tx,
+		action,
+		lease,
+		result.Status,
+		&failure,
+		now,
+	); err != nil {
+		return FailureResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return FailureResult{}, fmt.Errorf("commit unknown operation outcome: %w", err)
+	}
+	return result, nil
+}
+
 func (m *Module) completeSuccess(ctx context.Context, lease Lease) error {
 	now := m.now()
 	tx, _, err := m.lockCompletion(ctx, lease, now)
@@ -738,7 +842,8 @@ func (m *Module) completeSuccess(ctx context.Context, lease Lease) error {
 	if _, err := tx.ExecContext(
 		ctx,
 		`UPDATE operations
-		 SET status = 'succeeded', lease_owner = NULL, lease_expires_at = NULL,
+		 SET status = 'succeeded', recovery_required = false,
+		     lease_owner = NULL, lease_expires_at = NULL,
 		     error_code = NULL, error_summary = NULL, retry_disposition = NULL,
 		     updated_at = $1, finished_at = $1
 		 WHERE id = $2`,
@@ -811,7 +916,7 @@ func completeAttempt(
 	now time.Time,
 ) error {
 	var errorCode, errorSummary, disposition *string
-	if status == AttemptFailed {
+	if status == AttemptFailed || status == AttemptOutcomeUnknown {
 		errorCode = &failure.Code
 		errorSummary = &failure.Summary
 		disposition = &failure.Disposition
@@ -873,7 +978,7 @@ func appendCompletionAudit(
 
 const operationSelect = `SELECT id, operation_type, release_id, deployment_target_id,
        actor_id, idempotency_key, traceparent, tracestate, status, attempt_count,
-       automatic_retry_count, error_code, error_summary, retry_disposition,
+       automatic_retry_count, recovery_required, error_code, error_summary, retry_disposition,
        queued_at, available_at, created_at, updated_at, started_at, finished_at
  FROM operations`
 

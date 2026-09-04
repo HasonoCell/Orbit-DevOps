@@ -96,6 +96,9 @@ func TestReleaseAcceptanceAtomicallyCreatesPendingOperation(t *testing.T) {
 	if acceptance.Operation.AutomaticRetryCount != 0 {
 		t.Errorf("automaticRetryCount = %d, want 0", acceptance.Operation.AutomaticRetryCount)
 	}
+	if acceptance.Operation.RecoveryRequired {
+		t.Error("new operation unexpectedly requires recovery")
+	}
 	if acceptance.Operation.QueuedAt.IsZero() || acceptance.Operation.AvailableAt.IsZero() {
 		t.Error("pending operation has no scheduling timestamps")
 	}

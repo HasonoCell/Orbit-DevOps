@@ -15,11 +15,76 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 )
+
+func TestRecoveryInspectionClassifiesStableKubernetesState(t *testing.T) {
+	request := publishRequest()
+	name := kube.ResourceName(request.DeploymentTargetID)
+	newAdapter := func(objects ...runtime.Object) *kube.Adapter {
+		t.Helper()
+		adapter, err := kube.New(fake.NewClientset(objects...), kube.Config{
+			ClusterRef: "kind-orbitops-s1", Namespace: "orbitops-s1",
+			FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+		})
+		if err != nil {
+			t.Fatalf("create adapter: %v", err)
+		}
+		return adapter
+	}
+
+	absent, err := newAdapter().InspectRecovery(context.Background(), request)
+	if err != nil || absent.Action != worker.RecoveryApply {
+		t.Fatalf("absent recovery observation = %#v, error = %v", absent, err)
+	}
+
+	labels := recoveryLabels(request, request.ReleaseID)
+	readyDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name, Namespace: "orbitops-s1", Labels: labels, Generation: 1,
+		},
+		Status: appsv1.DeploymentStatus{
+			ObservedGeneration: 1, UpdatedReplicas: 1, AvailableReplicas: 1,
+		},
+	}
+	readyService := &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+		Name: name, Namespace: "orbitops-s1", Labels: labels,
+	}}
+	ready, err := newAdapter(readyDeployment, readyService).InspectRecovery(
+		context.Background(),
+		request,
+	)
+	if err != nil || ready.Action != worker.RecoverySucceeded {
+		t.Fatalf("ready recovery observation = %#v, error = %v", ready, err)
+	}
+
+	previousReleaseID := uuid.New()
+	previousLabels := recoveryLabels(request, previousReleaseID)
+	previousDeployment := readyDeployment.DeepCopy()
+	previousDeployment.Labels = previousLabels
+	previousService := readyService.DeepCopy()
+	previousService.Labels = previousLabels
+	previous, err := newAdapter(previousDeployment, previousService).InspectRecovery(
+		context.Background(),
+		request,
+	)
+	if err != nil || previous.Action != worker.RecoveryReleaseObserved ||
+		previous.ObservedReleaseID == nil || *previous.ObservedReleaseID != previousReleaseID {
+		t.Fatalf("previous recovery observation = %#v, error = %v", previous, err)
+	}
+
+	foreign := readyDeployment.DeepCopy()
+	foreign.Labels = map[string]string{"owner": "outside-orbitops"}
+	conflict, err := newAdapter(foreign).InspectRecovery(context.Background(), request)
+	if err != nil || conflict.Action != worker.RecoveryAttention ||
+		conflict.ErrorCode != "ownership_conflict" {
+		t.Fatalf("conflict recovery observation = %#v, error = %v", conflict, err)
+	}
+}
 
 func TestPublisherRefusesForeignResourceBeforeApply(t *testing.T) {
 	request := publishRequest()
@@ -132,5 +197,15 @@ func publishRequest() worker.PublishRequest {
 		Namespace:          "orbitops-s1",
 		Replicas:           1,
 		ContainerPort:      8080,
+	}
+}
+
+func recoveryLabels(request worker.PublishRequest, releaseID uuid.UUID) map[string]string {
+	return map[string]string{
+		kube.ManagedByLabel:     kube.ManagedByValue,
+		kube.ProjectIDLabel:     request.ProjectID.String(),
+		kube.ApplicationIDLabel: request.ApplicationID.String(),
+		kube.TargetIDLabel:      request.DeploymentTargetID.String(),
+		kube.ReleaseIDLabel:     releaseID.String(),
 	}
 }

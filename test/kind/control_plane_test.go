@@ -160,7 +160,10 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 		LocalClusterRef: kindCluster,
 		LocalNamespace:  kindNamespace,
 		MigrateOnBoot:   true,
-	}, app.Dependencies{RuntimeObserver: adapter})
+	}, app.Dependencies{
+		RuntimeObserver:   adapter,
+		RecoveryPublisher: adapter,
+	})
 	if err != nil {
 		t.Fatalf("start control plane: %v", err)
 	}

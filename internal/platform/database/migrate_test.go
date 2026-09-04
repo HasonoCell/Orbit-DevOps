@@ -153,12 +153,21 @@ func TestReliableOperationMigrationBackfillsSchedulingState(t *testing.T) {
 	var gotTargetID uuid.UUID
 	var queuedAt, availableAt time.Time
 	var errorCode, disposition string
+	var recoveryRequired bool
 	if err := database.QueryRowContext(
 		ctx,
-		`SELECT deployment_target_id, queued_at, available_at, error_code, retry_disposition
+		`SELECT deployment_target_id, queued_at, available_at, error_code,
+		        retry_disposition, recovery_required
 		 FROM operations WHERE id = $1`,
 		operationID,
-	).Scan(&gotTargetID, &queuedAt, &availableAt, &errorCode, &disposition); err != nil {
+	).Scan(
+		&gotTargetID,
+		&queuedAt,
+		&availableAt,
+		&errorCode,
+		&disposition,
+		&recoveryRequired,
+	); err != nil {
 		t.Fatalf("load migrated operation: %v", err)
 	}
 	if gotTargetID != targetID || !queuedAt.Equal(createdAt) || !availableAt.Equal(createdAt) {
@@ -171,6 +180,9 @@ func TestReliableOperationMigrationBackfillsSchedulingState(t *testing.T) {
 	}
 	if errorCode != "image_pull_failed" || disposition != "non_retryable" {
 		t.Errorf("migrated failure = %q/%q, want image_pull_failed/non_retryable", errorCode, disposition)
+	}
+	if recoveryRequired {
+		t.Error("migrated terminal operation unexpectedly requires recovery")
 	}
 }
 

@@ -622,7 +622,7 @@ paths:
   /api/v1/operations/{operationId}/retry:
     post:
       operationId: retryOperation
-      summary: 重新排队一个确定失败的操作
+      summary: 重新排队一个确定失败或已安全确认的操作
       parameters:
         - name: operationId
           in: path
@@ -652,6 +652,98 @@ paths:
                 $ref: "#/components/schemas/Error"
         "409":
           description: 当前状态不允许重试，或幂等键冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/operations/{operationId}/reconcile:
+    post:
+      operationId: reconcileOperation
+      summary: 只读核验需要人工关注的操作
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 已根据 Kubernetes 当前事实更新操作结论
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "403":
+          description: 当前项目角色不能核验操作
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 操作不存在或当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 当前状态不允许核验、外部事实仍不明确，或幂等键冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/operations/{operationId}/fail:
+    post:
+      operationId: forceFailOperation
+      summary: 人工结束无法自动判断的操作
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForceFailOperationRequest"
+      responses:
+        "200":
+          description: 操作已由项目 owner 标记为失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "403":
+          description: 只有项目 owner 可以人工结束未知结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 操作不存在或当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 当前状态不允许人工结束，或幂等键冲突
           content:
             application/json:
               schema:
@@ -1005,6 +1097,16 @@ components:
         - retryable
         - non_retryable
         - unknown_outcome
+    ForceFailOperationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
     Operation:
       type: object
       additionalProperties: false
@@ -1018,6 +1120,7 @@ components:
         - status
         - attemptCount
         - automaticRetryCount
+        - recoveryRequired
         - queuedAt
         - availableAt
         - createdAt
@@ -1057,6 +1160,8 @@ components:
         automaticRetryCount:
           type: integer
           minimum: 0
+        recoveryRequired:
+          type: boolean
         errorCode:
           type: string
         errorSummary:

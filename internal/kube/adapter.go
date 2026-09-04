@@ -132,6 +132,108 @@ func (a *Adapter) Publish(ctx context.Context, request worker.PublishRequest) er
 	return a.waitForRollout(ctx, request.Namespace, name, request.DeploymentTargetID, request.Replicas)
 }
 
+// InspectRecovery 只读取稳定资源与归属标签，在恢复 Attempt 的任何写入之前给出决策事实。
+func (a *Adapter) InspectRecovery(
+	ctx context.Context,
+	request worker.PublishRequest,
+) (worker.RecoveryObservation, error) {
+	if request.ClusterRef != a.config.ClusterRef || request.Namespace != a.config.Namespace {
+		return worker.RecoveryObservation{
+			Action:       worker.RecoveryAttention,
+			ErrorCode:    "target_boundary_violation",
+			ErrorSummary: "release target does not match the configured local Kubernetes boundary",
+		}, nil
+	}
+	name := ResourceName(request.DeploymentTargetID)
+	deployment, err := a.client.AppsV1().Deployments(request.Namespace).Get(
+		ctx,
+		name,
+		metav1.GetOptions{},
+	)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return worker.RecoveryObservation{}, a.unknownReadFailure("inspect recovery Deployment", err)
+	}
+	if apierrors.IsNotFound(err) {
+		deployment = nil
+	}
+	service, err := a.client.CoreV1().Services(request.Namespace).Get(
+		ctx,
+		name,
+		metav1.GetOptions{},
+	)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return worker.RecoveryObservation{}, a.unknownReadFailure("inspect recovery Service", err)
+	}
+	if apierrors.IsNotFound(err) {
+		service = nil
+	}
+	if deployment == nil && service == nil {
+		return worker.RecoveryObservation{Action: worker.RecoveryApply}, nil
+	}
+
+	wantOwnership := ownershipLabels(request)
+	for kind, labels := range map[string]map[string]string{
+		"Deployment": labelsOfDeployment(deployment),
+		"Service":    labelsOfService(service),
+	} {
+		if labels != nil && !hasOwnership(labels, wantOwnership) {
+			return worker.RecoveryObservation{
+				Action:       worker.RecoveryAttention,
+				ErrorCode:    "ownership_conflict",
+				ErrorSummary: fmt.Sprintf("%s %q exists without matching OrbitOps ownership", kind, name),
+			}, nil
+		}
+	}
+
+	releaseLabels := make([]string, 0, 2)
+	if deployment != nil {
+		releaseLabels = append(releaseLabels, deployment.Labels[ReleaseIDLabel])
+	}
+	if service != nil {
+		releaseLabels = append(releaseLabels, service.Labels[ReleaseIDLabel])
+	}
+	if releaseLabels[0] == "" ||
+		(len(releaseLabels) == 2 && releaseLabels[0] != releaseLabels[1]) {
+		return worker.RecoveryObservation{
+			Action:       worker.RecoveryAttention,
+			ErrorCode:    "release_identity_conflict",
+			ErrorSummary: "Kubernetes resources do not expose one consistent OrbitOps release identifier",
+		}, nil
+	}
+	observedReleaseID, err := uuid.Parse(releaseLabels[0])
+	if err != nil {
+		return worker.RecoveryObservation{
+			Action:       worker.RecoveryAttention,
+			ErrorCode:    "release_identity_invalid",
+			ErrorSummary: "Kubernetes resources expose an invalid OrbitOps release identifier",
+		}, nil
+	}
+	if observedReleaseID != request.ReleaseID {
+		return worker.RecoveryObservation{
+			Action:            worker.RecoveryReleaseObserved,
+			ObservedReleaseID: &observedReleaseID,
+		}, nil
+	}
+	if deployment == nil || service == nil {
+		return worker.RecoveryObservation{Action: worker.RecoveryApply}, nil
+	}
+	if rolloutReady(deployment, int32(request.Replicas)) {
+		return worker.RecoveryObservation{Action: worker.RecoverySucceeded}, nil
+	}
+	return worker.RecoveryObservation{Action: worker.RecoveryObserve}, nil
+}
+
+// ObserveRecovery 延续已属于目标 Release 的 Rollout 观察，不再次执行 Apply。
+func (a *Adapter) ObserveRecovery(ctx context.Context, request worker.PublishRequest) error {
+	return a.waitForRollout(
+		ctx,
+		request.Namespace,
+		ResourceName(request.DeploymentTargetID),
+		request.DeploymentTargetID,
+		request.Replicas,
+	)
+}
+
 func (a *Adapter) checkOwnership(
 	ctx context.Context,
 	name string,
@@ -146,7 +248,7 @@ func (a *Adapter) checkOwnership(
 		return ownershipFailure("Deployment", name)
 	}
 	if err != nil && !apierrors.IsNotFound(err) {
-		return a.observeFailure("inspect Deployment ownership", err)
+		return a.preflightFailure("inspect Deployment ownership", err)
 	}
 
 	service, err := a.client.CoreV1().Services(a.config.Namespace).Get(
@@ -158,7 +260,7 @@ func (a *Adapter) checkOwnership(
 		return ownershipFailure("Service", name)
 	}
 	if err != nil && !apierrors.IsNotFound(err) {
-		return a.observeFailure("inspect Service ownership", err)
+		return a.preflightFailure("inspect Service ownership", err)
 	}
 	return nil
 }
@@ -202,7 +304,11 @@ func (a *Adapter) waitForRollout(
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return worker.NewUnknownOutcome(
+				"rollout_observation_interrupted",
+				"delivery stopped before the Kubernetes rollout outcome was observed",
+				true,
+			)
 		case <-ticker.C:
 		}
 	}
@@ -304,18 +410,46 @@ func applyFailure(kind string, err error) error {
 			fmt.Sprintf("Server-Side Apply reported a field ownership conflict for %s", kind),
 		)
 	}
-	return worker.NewFailure(
+	return worker.NewUnknownOutcome(
 		"kubernetes_apply_failed",
 		fmt.Sprintf("Kubernetes rejected the desired %s: %s", kind, apierrors.ReasonForError(err)),
+		true,
 	)
 }
 
 func (a *Adapter) observeFailure(action string, err error) error {
 	a.recordReadFailure()
-	return worker.NewFailure(
+	return worker.NewUnknownOutcome(
+		"kubernetes_unavailable",
+		fmt.Sprintf("%s failed: %s", action, apierrors.ReasonForError(err)),
+		true,
+	)
+}
+
+func (a *Adapter) preflightFailure(action string, err error) error {
+	a.recordReadFailure()
+	return worker.NewRetryableFailure(
 		"kubernetes_unavailable",
 		fmt.Sprintf("%s failed: %s", action, apierrors.ReasonForError(err)),
 	)
+}
+
+func (a *Adapter) unknownReadFailure(action string, err error) error {
+	return a.observeFailure(action, err)
+}
+
+func labelsOfDeployment(deployment *appsv1.Deployment) map[string]string {
+	if deployment == nil {
+		return nil
+	}
+	return deployment.Labels
+}
+
+func labelsOfService(service *corev1.Service) map[string]string {
+	if service == nil {
+		return nil
+	}
+	return service.Labels
 }
 
 func (a *Adapter) recordReadFailure() {

@@ -220,8 +220,42 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 重新排队一个确定失败的操作 */
+        /** 重新排队一个确定失败或已安全确认的操作 */
         post: operations["retryOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/{operationId}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 只读核验需要人工关注的操作 */
+        post: operations["reconcileOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/{operationId}/fail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 人工结束无法自动判断的操作 */
+        post: operations["forceFailOperation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -355,6 +389,9 @@ export interface components {
         };
         /** @enum {string} */
         RetryDisposition: "retryable" | "non_retryable" | "unknown_outcome";
+        ForceFailOperationRequest: {
+            reason: string;
+        };
         Operation: {
             /** Format: uuid */
             id: string;
@@ -370,6 +407,7 @@ export interface components {
             status: "pending" | "running" | "cancel_requested" | "succeeded" | "failed" | "canceled" | "attention_required";
             attemptCount: number;
             automaticRetryCount: number;
+            recoveryRequired: boolean;
             errorCode?: string;
             errorSummary?: string;
             retryDisposition?: components["schemas"]["RetryDisposition"];
@@ -1311,6 +1349,132 @@ export interface operations {
                 };
             };
             /** @description 当前状态不允许重试，或幂等键冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reconcileOperation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前操作者与写操作范围内的幂等标识。 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                operationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已根据 Kubernetes 当前事实更新操作结论 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operation"];
+                };
+            };
+            /** @description 当前项目角色不能核验操作 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 操作不存在或当前操作者不是项目成员 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 当前状态不允许核验、外部事实仍不明确，或幂等键冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    forceFailOperation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前操作者与写操作范围内的幂等标识。 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                operationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForceFailOperationRequest"];
+            };
+        };
+        responses: {
+            /** @description 操作已由项目 owner 标记为失败 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operation"];
+                };
+            };
+            /** @description 只有项目 owner 可以人工结束未知结果 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 操作不存在或当前操作者不是项目成员 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 当前状态不允许人工结束，或幂等键冲突 */
             409: {
                 headers: {
                     [name: string]: unknown;

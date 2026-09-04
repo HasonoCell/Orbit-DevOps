@@ -19,6 +19,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
 	"github.com/HasonoCell/OrbitOps/internal/transport/httpapi"
+	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -42,11 +43,12 @@ type Runtime struct {
 }
 
 type Dependencies struct {
-	RuntimeObserver runtimeview.Observer
-	Logger          *slog.Logger
-	Metrics         *observability.Metrics
-	Tracer          trace.Tracer
-	Propagator      propagation.TextMapPropagator
+	RuntimeObserver   runtimeview.Observer
+	RecoveryPublisher worker.RecoveryPublisher
+	Logger            *slog.Logger
+	Metrics           *observability.Metrics
+	Tracer            trace.Tracer
+	Propagator        propagation.TextMapPropagator
 }
 
 func New(ctx context.Context, config Config) (*Runtime, error) {
@@ -132,6 +134,7 @@ func NewWithDependencies(
 		operationModule,
 		authorizer,
 		observer,
+		dependencies.RecoveryPublisher,
 		config.LocalActorID,
 		propagator,
 	)

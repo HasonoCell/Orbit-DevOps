@@ -14,8 +14,9 @@ import (
 )
 
 type testEnvironment struct {
-	server      *httptest.Server
-	databaseURL string
+	server       *httptest.Server
+	databaseURL  string
+	dependencies app.Dependencies
 }
 
 // serverForActor 使用同一数据库启动另一个本地身份，用于端到端验证项目授权。
@@ -28,7 +29,7 @@ func (e *testEnvironment) serverForActor(t *testing.T, actorID string) *httptest
 		LocalClusterRef: "kind-orbitops-s1",
 		LocalNamespace:  "orbitops-s1",
 		MigrateOnBoot:   false,
-	}, app.Dependencies{})
+	}, e.dependencies)
 	if err != nil {
 		t.Fatalf("start OrbitOps for actor %q: %v", actorID, err)
 	}
@@ -103,6 +104,7 @@ type operationDocument struct {
 	Status              string                     `json:"status"`
 	AttemptCount        int                        `json:"attemptCount"`
 	AutomaticRetryCount int                        `json:"automaticRetryCount"`
+	RecoveryRequired    bool                       `json:"recoveryRequired"`
 	ErrorCode           *string                    `json:"errorCode"`
 	ErrorSummary        *string                    `json:"errorSummary"`
 	RetryDisposition    *string                    `json:"retryDisposition"`
@@ -215,7 +217,9 @@ func newTestEnvironmentWithDependencies(
 	server := httptest.NewServer(runtime.Handler())
 	t.Cleanup(server.Close)
 
-	return &testEnvironment{server: server, databaseURL: databaseURL}
+	return &testEnvironment{
+		server: server, databaseURL: databaseURL, dependencies: dependencies,
+	}
 }
 
 func (e *testEnvironment) postProject(

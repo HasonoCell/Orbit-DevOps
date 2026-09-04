@@ -69,11 +69,12 @@ func run(logger *slog.Logger) error {
 		LocalNamespace:  config.Kubernetes.Namespace,
 		MigrateOnBoot:   config.MigrateOnBoot,
 	}, app.Dependencies{
-		RuntimeObserver: adapter,
-		Logger:          logger,
-		Metrics:         metrics,
-		Tracer:          tracing.Provider.Tracer("orbitops-api"),
-		Propagator:      tracing.Propagator,
+		RuntimeObserver:   adapter,
+		RecoveryPublisher: adapter,
+		Logger:            logger,
+		Metrics:           metrics,
+		Tracer:            tracing.Provider.Tracer("orbitops-api"),
+		Propagator:        tracing.Propagator,
 	})
 	if err != nil {
 		return err
