@@ -25,6 +25,17 @@ const (
 
 type Permission string
 
+type denialRecorderKey struct{}
+
+type DenialRecorder interface {
+	RecordAuthorizationDenial(reason string)
+}
+
+// WithDenialRecorder 为当前请求记录授权拒绝类别，不暴露 Actor 或项目标识。
+func WithDenialRecorder(ctx context.Context, recorder DenialRecorder) context.Context {
+	return context.WithValue(ctx, denialRecorderKey{}, recorder)
+}
+
 const (
 	PermissionRead           Permission = "read"
 	PermissionDevelop        Permission = "develop"
@@ -399,6 +410,7 @@ func (m *Module) lockForMemberChange(
 		projectID,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			recordDenial(ctx, "not_member")
 			return ErrNotMember
 		}
 		return fmt.Errorf("lock project membership: %w", err)
@@ -429,14 +441,22 @@ func require(
 		actorID,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			recordDenial(ctx, "not_member")
 			return ErrNotMember
 		}
 		return fmt.Errorf("load project role: %w", err)
 	}
 	if !roleAllows(role, permission) {
+		recordDenial(ctx, "forbidden")
 		return ErrForbidden
 	}
 	return nil
+}
+
+func recordDenial(ctx context.Context, reason string) {
+	if recorder, ok := ctx.Value(denialRecorderKey{}).(DenialRecorder); ok {
+		recorder.RecordAuthorizationDenial(reason)
+	}
 }
 
 func roleAllows(role string, permission Permission) bool {

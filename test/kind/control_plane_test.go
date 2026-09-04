@@ -20,6 +20,9 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestKindControlPlaneDeliveryLoop(t *testing.T) {
@@ -93,17 +96,156 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 			t.Errorf("failure pods = %#v, want Kubernetes pull failure", snapshot.Pods)
 		}
 	})
+
+	t.Run("automatic reconciliation after external apply", func(t *testing.T) {
+		acceptance := environment.acceptRelease(t, "recovery", readyImage)
+		targetID := uuid.MustParse(acceptance.TargetID)
+		cleanupResources(t, client, targetID)
+		lease, claimed, err := environment.operations.ClaimNext(context.Background(), operation.ClaimRequest{
+			WorkerID: "kind-lost-worker", LeaseDuration: 300 * time.Millisecond,
+		})
+		if err != nil || !claimed || lease.OperationID.String() != acceptance.OperationID {
+			t.Fatalf("claim operation before simulated process loss = %#v, %v, %v", lease, claimed, err)
+		}
+		release, err := environment.releases.GetRelease(context.Background(), lease.ReleaseID)
+		if err != nil {
+			t.Fatalf("load release before external Apply: %v", err)
+		}
+		if err := adapter.Publish(context.Background(), publishRequest(lease, release)); err != nil {
+			t.Fatalf("apply before simulated database interruption: %v", err)
+		}
+		time.Sleep(350 * time.Millisecond)
+
+		processed, err := environment.runner.RunOnce(context.Background())
+		if err != nil || !processed {
+			t.Fatalf("reconcile externally applied release = %v, error = %v", processed, err)
+		}
+		current := environment.getOperation(t, acceptance.OperationID)
+		if current.Status != operation.StatusSucceeded || current.AttemptCount != 2 ||
+			current.Attempts[0].Status != operation.AttemptOutcomeUnknown ||
+			current.Attempts[1].Status != operation.AttemptSucceeded {
+			t.Fatalf("reconciled operation = %#v", current)
+		}
+	})
+
+	t.Run("running release cancellation", func(t *testing.T) {
+		image := "registry.invalid/orbitops/cancel@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+		acceptance := environment.acceptRelease(t, "cancel", image)
+		targetID := uuid.MustParse(acceptance.TargetID)
+		cleanupResources(t, client, targetID)
+		result := make(chan error, 1)
+		go func() {
+			processed, err := environment.runner.RunOnce(context.Background())
+			if err == nil && !processed {
+				err = fmt.Errorf("Kind Worker did not claim cancellation operation")
+			}
+			result <- err
+		}()
+		eventuallyOperationStatus(t, environment, acceptance.OperationID, operation.StatusRunning, 5*time.Second)
+		environment.postCommand(
+			t,
+			"/api/v1/operations/"+acceptance.OperationID+"/cancel",
+			"cancel-kind-running-release",
+			http.StatusOK,
+		)
+		select {
+		case err := <-result:
+			if err != nil {
+				t.Fatalf("cancel Kind Worker: %v", err)
+			}
+		case <-time.After(8 * time.Second):
+			t.Fatal("Kind Worker did not acknowledge cancellation")
+		}
+		current := environment.getOperation(t, acceptance.OperationID)
+		if current.Status != operation.StatusCanceled || len(current.Attempts) != 1 ||
+			current.Attempts[0].Status != operation.AttemptCanceled {
+			t.Fatalf("canceled Kind operation = %#v", current)
+		}
+	})
+
+	t.Run("rollback applies a new release", func(t *testing.T) {
+		source := environment.acceptRelease(t, "rollback-source", readyImage)
+		targetID := uuid.MustParse(source.TargetID)
+		cleanupResources(t, client, targetID)
+		if processed, err := environment.runner.RunOnce(context.Background()); err != nil || !processed {
+			t.Fatalf("publish rollback source = %v, error = %v", processed, err)
+		}
+		response := environment.postJSON(
+			t,
+			"/api/v1/releases/"+source.ReleaseID+"/rollback",
+			"kind-rollback-release",
+			"",
+		)
+		rollback := decodeReleaseAcceptance(t, response)
+		if rollback.RollbackOfReleaseID == nil || *rollback.RollbackOfReleaseID != source.ReleaseID {
+			t.Fatalf("rollback lineage = %#v, want source %s", rollback, source.ReleaseID)
+		}
+		if processed, err := environment.runner.RunOnce(context.Background()); err != nil || !processed {
+			t.Fatalf("publish rollback = %v, error = %v", processed, err)
+		}
+		current := environment.getOperation(t, rollback.OperationID)
+		if current.Status != operation.StatusSucceeded {
+			t.Fatalf("rollback operation = %#v", current)
+		}
+		snapshot := environment.getRuntimeSnapshot(t, source.TargetID)
+		if snapshot.ReleaseID == nil || *snapshot.ReleaseID != rollback.ReleaseID {
+			t.Fatalf("rollback runtime releaseId = %v, want %s", snapshot.ReleaseID, rollback.ReleaseID)
+		}
+	})
+
+	t.Run("foreign ownership conflict is preserved", func(t *testing.T) {
+		acceptance := environment.acceptRelease(t, "ownership-conflict", readyImage)
+		targetID := uuid.MustParse(acceptance.TargetID)
+		cleanupResources(t, client, targetID)
+		name := kube.ResourceName(targetID)
+		replicas := int32(1)
+		foreign := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name, Namespace: kindNamespace, Labels: map[string]string{"owner": "external-control-plane-test"},
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &replicas,
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "external", Image: readyImage}}},
+				},
+			},
+		}
+		if _, err := client.AppsV1().Deployments(kindNamespace).Create(
+			context.Background(), foreign, metav1.CreateOptions{},
+		); err != nil {
+			t.Fatalf("create foreign control-plane deployment: %v", err)
+		}
+		if processed, err := environment.runner.RunOnce(context.Background()); err != nil || !processed {
+			t.Fatalf("run ownership-conflict operation = %v, error = %v", processed, err)
+		}
+		current := environment.getOperation(t, acceptance.OperationID)
+		if current.Status != operation.StatusFailed || current.ErrorCode == nil ||
+			*current.ErrorCode != "ownership_conflict" {
+			t.Fatalf("ownership-conflict operation = %#v", current)
+		}
+		preserved, err := client.AppsV1().Deployments(kindNamespace).Get(
+			context.Background(), name, metav1.GetOptions{},
+		)
+		if err != nil || preserved.Labels["owner"] != "external-control-plane-test" {
+			t.Fatalf("foreign deployment was not preserved: %#v, error = %v", preserved, err)
+		}
+	})
 }
 
 type kindControlPlane struct {
-	server *httptest.Server
-	runner *worker.Runner
+	server     *httptest.Server
+	runner     *worker.Runner
+	operations *operation.Module
+	releases   *delivery.Module
 }
 
 type releaseAcceptance struct {
-	TargetID    string
-	ReleaseID   string
-	OperationID string
+	TargetID            string
+	ReleaseID           string
+	OperationID         string
+	RollbackOfReleaseID *string
 }
 
 type operationResponse struct {
@@ -195,7 +337,9 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 		t.Fatalf("create worker runner: %v", err)
 	}
 
-	return &kindControlPlane{server: server, runner: runner}
+	return &kindControlPlane{
+		server: server, runner: runner, operations: operations, releases: releases,
+	}
 }
 
 func (e *kindControlPlane) acceptRelease(
@@ -230,7 +374,8 @@ func (e *kindControlPlane) acceptRelease(
 	defer releaseResponse.Body.Close()
 	var document struct {
 		Release struct {
-			ID string `json:"id"`
+			ID                  string  `json:"id"`
+			RollbackOfReleaseID *string `json:"rollbackOfReleaseId"`
 		} `json:"release"`
 		Operation struct {
 			ID string `json:"id"`
@@ -240,9 +385,32 @@ func (e *kindControlPlane) acceptRelease(
 		t.Fatalf("decode release acceptance: %v", err)
 	}
 	return releaseAcceptance{
-		TargetID:    targetID,
-		ReleaseID:   document.Release.ID,
-		OperationID: document.Operation.ID,
+		TargetID:            targetID,
+		ReleaseID:           document.Release.ID,
+		OperationID:         document.Operation.ID,
+		RollbackOfReleaseID: document.Release.RollbackOfReleaseID,
+	}
+}
+
+func decodeReleaseAcceptance(t *testing.T, response *http.Response) releaseAcceptance {
+	t.Helper()
+	defer response.Body.Close()
+	var document struct {
+		Release struct {
+			ID                  string  `json:"id"`
+			DeploymentTargetID  string  `json:"deploymentTargetId"`
+			RollbackOfReleaseID *string `json:"rollbackOfReleaseId"`
+		} `json:"release"`
+		Operation struct {
+			ID string `json:"id"`
+		} `json:"operation"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&document); err != nil {
+		t.Fatalf("decode release acceptance: %v", err)
+	}
+	return releaseAcceptance{
+		TargetID: document.Release.DeploymentTargetID, ReleaseID: document.Release.ID,
+		OperationID: document.Operation.ID, RollbackOfReleaseID: document.Release.RollbackOfReleaseID,
 	}
 }
 
@@ -275,6 +443,28 @@ func (e *kindControlPlane) postJSON(
 		t.Fatalf("POST %s status = %d, want 201; body = %#v", path, response.StatusCode, failure)
 	}
 	return response
+}
+
+func (e *kindControlPlane) postCommand(
+	t *testing.T,
+	path string,
+	idempotencyKey string,
+	wantStatus int,
+) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, e.server.URL+path, nil)
+	if err != nil {
+		t.Fatalf("build POST %s: %v", path, err)
+	}
+	request.Header.Set("Idempotency-Key", idempotencyKey)
+	response, err := e.server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != wantStatus {
+		t.Fatalf("POST %s status = %d, want %d", path, response.StatusCode, wantStatus)
+	}
 }
 
 func decodeID(t *testing.T, response *http.Response, resource string) string {
@@ -321,5 +511,42 @@ func (e *kindControlPlane) getJSON(t *testing.T, path string, destination any) {
 	}
 	if err := json.NewDecoder(response.Body).Decode(destination); err != nil {
 		t.Fatalf("decode GET %s: %v", path, err)
+	}
+}
+
+func eventuallyOperationStatus(
+	t *testing.T,
+	environment *kindControlPlane,
+	operationID string,
+	want string,
+	timeout time.Duration,
+) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		if current := environment.getOperation(t, operationID); current.Status == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("operation %s did not reach %s", operationID, want)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+func publishRequest(lease operation.Lease, release delivery.Release) worker.PublishRequest {
+	return worker.PublishRequest{
+		OperationID:        lease.OperationID,
+		AttemptID:          lease.AttemptID,
+		ReleaseID:          release.ID,
+		ProjectID:          release.TargetSnapshot.ProjectID,
+		ApplicationID:      release.TargetSnapshot.ApplicationID,
+		DeploymentTargetID: release.DeploymentTargetID,
+		ImageReference:     release.ImageReference,
+		Stage:              release.TargetSnapshot.Stage,
+		ClusterRef:         release.TargetSnapshot.ClusterRef,
+		Namespace:          release.TargetSnapshot.Namespace,
+		Replicas:           release.TargetSnapshot.Replicas,
+		ContainerPort:      release.TargetSnapshot.ContainerPort,
 	}
 }

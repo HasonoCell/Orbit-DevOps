@@ -72,6 +72,7 @@ func run(logger *slog.Logger) error {
 	)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	metrics := observability.NewMetrics(operations.CountPending)
+	metrics.RegisterOperations(operations.ReadMetricsSnapshot)
 	tracing := observability.NewTracing(logger)
 	defer func() {
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)

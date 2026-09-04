@@ -15,6 +15,17 @@ import (
 
 var ErrConflict = errors.New("idempotency key was already used with a different request")
 
+type conflictRecorderKey struct{}
+
+type ConflictRecorder interface {
+	RecordIdempotencyConflict(commandType string)
+}
+
+// WithConflictRecorder 只为当前请求挂载低基数冲突计数器，不把 Actor 或幂等键写入指标。
+func WithConflictRecorder(ctx context.Context, recorder ConflictRecorder) context.Context {
+	return context.WithValue(ctx, conflictRecorderKey{}, recorder)
+}
+
 type Scope struct {
 	ActorID     string
 	CommandType string
@@ -84,6 +95,9 @@ func Claim(
 	}
 
 	if !bytes.Equal(existing.RequestHash, requestHash) {
+		if recorder, ok := ctx.Value(conflictRecorderKey{}).(ConflictRecorder); ok {
+			recorder.RecordIdempotencyConflict(scope.CommandType)
+		}
 		return uuid.Nil, false, ErrConflict
 	}
 

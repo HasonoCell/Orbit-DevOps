@@ -24,7 +24,46 @@ import (
 
 func TestHealthAndMetricsExposeControlPlaneState(t *testing.T) {
 	environment := newTestEnvironment(t)
-	createRelease(t, environment, "metrics")
+	delayed := createRelease(t, environment, "metrics-delayed")
+	db := openTestDatabase(t, environment.databaseURL)
+	operations := operation.New(
+		db,
+		operation.WithAutomaticRetryPolicy(2, func(int) time.Duration { return time.Hour }),
+	)
+	lease := claimOperation(t, operations, "metrics-worker")
+	if lease.OperationID.String() != delayed.Operation.ID {
+		t.Fatalf("metrics operation claim = %s, want %s", lease.OperationID, delayed.Operation.ID)
+	}
+	if _, err := operations.Fail(context.Background(), lease, operation.Failure{
+		Code: "temporary_outage", Summary: "temporary controlled failure", Disposition: operation.Retryable,
+	}); err != nil {
+		t.Fatalf("schedule delayed metrics operation: %v", err)
+	}
+	createRelease(t, environment, "metrics-available")
+
+	denied := environment.get(
+		t,
+		"/api/v1/projects/00000000-0000-4000-8000-000000000001",
+	)
+	denied.Body.Close()
+	if denied.StatusCode != http.StatusNotFound {
+		t.Fatalf("metrics authorization denial status = %d", denied.StatusCode)
+	}
+	firstProject := environment.postProject(
+		t,
+		"metrics-idempotency-conflict",
+		`{"name":"Metrics One","slug":"metrics-one"}`,
+	)
+	firstProject.Body.Close()
+	conflict := environment.postProject(
+		t,
+		"metrics-idempotency-conflict",
+		`{"name":"Metrics Two","slug":"metrics-two"}`,
+	)
+	conflict.Body.Close()
+	if conflict.StatusCode != http.StatusConflict {
+		t.Fatalf("metrics idempotency conflict status = %d", conflict.StatusCode)
+	}
 
 	health := environment.get(t, "/healthz")
 	defer health.Body.Close()
@@ -42,7 +81,14 @@ func TestHealthAndMetricsExposeControlPlaneState(t *testing.T) {
 	for _, want := range []string{
 		"orbitops_http_requests_total",
 		"orbitops_http_request_duration_seconds",
-		"orbitops_pending_operations 1",
+		"orbitops_pending_operations 2",
+		`orbitops_operation_status{status="pending"} 2`,
+		`orbitops_pending_operation_state{availability="available"} 1`,
+		`orbitops_pending_operation_state{availability="delayed"} 1`,
+		`orbitops_operation_events{event="operation.claimed"} 1`,
+		`orbitops_attempt_errors{error_code="temporary_outage"} 1`,
+		`orbitops_authorization_denials_total{reason="not_member"} 1`,
+		`orbitops_idempotency_conflicts_total{command="project.create"} 1`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("metrics do not contain %q", want)

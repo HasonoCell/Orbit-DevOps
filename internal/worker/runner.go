@@ -28,10 +28,25 @@ type Config struct {
 	Recorder         OperationRecorder
 	Tracer           trace.Tracer
 	Propagator       propagation.TextMapPropagator
+	DeliveryHook     DeliveryHook
 }
+
+type DeliveryCheckpoint string
+
+const (
+	DeliveryBeforePublish DeliveryCheckpoint = "before_publish"
+	DeliveryBeforeCommit  DeliveryCheckpoint = "before_commit"
+)
+
+// DeliveryHook 暴露外部交付前与数据库提交前的进程边界，供故障注入和运行时观测使用。
+type DeliveryHook func(DeliveryCheckpoint, PublishRequest)
 
 type OperationRecorder interface {
 	RecordOperation(status string, category string, duration time.Duration)
+}
+
+type OperationPhaseRecorder interface {
+	RecordOperationPhase(phase string, duration time.Duration)
 }
 
 type PublishRequest struct {
@@ -190,10 +205,12 @@ func New(
 }
 
 func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
+	claimStartedAt := time.Now()
 	lease, claimed, err := r.operations.ClaimNext(ctx, operation.ClaimRequest{
 		WorkerID:      r.config.WorkerID,
 		LeaseDuration: r.config.LeaseDuration,
 	})
+	r.recordPhase("claim", claimStartedAt)
 	if err != nil {
 		return false, err
 	}
@@ -272,6 +289,9 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 		"deployment_target_id", release.DeploymentTargetID,
 		"namespace", release.TargetSnapshot.Namespace,
 	)
+	if r.config.DeliveryHook != nil {
+		r.config.DeliveryHook(DeliveryBeforePublish, request)
+	}
 
 	executionContext, cancelExecution := context.WithTimeout(attemptContext, r.config.OperationTimeout)
 	heartbeatContext, stopHeartbeat := context.WithCancel(attemptContext)
@@ -287,7 +307,16 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 		}
 	}()
 
+	deliveryStartedAt := time.Now()
 	publishErr := r.executeDelivery(executionContext, lease, request)
+	r.recordPhase("execution", deliveryStartedAt)
+	if lease.Recovery {
+		r.recordPhase("recovery", deliveryStartedAt)
+	}
+	if publishErr == nil && r.config.DeliveryHook != nil {
+		// 此处外部系统已经确认交付完成，但 Operation 终态尚未提交，是必须显式验证的崩溃窗口。
+		r.config.DeliveryHook(DeliveryBeforeCommit, request)
+	}
 	executionErr := executionContext.Err()
 	cancelExecution()
 	stopHeartbeat()
@@ -299,7 +328,9 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 		return true, ctx.Err()
 	}
 	if heartbeat.cancelRequested {
-		return true, r.finishCancellation(attemptContext, lease, release.ID, attemptStartedAt)
+		return true, r.finishCancellation(
+			attemptContext, lease, release.ID, release.CreatedAt, attemptStartedAt,
+		)
 	}
 
 	if publishErr == nil && executionErr == nil {
@@ -309,6 +340,7 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 					attemptContext,
 					lease,
 					release.ID,
+					release.CreatedAt,
 					attemptStartedAt,
 				); cancelErr == nil {
 					return true, nil
@@ -317,6 +349,7 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 			return true, err
 		}
 		r.recordTerminal(operation.StatusSucceeded, "none", attemptStartedAt)
+		r.recordPhase("end_to_end", release.CreatedAt)
 		r.logger.InfoContext(attemptContext, "发布操作成功",
 			"operation_id", lease.OperationID,
 			"attempt_id", lease.AttemptID,
@@ -340,6 +373,7 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 					attemptContext,
 					lease,
 					release.ID,
+					release.CreatedAt,
 					attemptStartedAt,
 				); cancelErr == nil {
 					return true, nil
@@ -375,6 +409,7 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 				attemptContext,
 				lease,
 				release.ID,
+				release.CreatedAt,
 				attemptStartedAt,
 			); cancelErr == nil {
 				return true, nil
@@ -399,6 +434,7 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 	r.recordTerminal(operation.StatusFailed, failure.Code, attemptStartedAt)
+	r.recordPhase("end_to_end", release.CreatedAt)
 	r.logger.WarnContext(attemptContext, "发布操作失败",
 		"operation_id", lease.OperationID,
 		"attempt_id", lease.AttemptID,
@@ -491,16 +527,24 @@ func (r *Runner) recordTerminal(status string, category string, startedAt time.T
 	}
 }
 
+func (r *Runner) recordPhase(phase string, startedAt time.Time) {
+	if recorder, ok := r.recorder.(OperationPhaseRecorder); ok {
+		recorder.RecordOperationPhase(phase, time.Since(startedAt))
+	}
+}
+
 func (r *Runner) finishCancellation(
 	ctx context.Context,
 	lease operation.Lease,
 	releaseID uuid.UUID,
+	releaseCreatedAt time.Time,
 	startedAt time.Time,
 ) error {
 	if err := r.operations.ConfirmCanceled(ctx, lease); err != nil {
 		return err
 	}
 	r.recordTerminal(operation.StatusCanceled, "none", startedAt)
+	r.recordPhase("end_to_end", releaseCreatedAt)
 	r.logger.InfoContext(ctx, "发布操作已响应取消请求",
 		"operation_id", lease.OperationID,
 		"attempt_id", lease.AttemptID,

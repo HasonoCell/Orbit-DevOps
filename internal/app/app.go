@@ -112,6 +112,7 @@ func NewWithDependencies(
 	} else {
 		metrics.RegisterPending(operationModule.CountPending)
 	}
+	metrics.RegisterOperations(operationModule.ReadMetricsSnapshot)
 	tracer := dependencies.Tracer
 	if tracer == nil {
 		tracer = otel.Tracer("github.com/HasonoCell/OrbitOps/internal/app")

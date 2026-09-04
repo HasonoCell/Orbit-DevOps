@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HasonoCell/OrbitOps/internal/idempotency"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -59,6 +61,9 @@ func RequestMiddleware(
 	actorID string,
 ) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		requestContext := idempotency.WithConflictRecorder(ctx.Request.Context(), metrics)
+		requestContext = projectauth.WithDenialRecorder(requestContext, metrics)
+		ctx.Request = ctx.Request.WithContext(requestContext)
 		startedAt := time.Now()
 		requestID := strings.TrimSpace(ctx.GetHeader("X-Request-ID"))
 		if requestID == "" {

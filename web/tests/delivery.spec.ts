@@ -154,7 +154,7 @@ function operationDocument(status: "pending" | "running" | "succeeded" | "failed
     attemptCount: status === "pending" ? 0 : 1,
     ...(failed
       ? {
-          errorCategory: "image_pull_failed",
+          errorCode: "image_pull_failed",
           errorSummary: "Kubernetes could not pull the immutable release image",
         }
       : {}),
@@ -173,7 +173,7 @@ function operationDocument(status: "pending" | "running" | "succeeded" | "failed
               status: terminal ? status : "running",
               ...(failed
                 ? {
-                    errorCategory: "image_pull_failed",
+                    errorCode: "image_pull_failed",
                     errorSummary: "Kubernetes could not pull the immutable release image",
                   }
                 : {}),
