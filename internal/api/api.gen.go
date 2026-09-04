@@ -475,6 +475,18 @@ type CreateReleaseParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// CancelOperationParams defines parameters for CancelOperation.
+type CancelOperationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// RetryOperationParams defines parameters for RetryOperation.
+type RetryOperationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // CreateProjectParams defines parameters for CreateProject.
 type CreateProjectParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
@@ -549,6 +561,12 @@ type ServerInterface interface {
 	// GetOperation 查询异步操作
 	// (GET /api/v1/operations/{operationId})
 	GetOperation(c *gin.Context, operationId openapi_types.UUID)
+	// CancelOperation 取消排队中或运行中的操作
+	// (POST /api/v1/operations/{operationId}/cancel)
+	CancelOperation(c *gin.Context, operationId openapi_types.UUID, params CancelOperationParams)
+	// RetryOperation 重新排队一个确定失败的操作
+	// (POST /api/v1/operations/{operationId}/retry)
+	RetryOperation(c *gin.Context, operationId openapi_types.UUID, params RetryOperationParams)
 	// CreateProject 创建项目
 	// (POST /api/v1/projects)
 	CreateProject(c *gin.Context, params CreateProjectParams)
@@ -838,6 +856,110 @@ func (siw *ServerInterfaceWrapper) GetOperation(c *gin.Context) {
 	}
 
 	siw.Handler.GetOperation(c, operationId)
+}
+
+// CancelOperation operation middleware
+func (siw *ServerInterfaceWrapper) CancelOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operationId" -------------
+	var operationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operationId", c.Param("operationId"), &operationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelOperationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelOperation(c, operationId, params)
+}
+
+// RetryOperation operation middleware
+func (siw *ServerInterfaceWrapper) RetryOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operationId" -------------
+	var operationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operationId", c.Param("operationId"), &operationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RetryOperationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RetryOperation(c, operationId, params)
 }
 
 // CreateProject operation middleware
@@ -1226,6 +1348,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/runtime-snapshot", wrapper.GetRuntimeSnapshot)
 	router.GET(options.BaseURL+"/api/v1/releases/:releaseId", wrapper.GetRelease)
 	router.GET(options.BaseURL+"/api/v1/operations/:operationId", wrapper.GetOperation)
+	router.POST(options.BaseURL+"/api/v1/operations/:operationId/retry", wrapper.RetryOperation)
+	router.POST(options.BaseURL+"/api/v1/operations/:operationId/cancel", wrapper.CancelOperation)
 }
 
 type GetApplicationRequestObject struct {
@@ -1692,6 +1816,170 @@ type GetOperationdefaultJSONResponse struct {
 }
 
 func (response GetOperationdefaultJSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelOperationRequestObject struct {
+	OperationId openapi_types.UUID `json:"operationId"`
+	Params      CancelOperationParams
+}
+
+type CancelOperationResponseObject interface {
+	VisitCancelOperationResponse(w http.ResponseWriter) error
+}
+
+type CancelOperation200JSONResponse Operation
+
+func (response CancelOperation200JSONResponse) VisitCancelOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelOperation403JSONResponse Error
+
+func (response CancelOperation403JSONResponse) VisitCancelOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelOperation404JSONResponse Error
+
+func (response CancelOperation404JSONResponse) VisitCancelOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelOperation409JSONResponse Error
+
+func (response CancelOperation409JSONResponse) VisitCancelOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CancelOperationdefaultJSONResponse) VisitCancelOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryOperationRequestObject struct {
+	OperationId openapi_types.UUID `json:"operationId"`
+	Params      RetryOperationParams
+}
+
+type RetryOperationResponseObject interface {
+	VisitRetryOperationResponse(w http.ResponseWriter) error
+}
+
+type RetryOperation200JSONResponse Operation
+
+func (response RetryOperation200JSONResponse) VisitRetryOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryOperation403JSONResponse Error
+
+func (response RetryOperation403JSONResponse) VisitRetryOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryOperation404JSONResponse Error
+
+func (response RetryOperation404JSONResponse) VisitRetryOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryOperation409JSONResponse Error
+
+func (response RetryOperation409JSONResponse) VisitRetryOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RetryOperationdefaultJSONResponse) VisitRetryOperationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -2314,6 +2602,12 @@ type StrictServerInterface interface {
 	// GetOperation 查询异步操作
 	// (GET /api/v1/operations/{operationId})
 	GetOperation(ctx context.Context, request GetOperationRequestObject) (GetOperationResponseObject, error)
+	// CancelOperation 取消排队中或运行中的操作
+	// (POST /api/v1/operations/{operationId}/cancel)
+	CancelOperation(ctx context.Context, request CancelOperationRequestObject) (CancelOperationResponseObject, error)
+	// RetryOperation 重新排队一个确定失败的操作
+	// (POST /api/v1/operations/{operationId}/retry)
+	RetryOperation(ctx context.Context, request RetryOperationRequestObject) (RetryOperationResponseObject, error)
 	// CreateProject 创建项目
 	// (POST /api/v1/projects)
 	CreateProject(ctx context.Context, request CreateProjectRequestObject) (CreateProjectResponseObject, error)
@@ -2603,6 +2897,60 @@ func (sh *strictHandler) GetOperation(ctx *gin.Context, operationId openapi_type
 	}
 }
 
+// CancelOperation operation middleware
+func (sh *strictHandler) CancelOperation(ctx *gin.Context, operationId openapi_types.UUID, params CancelOperationParams) {
+	var request CancelOperationRequestObject
+
+	request.OperationId = operationId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelOperation(ctx, request.(CancelOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CancelOperationResponseObject); ok {
+		if err := validResponse.VisitCancelOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryOperation operation middleware
+func (sh *strictHandler) RetryOperation(ctx *gin.Context, operationId openapi_types.UUID, params RetryOperationParams) {
+	var request RetryOperationRequestObject
+
+	request.OperationId = operationId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryOperation(ctx, request.(RetryOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(RetryOperationResponseObject); ok {
+		if err := validResponse.VisitRetryOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateProject operation middleware
 func (sh *strictHandler) CreateProject(ctx *gin.Context, params CreateProjectParams) {
 	var request CreateProjectRequestObject
@@ -2850,52 +3198,55 @@ func (sh *strictHandler) GetRelease(ctx *gin.Context, releaseId openapi_types.UU
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

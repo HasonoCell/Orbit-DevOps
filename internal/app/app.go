@@ -98,7 +98,7 @@ func NewWithDependencies(
 		ClusterRef: config.LocalClusterRef,
 		Namespace:  config.LocalNamespace,
 	}, authorizer)
-	operationModule := operation.New(db)
+	operationModule := operation.New(db, operation.WithAuthorizer(authorizer))
 	deliveryModule := delivery.New(db, operationModule, authorizer)
 	logger := dependencies.Logger
 	if logger == nil {

@@ -109,6 +109,11 @@ type Lease struct {
 	Recovery           bool
 }
 
+type Renewal struct {
+	Lease           Lease
+	CancelRequested bool
+}
+
 type Failure struct {
 	Code        string
 	Summary     string
@@ -126,7 +131,6 @@ type claimCandidate struct {
 	ID                  uuid.UUID `db:"id"`
 	ReleaseID           uuid.UUID `db:"release_id"`
 	DeploymentTargetID  uuid.UUID `db:"deployment_target_id"`
-	ActorID             string    `db:"actor_id"`
 	Status              string    `db:"status"`
 	AttemptCount        int       `db:"attempt_count"`
 	AutomaticRetryCount int       `db:"automatic_retry_count"`
@@ -136,9 +140,17 @@ type claimCandidate struct {
 
 type Module struct {
 	db                      *sqlx.DB
+	authorizer              Authorizer
 	now                     func() time.Time
 	maximumAutomaticRetries int
 	retryDelay              func(int) time.Duration
+}
+
+// WithAuthorizer 为面向用户的 Operation 命令接入项目权限校验。
+func WithAuthorizer(authorizer Authorizer) Option {
+	return func(module *Module) {
+		module.authorizer = authorizer
+	}
 }
 
 // Option 只用于配置 Operation 调度策略，所有 Worker 必须使用一致的生产配置。
@@ -329,11 +341,12 @@ func (m *Module) ClaimNext(
 		ctx,
 		&candidate,
 		`SELECT candidate.id, candidate.release_id, candidate.deployment_target_id,
-		        candidate.actor_id, candidate.status, candidate.attempt_count,
+		        candidate.status, candidate.attempt_count,
 		        candidate.automatic_retry_count, candidate.traceparent, candidate.tracestate
 		 FROM operations AS candidate
 		 WHERE ((candidate.status = 'pending' AND candidate.available_at <= $1)
-		        OR (candidate.status = 'running' AND candidate.lease_expires_at <= $1))
+		        OR (candidate.status IN ('running', 'cancel_requested')
+		            AND candidate.lease_expires_at <= $1))
 		   AND NOT EXISTS (
 		       SELECT 1
 		       FROM operations AS preceding
@@ -354,8 +367,9 @@ func (m *Module) ClaimNext(
 		return Lease{}, false, fmt.Errorf("select operation claim: %w", err)
 	}
 
+	leaseExpired := candidate.Status == StatusRunning || candidate.Status == StatusCancelRequested
 	recovery := candidate.Status == StatusRunning
-	if recovery {
+	if leaseExpired {
 		failureSummary := "worker lease expired before the attempt reached a terminal state"
 		result, err := tx.ExecContext(
 			ctx,
@@ -380,6 +394,40 @@ func (m *Module) ClaimNext(
 			return Lease{}, false, errors.New("running operation has no active attempt")
 		}
 
+		if candidate.Status == StatusCancelRequested {
+			if _, err := tx.ExecContext(
+				ctx,
+				`UPDATE operations
+				 SET status = 'attention_required', lease_owner = NULL, lease_expires_at = NULL,
+				     error_code = 'cancellation_outcome_unknown', error_summary = $1,
+				     retry_disposition = 'unknown_outcome', updated_at = $2, finished_at = $2
+				 WHERE id = $3`,
+				"worker lease expired before cancellation could be confirmed",
+				now,
+				candidate.ID,
+			); err != nil {
+				return Lease{}, false, fmt.Errorf("mark unknown cancellation outcome: %w", err)
+			}
+			if err := audit.Append(ctx, tx, audit.Entry{
+				ActorID:    "operation-scheduler",
+				ActorKind:  audit.ActorKindSystem,
+				Action:     "operation.attention_required",
+				TargetType: "operation",
+				TargetID:   candidate.ID,
+				Summary: map[string]any{
+					"attemptNumber": candidate.AttemptCount,
+					"errorCode":     "cancellation_outcome_unknown",
+				},
+				CreatedAt: now,
+			}); err != nil {
+				return Lease{}, false, err
+			}
+			if err := tx.Commit(); err != nil {
+				return Lease{}, false, fmt.Errorf("commit unknown cancellation outcome: %w", err)
+			}
+			return Lease{}, false, nil
+		}
+
 		// 租约过期意味着外部写入结果未知。超过自动恢复预算后必须停下等待人工处理，
 		// 不能继续盲目执行可能重复或覆盖的发布动作。
 		if candidate.AutomaticRetryCount >= m.maximumAutomaticRetries {
@@ -398,7 +446,8 @@ func (m *Module) ClaimNext(
 				return Lease{}, false, fmt.Errorf("mark exhausted lease recovery: %w", err)
 			}
 			if err := audit.Append(ctx, tx, audit.Entry{
-				ActorID:    candidate.ActorID,
+				ActorID:    "operation-scheduler",
+				ActorKind:  audit.ActorKindSystem,
 				Action:     "operation.attention_required",
 				TargetType: "operation",
 				TargetID:   candidate.ID,
@@ -487,19 +536,22 @@ func (m *Module) Renew(
 	ctx context.Context,
 	lease Lease,
 	leaseDuration time.Duration,
-) (Lease, error) {
+) (Renewal, error) {
 	if leaseDuration <= 0 {
-		return Lease{}, errors.New("lease duration must be positive")
+		return Renewal{}, errors.New("lease duration must be positive")
 	}
 
 	now := m.now()
 	expiresAt := now.Add(leaseDuration)
-	result, err := m.db.ExecContext(
+	var status string
+	err := m.db.GetContext(
 		ctx,
+		&status,
 		`UPDATE operations
 		 SET lease_expires_at = $1, updated_at = $2
-		 WHERE id = $3 AND status = 'running' AND lease_owner = $4
-		   AND attempt_count = $5 AND lease_expires_at > $2`,
+		 WHERE id = $3 AND status IN ('running', 'cancel_requested') AND lease_owner = $4
+		   AND attempt_count = $5 AND lease_expires_at > $2
+		 RETURNING status`,
 		expiresAt,
 		now,
 		lease.OperationID,
@@ -507,18 +559,75 @@ func (m *Module) Renew(
 		lease.AttemptNumber,
 	)
 	if err != nil {
-		return Lease{}, fmt.Errorf("renew operation lease: %w", err)
-	}
-	if err := requireOneLeaseRow(result); err != nil {
-		return Lease{}, err
+		if errors.Is(err, sql.ErrNoRows) {
+			return Renewal{}, ErrLeaseLost
+		}
+		return Renewal{}, fmt.Errorf("renew operation lease: %w", err)
 	}
 
 	lease.ExpiresAt = expiresAt
-	return lease, nil
+	return Renewal{Lease: lease, CancelRequested: status == StatusCancelRequested}, nil
 }
 
 func (m *Module) Succeed(ctx context.Context, lease Lease) error {
 	return m.completeSuccess(ctx, lease)
+}
+
+// ConfirmCanceled 只允许当前租约所有者关闭 cancel_requested，过期 Worker 仍会被 fencing。
+func (m *Module) ConfirmCanceled(ctx context.Context, lease Lease) error {
+	now := m.now()
+	tx, err := m.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin operation cancellation completion: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var locked int
+	if err := tx.GetContext(
+		ctx,
+		&locked,
+		`SELECT 1 FROM operations
+		 WHERE id = $1 AND status = 'cancel_requested' AND lease_owner = $2
+		   AND attempt_count = $3 AND lease_expires_at > $4
+		 FOR UPDATE`,
+		lease.OperationID,
+		lease.WorkerID,
+		lease.AttemptNumber,
+		now,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrLeaseLost
+		}
+		return fmt.Errorf("lock operation cancellation completion: %w", err)
+	}
+	if _, err := tx.ExecContext(
+		ctx,
+		`UPDATE operations
+		 SET status = 'canceled', lease_owner = NULL, lease_expires_at = NULL,
+		     updated_at = $1, finished_at = $1
+		 WHERE id = $2`,
+		now,
+		lease.OperationID,
+	); err != nil {
+		return fmt.Errorf("complete operation cancellation: %w", err)
+	}
+	if err := completeAttempt(ctx, tx, lease, AttemptCanceled, Failure{}, now); err != nil {
+		return err
+	}
+	if err := appendCompletionAudit(
+		ctx,
+		tx,
+		"operation.canceled",
+		lease,
+		StatusCanceled,
+		nil,
+		now,
+	); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit operation cancellation completion: %w", err)
+	}
+	return nil
 }
 
 // Fail 关闭当前 Attempt，并依据稳定的失败分类决定终结 Operation 或安排自动重试。
@@ -544,7 +653,7 @@ func (m *Module) Fail(
 	}
 
 	now := m.now()
-	tx, actorID, automaticRetryCount, err := m.lockCompletion(ctx, lease, now)
+	tx, automaticRetryCount, err := m.lockCompletion(ctx, lease, now)
 	if err != nil {
 		return FailureResult{}, err
 	}
@@ -605,7 +714,6 @@ func (m *Module) Fail(
 	if err := appendCompletionAudit(
 		ctx,
 		tx,
-		actorID,
 		action,
 		lease,
 		result.Status,
@@ -622,7 +730,7 @@ func (m *Module) Fail(
 
 func (m *Module) completeSuccess(ctx context.Context, lease Lease) error {
 	now := m.now()
-	tx, actorID, _, err := m.lockCompletion(ctx, lease, now)
+	tx, _, err := m.lockCompletion(ctx, lease, now)
 	if err != nil {
 		return err
 	}
@@ -645,7 +753,6 @@ func (m *Module) completeSuccess(ctx context.Context, lease Lease) error {
 	if err := appendCompletionAudit(
 		ctx,
 		tx,
-		actorID,
 		"operation.succeeded",
 		lease,
 		StatusSucceeded,
@@ -665,19 +772,18 @@ func (m *Module) lockCompletion(
 	ctx context.Context,
 	lease Lease,
 	now time.Time,
-) (*sqlx.Tx, string, int, error) {
+) (*sqlx.Tx, int, error) {
 	tx, err := m.db.BeginTxx(ctx, nil)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("begin operation completion: %w", err)
+		return nil, 0, fmt.Errorf("begin operation completion: %w", err)
 	}
 	var state struct {
-		ActorID             string `db:"actor_id"`
-		AutomaticRetryCount int    `db:"automatic_retry_count"`
+		AutomaticRetryCount int `db:"automatic_retry_count"`
 	}
 	if err := tx.GetContext(
 		ctx,
 		&state,
-		`SELECT actor_id, automatic_retry_count
+		`SELECT automatic_retry_count
 		 FROM operations
 		 WHERE id = $1 AND status = 'running' AND lease_owner = $2
 		   AND attempt_count = $3 AND lease_expires_at > $4
@@ -689,11 +795,11 @@ func (m *Module) lockCompletion(
 	); err != nil {
 		_ = tx.Rollback()
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, "", 0, ErrLeaseLost
+			return nil, 0, ErrLeaseLost
 		}
-		return nil, "", 0, fmt.Errorf("lock operation completion: %w", err)
+		return nil, 0, fmt.Errorf("lock operation completion: %w", err)
 	}
-	return tx, state.ActorID, state.AutomaticRetryCount, nil
+	return tx, state.AutomaticRetryCount, nil
 }
 
 func completeAttempt(
@@ -739,7 +845,6 @@ func completeAttempt(
 func appendCompletionAudit(
 	ctx context.Context,
 	tx *sqlx.Tx,
-	actorID string,
 	action string,
 	lease Lease,
 	status string,
@@ -756,24 +861,14 @@ func appendCompletionAudit(
 		summary["retryDisposition"] = failure.Disposition
 	}
 	return audit.Append(ctx, tx, audit.Entry{
-		ActorID:    actorID,
+		ActorID:    lease.WorkerID,
+		ActorKind:  audit.ActorKindSystem,
 		Action:     action,
 		TargetType: "operation",
 		TargetID:   lease.OperationID,
 		Summary:    summary,
 		CreatedAt:  now,
 	})
-}
-
-func requireOneLeaseRow(result sql.Result) error {
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("inspect operation lease update: %w", err)
-	}
-	if rowsAffected != 1 {
-		return ErrLeaseLost
-	}
-	return nil
 }
 
 const operationSelect = `SELECT id, operation_type, release_id, deployment_target_id,

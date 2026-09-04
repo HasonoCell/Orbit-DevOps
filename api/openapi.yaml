@@ -619,6 +619,92 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/operations/{operationId}/retry:
+    post:
+      operationId: retryOperation
+      summary: 重新排队一个确定失败的操作
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 原 Operation 已重新进入目标队尾
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "403":
+          description: 当前项目角色不能重试操作
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 操作不存在或当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 当前状态不允许重试，或幂等键冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/operations/{operationId}/cancel:
+    post:
+      operationId: cancelOperation
+      summary: 取消排队中或运行中的操作
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 操作已取消或已记录取消请求
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "403":
+          description: 当前项目角色不能取消操作
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 操作不存在或当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 当前状态不允许取消，或幂等键冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   parameters:
     IdempotencyKey:

@@ -96,6 +96,11 @@ type Runner struct {
 	propagator propagation.TextMapPropagator
 }
 
+type heartbeatResult struct {
+	cancelRequested bool
+	err             error
+}
+
 func New(
 	config Config,
 	operations *operation.Module,
@@ -234,29 +239,45 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 
 	executionContext, cancelExecution := context.WithTimeout(attemptContext, r.config.OperationTimeout)
 	heartbeatContext, stopHeartbeat := context.WithCancel(attemptContext)
-	heartbeatDone := make(chan error, 1)
+	heartbeatDone := make(chan heartbeatResult, 1)
 	go func() {
-		heartbeatErr := r.maintainLease(heartbeatContext, lease)
-		if heartbeatErr != nil {
+		cancelRequested, heartbeatErr := r.maintainLease(heartbeatContext, lease)
+		if heartbeatErr != nil || cancelRequested {
 			cancelExecution()
 		}
-		heartbeatDone <- heartbeatErr
+		heartbeatDone <- heartbeatResult{
+			cancelRequested: cancelRequested,
+			err:             heartbeatErr,
+		}
 	}()
 
 	publishErr := r.publisher.Publish(executionContext, request)
 	executionErr := executionContext.Err()
 	cancelExecution()
 	stopHeartbeat()
-	heartbeatErr := <-heartbeatDone
-	if heartbeatErr != nil {
-		return true, heartbeatErr
+	heartbeat := <-heartbeatDone
+	if heartbeat.err != nil {
+		return true, heartbeat.err
 	}
 	if ctx.Err() != nil {
 		return true, ctx.Err()
 	}
+	if heartbeat.cancelRequested {
+		return true, r.finishCancellation(attemptContext, lease, release.ID, attemptStartedAt)
+	}
 
 	if publishErr == nil && executionErr == nil {
 		if err := r.operations.Succeed(attemptContext, lease); err != nil {
+			if errors.Is(err, operation.ErrLeaseLost) {
+				if cancelErr := r.finishCancellation(
+					attemptContext,
+					lease,
+					release.ID,
+					attemptStartedAt,
+				); cancelErr == nil {
+					return true, nil
+				}
+			}
 			return true, err
 		}
 		r.recordTerminal(operation.StatusSucceeded, "none", attemptStartedAt)
@@ -272,6 +293,16 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 	failure := classifyFailure(publishErr, executionErr)
 	failureResult, err := r.operations.Fail(attemptContext, lease, failure)
 	if err != nil {
+		if errors.Is(err, operation.ErrLeaseLost) {
+			if cancelErr := r.finishCancellation(
+				attemptContext,
+				lease,
+				release.ID,
+				attemptStartedAt,
+			); cancelErr == nil {
+				return true, nil
+			}
+		}
 		return true, err
 	}
 	if publishErr != nil {
@@ -308,7 +339,25 @@ func (r *Runner) recordTerminal(status string, category string, startedAt time.T
 	}
 }
 
-func (r *Runner) maintainLease(ctx context.Context, lease operation.Lease) error {
+func (r *Runner) finishCancellation(
+	ctx context.Context,
+	lease operation.Lease,
+	releaseID uuid.UUID,
+	startedAt time.Time,
+) error {
+	if err := r.operations.ConfirmCanceled(ctx, lease); err != nil {
+		return err
+	}
+	r.recordTerminal(operation.StatusCanceled, "none", startedAt)
+	r.logger.InfoContext(ctx, "发布操作已响应取消请求",
+		"operation_id", lease.OperationID,
+		"attempt_id", lease.AttemptID,
+		"release_id", releaseID,
+	)
+	return nil
+}
+
+func (r *Runner) maintainLease(ctx context.Context, lease operation.Lease) (bool, error) {
 	interval := r.config.LeaseDuration / 3
 	if interval <= 0 {
 		interval = time.Millisecond
@@ -319,12 +368,15 @@ func (r *Runner) maintainLease(ctx context.Context, lease operation.Lease) error
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return false, nil
 		case <-ticker.C:
-			var err error
-			lease, err = r.operations.Renew(ctx, lease, r.config.LeaseDuration)
+			renewal, err := r.operations.Renew(ctx, lease, r.config.LeaseDuration)
 			if err != nil {
-				return fmt.Errorf("renew claimed operation: %w", err)
+				return false, fmt.Errorf("renew claimed operation: %w", err)
+			}
+			lease = renewal.Lease
+			if renewal.CancelRequested {
+				return true, nil
 			}
 		}
 	}

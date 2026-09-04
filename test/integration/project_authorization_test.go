@@ -160,6 +160,41 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 	defer viewerRelease.Body.Close()
 	assertError(t, viewerRelease, http.StatusForbidden, "project_permission_denied")
 
+	viewerCancel := requestJSON(
+		t,
+		viewerServer,
+		http.MethodPost,
+		"/api/v1/operations/"+acceptance.Operation.ID+"/cancel",
+		"viewer-cancel-operation",
+		"",
+	)
+	defer viewerCancel.Body.Close()
+	assertError(t, viewerCancel, http.StatusForbidden, "project_permission_denied")
+
+	outsiderCancel := requestJSON(
+		t,
+		outsiderServer,
+		http.MethodPost,
+		"/api/v1/operations/"+acceptance.Operation.ID+"/cancel",
+		"outsider-cancel-operation",
+		"",
+	)
+	defer outsiderCancel.Body.Close()
+	assertError(t, outsiderCancel, http.StatusNotFound, "operation_not_found")
+
+	developerCancel := requestJSON(
+		t,
+		developerServer,
+		http.MethodPost,
+		"/api/v1/operations/"+acceptance.Operation.ID+"/cancel",
+		"developer-cancel-operation",
+		"",
+	)
+	defer developerCancel.Body.Close()
+	if developerCancel.StatusCode != http.StatusOK {
+		t.Errorf("developer cancel status = %d, want %d", developerCancel.StatusCode, http.StatusOK)
+	}
+
 	developerMemberWrite := requestJSON(
 		t,
 		developerServer,
