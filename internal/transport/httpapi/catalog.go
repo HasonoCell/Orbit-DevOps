@@ -8,6 +8,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 )
 
 func (s *Server) CreateApplication(
@@ -27,10 +28,15 @@ func (s *Server) CreateApplication(
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, catalog.ErrProjectNotFound):
+		case errors.Is(err, catalog.ErrProjectNotFound), errors.Is(err, projectauth.ErrNotMember):
 			return api.CreateApplication404JSONResponse{
 				Code:    "project_not_found",
 				Message: "project not found",
+			}, nil
+		case errors.Is(err, projectauth.ErrForbidden):
+			return api.CreateApplication403JSONResponse{
+				Code:    "project_permission_denied",
+				Message: "current project role cannot create applications",
 			}, nil
 		case errors.Is(err, idempotency.ErrConflict):
 			return api.CreateApplication409JSONResponse{
@@ -63,6 +69,20 @@ func (s *Server) GetApplication(
 		return nil, err
 	}
 	observability.SetRequestProjectID(ctx, existing.ProjectID)
+	if err := s.authorizer.Require(
+		httpRequestContext(ctx),
+		existing.ProjectID,
+		s.localActorID,
+		projectauth.PermissionRead,
+	); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return api.GetApplication404JSONResponse{
+				Code:    "application_not_found",
+				Message: "application not found",
+			}, nil
+		}
+		return nil, err
+	}
 
 	return api.GetApplication200JSONResponse(applicationResponse(existing)), nil
 }
@@ -95,10 +115,15 @@ func (s *Server) CreateDeploymentTarget(
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, catalog.ErrApplicationNotFound):
+		case errors.Is(err, catalog.ErrApplicationNotFound), errors.Is(err, projectauth.ErrNotMember):
 			return api.CreateDeploymentTarget404JSONResponse{
 				Code:    "application_not_found",
 				Message: "application not found",
+			}, nil
+		case errors.Is(err, projectauth.ErrForbidden):
+			return api.CreateDeploymentTarget403JSONResponse{
+				Code:    "project_permission_denied",
+				Message: "current project role cannot create deployment targets",
 			}, nil
 		case errors.Is(err, idempotency.ErrConflict):
 			return api.CreateDeploymentTarget409JSONResponse{
@@ -132,6 +157,20 @@ func (s *Server) GetDeploymentTarget(
 		return nil, err
 	}
 	observability.SetRequestProjectID(ctx, existing.ProjectID)
+	if err := s.authorizer.Require(
+		httpRequestContext(ctx),
+		existing.ProjectID,
+		s.localActorID,
+		projectauth.PermissionRead,
+	); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return api.GetDeploymentTarget404JSONResponse{
+				Code:    "deployment_target_not_found",
+				Message: "deployment target not found",
+			}, nil
+		}
+		return nil, err
+	}
 
 	return api.GetDeploymentTarget200JSONResponse(deploymentTargetResponse(existing)), nil
 }
@@ -153,10 +192,15 @@ func (s *Server) UpdateDeploymentTarget(
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, catalog.ErrDeploymentTargetNotFound):
+		case errors.Is(err, catalog.ErrDeploymentTargetNotFound), errors.Is(err, projectauth.ErrNotMember):
 			return api.UpdateDeploymentTarget404JSONResponse{
 				Code:    "deployment_target_not_found",
 				Message: "deployment target not found",
+			}, nil
+		case errors.Is(err, projectauth.ErrForbidden):
+			return api.UpdateDeploymentTarget403JSONResponse{
+				Code:    "project_permission_denied",
+				Message: "current project role cannot update deployment targets",
 			}, nil
 		case errors.Is(err, idempotency.ErrConflict):
 			return api.UpdateDeploymentTarget409JSONResponse{

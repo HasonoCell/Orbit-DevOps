@@ -12,6 +12,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/audit"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/distribution/reference"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -94,12 +95,19 @@ type targetRecord struct {
 type Module struct {
 	db         *sqlx.DB
 	operations *operation.Module
+	authorizer *projectauth.Module
 }
 
-func New(db *sqlx.DB, operations *operation.Module) *Module {
-	return &Module{db: db, operations: operations}
+// New 创建交付模块，并将发布命令接入统一项目授权。
+func New(
+	db *sqlx.DB,
+	operations *operation.Module,
+	authorizer *projectauth.Module,
+) *Module {
+	return &Module{db: db, operations: operations, authorizer: authorizer}
 }
 
+// CreateRelease 原子完成授权、幂等接纳、快照冻结和 Operation 创建。
 func (m *Module) CreateRelease(
 	ctx context.Context,
 	command CreateReleaseCommand,
@@ -144,6 +152,15 @@ func (m *Module) CreateRelease(
 			return Acceptance{}, ErrDeploymentTargetNotFound
 		}
 		return Acceptance{}, fmt.Errorf("load release target: %w", err)
+	}
+	if err := m.authorizer.RequireInTransaction(
+		ctx,
+		tx,
+		target.ProjectID,
+		command.ActorID,
+		projectauth.PermissionDevelop,
+	); err != nil {
+		return Acceptance{}, err
 	}
 
 	createdAt := time.Now().UTC()
@@ -240,6 +257,7 @@ func (m *Module) CreateRelease(
 	return Acceptance{Release: release, Operation: createdOperation}, nil
 }
 
+// GetRelease 读取不可变发布；用户可见性由调用入口统一判断。
 func (m *Module) GetRelease(ctx context.Context, id uuid.UUID) (Release, error) {
 	var release Release
 	if err := m.db.GetContext(

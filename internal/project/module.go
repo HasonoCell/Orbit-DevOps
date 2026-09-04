@@ -9,6 +9,7 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/audit"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -34,13 +35,16 @@ type CreateCommand struct {
 }
 
 type Module struct {
-	db *sqlx.DB
+	db         *sqlx.DB
+	authorizer *projectauth.Module
 }
 
-func New(db *sqlx.DB) *Module {
-	return &Module{db: db}
+// New 创建项目模块；项目创建与首个 owner 必须共享同一事务。
+func New(db *sqlx.DB, authorizer *projectauth.Module) *Module {
+	return &Module{db: db, authorizer: authorizer}
 }
 
+// Create 幂等创建项目，并原子建立创建者的 owner 成员关系。
 func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, error) {
 	requestHash, err := idempotency.Fingerprint(struct {
 		Name string `json:"name"`
@@ -102,6 +106,15 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 	if err != nil {
 		return Project{}, fmt.Errorf("insert project: %w", err)
 	}
+	if err := m.authorizer.CreateInitialOwner(
+		ctx,
+		tx,
+		createdProject.ID,
+		command.ActorID,
+		createdAt,
+	); err != nil {
+		return Project{}, err
+	}
 
 	if err := audit.Append(
 		ctx,
@@ -128,6 +141,7 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 	return createdProject, nil
 }
 
+// Get 按标识读取项目；调用者负责先通过项目权限模块完成可见性判断。
 func (m *Module) Get(ctx context.Context, id uuid.UUID) (Project, error) {
 	var existingProject Project
 	if err := m.db.GetContext(

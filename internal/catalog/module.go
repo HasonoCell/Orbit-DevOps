@@ -9,6 +9,7 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/audit"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -76,14 +77,17 @@ type UpdateDeploymentTargetCommand struct {
 }
 
 type Module struct {
-	db     *sqlx.DB
-	config Config
+	db         *sqlx.DB
+	config     Config
+	authorizer *projectauth.Module
 }
 
-func New(db *sqlx.DB, config Config) *Module {
-	return &Module{db: db, config: config}
+// New 创建应用目录模块，并通过统一权限模块保护领域写操作。
+func New(db *sqlx.DB, config Config, authorizer *projectauth.Module) *Module {
+	return &Module{db: db, config: config, authorizer: authorizer}
 }
 
+// CreateApplication 在项目中幂等创建应用。
 func (m *Module) CreateApplication(
 	ctx context.Context,
 	command CreateApplicationCommand,
@@ -130,6 +134,15 @@ func (m *Module) CreateApplication(
 	}
 	if !projectExists {
 		return Application{}, ErrProjectNotFound
+	}
+	if err := m.authorizer.RequireInTransaction(
+		ctx,
+		tx,
+		command.ProjectID,
+		command.ActorID,
+		projectauth.PermissionDevelop,
+	); err != nil {
+		return Application{}, err
 	}
 
 	resourceID, isNew, err := idempotency.Claim(
@@ -192,6 +205,7 @@ func (m *Module) CreateApplication(
 	return created, nil
 }
 
+// GetApplication 读取应用及其所属项目，权限由调用入口统一判断。
 func (m *Module) GetApplication(ctx context.Context, id uuid.UUID) (Application, error) {
 	var application Application
 	if err := m.db.GetContext(
@@ -211,6 +225,7 @@ func (m *Module) GetApplication(ctx context.Context, id uuid.UUID) (Application,
 	return application, nil
 }
 
+// CreateDeploymentTarget 在应用所属项目中幂等创建部署目标。
 func (m *Module) CreateDeploymentTarget(
 	ctx context.Context,
 	command CreateDeploymentTargetCommand,
@@ -265,6 +280,15 @@ func (m *Module) CreateDeploymentTarget(
 		return DeploymentTarget{}, fmt.Errorf("check deployment target application: %w", err)
 	}
 	created.ProjectID = projectID
+	if err := m.authorizer.RequireInTransaction(
+		ctx,
+		tx,
+		projectID,
+		command.ActorID,
+		projectauth.PermissionDevelop,
+	); err != nil {
+		return DeploymentTarget{}, err
+	}
 
 	resourceID, isNew, err := idempotency.Claim(
 		ctx,
@@ -331,6 +355,7 @@ func (m *Module) CreateDeploymentTarget(
 	return created, nil
 }
 
+// GetDeploymentTarget 读取部署目标并同时返回权限判断所需的项目标识。
 func (m *Module) GetDeploymentTarget(
 	ctx context.Context,
 	id uuid.UUID,
@@ -359,6 +384,7 @@ func (m *Module) GetDeploymentTarget(
 	return target, nil
 }
 
+// UpdateDeploymentTarget 在同一事务中完成授权、幂等和目标配置更新。
 func (m *Module) UpdateDeploymentTarget(
 	ctx context.Context,
 	command UpdateDeploymentTargetCommand,
@@ -406,6 +432,15 @@ func (m *Module) UpdateDeploymentTarget(
 			return DeploymentTarget{}, ErrDeploymentTargetNotFound
 		}
 		return DeploymentTarget{}, fmt.Errorf("lock deployment target update: %w", err)
+	}
+	if err := m.authorizer.RequireInTransaction(
+		ctx,
+		tx,
+		current.ProjectID,
+		command.ActorID,
+		projectauth.PermissionDevelop,
+	); err != nil {
+		return DeploymentTarget{}, err
 	}
 
 	scope := idempotency.Scope{

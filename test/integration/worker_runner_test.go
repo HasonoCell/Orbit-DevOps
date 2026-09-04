@@ -13,6 +13,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 )
 
@@ -56,7 +57,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 			acceptance := createRelease(t, environment, "worker-terminal-state")
 			db := openTestDatabase(t, environment.databaseURL)
 			operations := operation.New(db)
-			releases := delivery.New(db, operations)
+			releases := delivery.New(db, operations, projectauth.New(db))
 			publisher := &recordingPublisher{
 				err:            testCase.publishError,
 				waitForTimeout: testCase.waitForTimeout,
@@ -175,7 +176,7 @@ func TestWorkerRenewsLeaseDuringDelivery(t *testing.T) {
 	acceptance := createRelease(t, environment, "worker-heartbeat")
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := operation.New(db)
-	releases := delivery.New(db, operations)
+	releases := delivery.New(db, operations, projectauth.New(db))
 	publisher := &blockingPublisher{
 		started: make(chan struct{}),
 		release: make(chan struct{}),

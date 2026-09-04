@@ -65,6 +65,209 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/projects/{projectId}/members:
+    get:
+      operationId: listProjectMembers
+      summary: 查询项目成员
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 项目成员列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectMember"
+        "404":
+          description: 项目不存在或当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: addProjectMember
+      summary: 添加项目成员
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddProjectMemberRequest"
+      responses:
+        "201":
+          description: 项目成员已添加
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMember"
+        "400":
+          description: Actor ID 或项目角色无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: 当前项目角色不能管理成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 项目不存在或当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 成员已经存在或幂等键冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/projects/{projectId}/members/{actorId}:
+    put:
+      operationId: updateProjectMember
+      summary: 修改项目成员角色
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: actorId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectMemberRequest"
+      responses:
+        "200":
+          description: 项目成员角色已修改
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMember"
+        "400":
+          description: Actor ID 或项目角色无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: 当前项目角色不能管理成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 项目或成员不存在，或者当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 操作会移除最后一个 owner，或幂等键冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: removeProjectMember
+      summary: 移除项目成员
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: actorId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 已移除的项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMember"
+        "400":
+          description: Actor ID 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: 当前项目角色不能管理成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 项目或成员不存在，或者当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 操作会移除最后一个 owner，或幂等键冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/projects/{projectId}/applications:
     post:
       operationId: createApplication
@@ -92,6 +295,12 @@ paths:
                 $ref: "#/components/schemas/Application"
         "404":
           description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: 当前项目角色不能创建应用
           content:
             application/json:
               schema:
@@ -169,6 +378,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          description: 当前项目角色不能创建部署目标
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: 幂等键已经用于不同请求
           content:
@@ -241,6 +456,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          description: 当前项目角色不能修改部署目标
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: 幂等键已经用于不同请求
           content:
@@ -286,6 +507,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           description: 部署目标不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: 当前项目角色不能创建发布
           content:
             application/json:
               schema:
@@ -440,6 +667,59 @@ components:
         createdBy:
           type: string
         createdAt:
+          type: string
+          format: date-time
+    AddProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - actorId
+        - role
+      properties:
+        actorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+    UpdateProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - role
+      properties:
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+    ProjectRole:
+      type: string
+      enum:
+        - owner
+        - developer
+        - viewer
+    ProjectMember:
+      type: object
+      additionalProperties: false
+      required:
+        - projectId
+        - actorId
+        - role
+        - createdBy
+        - createdAt
+        - updatedAt
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
           type: string
           format: date-time
     CreateApplicationRequest:

@@ -7,6 +7,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/api"
 	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
 )
 
@@ -26,6 +27,20 @@ func (s *Server) GetRuntimeSnapshot(
 		return nil, err
 	}
 	observability.SetRequestProjectID(ctx, target.ProjectID)
+	if err := s.authorizer.Require(
+		requestContext,
+		target.ProjectID,
+		s.localActorID,
+		projectauth.PermissionRead,
+	); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return api.GetRuntimeSnapshot404JSONResponse{
+				Code:    "deployment_target_not_found",
+				Message: "deployment target not found",
+			}, nil
+		}
+		return nil, err
+	}
 
 	snapshot := s.observer.Observe(requestContext, runtimeview.Query{
 		ClusterRef: target.ClusterRef,

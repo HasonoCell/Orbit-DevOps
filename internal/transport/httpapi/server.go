@@ -10,6 +10,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/project"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/propagation"
@@ -20,6 +21,7 @@ type Server struct {
 	catalog      *catalog.Module
 	delivery     *delivery.Module
 	operations   *operation.Module
+	authorizer   *projectauth.Module
 	observer     runtimeview.Observer
 	localActorID string
 	propagator   propagation.TextMapPropagator
@@ -31,6 +33,20 @@ func (s *Server) GetProject(
 ) (api.GetProjectResponseObject, error) {
 	observability.SetRequestProjectID(ctx, request.ProjectId)
 	requestContext := httpRequestContext(ctx)
+	if err := s.authorizer.Require(
+		requestContext,
+		request.ProjectId,
+		s.localActorID,
+		projectauth.PermissionRead,
+	); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return api.GetProject404JSONResponse{
+				Code:    "project_not_found",
+				Message: "project not found",
+			}, nil
+		}
+		return nil, err
+	}
 
 	existingProject, err := s.projects.Get(requestContext, request.ProjectId)
 	if err != nil {
@@ -57,6 +73,7 @@ func NewServer(
 	catalogModule *catalog.Module,
 	deliveryModule *delivery.Module,
 	operationModule *operation.Module,
+	authorizer *projectauth.Module,
 	observer runtimeview.Observer,
 	localActorID string,
 	propagator propagation.TextMapPropagator,
@@ -66,6 +83,7 @@ func NewServer(
 		catalog:      catalogModule,
 		delivery:     deliveryModule,
 		operations:   operationModule,
+		authorizer:   authorizer,
 		observer:     observer,
 		localActorID: localActorID,
 		propagator:   propagator,

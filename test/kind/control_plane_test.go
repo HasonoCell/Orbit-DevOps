@@ -14,6 +14,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -181,7 +182,7 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 		}
 	})
 	operations := operation.New(db)
-	releases := delivery.New(db, operations)
+	releases := delivery.New(db, operations, projectauth.New(db))
 	runner, err := worker.New(worker.Config{
 		WorkerID:         "kind-worker",
 		LeaseDuration:    5 * time.Second,

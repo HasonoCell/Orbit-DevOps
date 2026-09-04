@@ -16,6 +16,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/platform/database"
 	"github.com/HasonoCell/OrbitOps/internal/project"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
 	"github.com/HasonoCell/OrbitOps/internal/transport/httpapi"
 	"github.com/gin-gonic/gin"
@@ -60,8 +61,8 @@ func NewWithDependencies(
 	if config.DatabaseURL == "" {
 		return nil, errors.New("database URL is required")
 	}
-	if config.LocalActorID == "" {
-		return nil, errors.New("local actor ID is required")
+	if err := projectauth.ValidateActorID(config.LocalActorID); err != nil {
+		return nil, fmt.Errorf("local actor ID: %w", err)
 	}
 	if config.LocalClusterRef == "" {
 		return nil, errors.New("local cluster reference is required")
@@ -91,13 +92,14 @@ func NewWithDependencies(
 		return nil, fmt.Errorf("load OpenAPI specification: %w", err)
 	}
 
-	projectModule := project.New(db)
+	authorizer := projectauth.New(db)
+	projectModule := project.New(db, authorizer)
 	catalogModule := catalog.New(db, catalog.Config{
 		ClusterRef: config.LocalClusterRef,
 		Namespace:  config.LocalNamespace,
-	})
+	}, authorizer)
 	operationModule := operation.New(db)
-	deliveryModule := delivery.New(db, operationModule)
+	deliveryModule := delivery.New(db, operationModule, authorizer)
 	logger := dependencies.Logger
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -128,6 +130,7 @@ func NewWithDependencies(
 		catalogModule,
 		deliveryModule,
 		operationModule,
+		authorizer,
 		observer,
 		config.LocalActorID,
 		propagator,

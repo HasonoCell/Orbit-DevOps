@@ -112,6 +112,27 @@ func (e OperationAttemptStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProjectRole.
+const (
+	Developer ProjectRole = "developer"
+	Owner     ProjectRole = "owner"
+	Viewer    ProjectRole = "viewer"
+)
+
+// Valid indicates whether the value is a known member of the ProjectRole enum.
+func (e ProjectRole) Valid() bool {
+	switch e {
+	case Developer:
+		return true
+	case Owner:
+		return true
+	case Viewer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReleaseTargetSnapshotStage.
 const (
 	ReleaseTargetSnapshotStageDevelopment ReleaseTargetSnapshotStage = "development"
@@ -173,6 +194,12 @@ func (e UpdateDeploymentTargetRequestStage) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// AddProjectMemberRequest defines model for AddProjectMemberRequest.
+type AddProjectMemberRequest struct {
+	ActorId string      `json:"actorId"`
+	Role    ProjectRole `json:"role"`
 }
 
 // Application defines model for Application.
@@ -284,6 +311,19 @@ type Project struct {
 	Slug      string             `json:"slug"`
 }
 
+// ProjectMember defines model for ProjectMember.
+type ProjectMember struct {
+	ActorId   string             `json:"actorId"`
+	CreatedAt time.Time          `json:"createdAt"`
+	CreatedBy string             `json:"createdBy"`
+	ProjectId openapi_types.UUID `json:"projectId"`
+	Role      ProjectRole        `json:"role"`
+	UpdatedAt time.Time          `json:"updatedAt"`
+}
+
+// ProjectRole defines model for ProjectRole.
+type ProjectRole string
+
 // Release defines model for Release.
 type Release struct {
 	CreatedAt          time.Time             `json:"createdAt"`
@@ -364,6 +404,11 @@ type UpdateDeploymentTargetRequest struct {
 // UpdateDeploymentTargetRequestStage defines model for UpdateDeploymentTargetRequest.Stage.
 type UpdateDeploymentTargetRequestStage string
 
+// UpdateProjectMemberRequest defines model for UpdateProjectMemberRequest.
+type UpdateProjectMemberRequest struct {
+	Role ProjectRole `json:"role"`
+}
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -397,6 +442,24 @@ type CreateApplicationParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// AddProjectMemberParams defines parameters for AddProjectMember.
+type AddProjectMemberParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// RemoveProjectMemberParams defines parameters for RemoveProjectMember.
+type RemoveProjectMemberParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// UpdateProjectMemberParams defines parameters for UpdateProjectMember.
+type UpdateProjectMemberParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // CreateDeploymentTargetJSONRequestBody defines body for CreateDeploymentTarget for application/json ContentType.
 type CreateDeploymentTargetJSONRequestBody = CreateDeploymentTargetRequest
 
@@ -411,6 +474,12 @@ type CreateProjectJSONRequestBody = CreateProjectRequest
 
 // CreateApplicationJSONRequestBody defines body for CreateApplication for application/json ContentType.
 type CreateApplicationJSONRequestBody = CreateApplicationRequest
+
+// AddProjectMemberJSONRequestBody defines body for AddProjectMember for application/json ContentType.
+type AddProjectMemberJSONRequestBody = AddProjectMemberRequest
+
+// UpdateProjectMemberJSONRequestBody defines body for UpdateProjectMember for application/json ContentType.
+type UpdateProjectMemberJSONRequestBody = UpdateProjectMemberRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -444,6 +513,18 @@ type ServerInterface interface {
 	// CreateApplication 创建应用
 	// (POST /api/v1/projects/{projectId}/applications)
 	CreateApplication(c *gin.Context, projectId openapi_types.UUID, params CreateApplicationParams)
+	// ListProjectMembers 查询项目成员
+	// (GET /api/v1/projects/{projectId}/members)
+	ListProjectMembers(c *gin.Context, projectId openapi_types.UUID)
+	// AddProjectMember 添加项目成员
+	// (POST /api/v1/projects/{projectId}/members)
+	AddProjectMember(c *gin.Context, projectId openapi_types.UUID, params AddProjectMemberParams)
+	// RemoveProjectMember 移除项目成员
+	// (DELETE /api/v1/projects/{projectId}/members/{actorId})
+	RemoveProjectMember(c *gin.Context, projectId openapi_types.UUID, actorId string, params RemoveProjectMemberParams)
+	// UpdateProjectMember 修改项目成员角色
+	// (PUT /api/v1/projects/{projectId}/members/{actorId})
+	UpdateProjectMember(c *gin.Context, projectId openapi_types.UUID, actorId string, params UpdateProjectMemberParams)
 	// GetRelease 查询发布
 	// (GET /api/v1/releases/{releaseId})
 	GetRelease(c *gin.Context, releaseId openapi_types.UUID)
@@ -834,6 +915,205 @@ func (siw *ServerInterfaceWrapper) CreateApplication(c *gin.Context) {
 	siw.Handler.CreateApplication(c, projectId, params)
 }
 
+// ListProjectMembers operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectMembers(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListProjectMembers(c, projectId)
+}
+
+// AddProjectMember operation middleware
+func (siw *ServerInterfaceWrapper) AddProjectMember(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AddProjectMemberParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AddProjectMember(c, projectId, params)
+}
+
+// RemoveProjectMember operation middleware
+func (siw *ServerInterfaceWrapper) RemoveProjectMember(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "actorId" -------------
+	var actorId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "actorId", c.Param("actorId"), &actorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter actorId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RemoveProjectMemberParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RemoveProjectMember(c, projectId, actorId, params)
+}
+
+// UpdateProjectMember operation middleware
+func (siw *ServerInterfaceWrapper) UpdateProjectMember(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "actorId" -------------
+	var actorId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "actorId", c.Param("actorId"), &actorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter actorId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateProjectMemberParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateProjectMember(c, projectId, actorId, params)
+}
+
 // GetRelease operation middleware
 func (siw *ServerInterfaceWrapper) GetRelease(c *gin.Context) {
 
@@ -888,6 +1168,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 
 	router.POST(options.BaseURL+"/api/v1/projects", wrapper.CreateProject)
 	router.GET(options.BaseURL+"/api/v1/projects/:projectId", wrapper.GetProject)
+	router.GET(options.BaseURL+"/api/v1/projects/:projectId/members", wrapper.ListProjectMembers)
+	router.POST(options.BaseURL+"/api/v1/projects/:projectId/members", wrapper.AddProjectMember)
+	router.DELETE(options.BaseURL+"/api/v1/projects/:projectId/members/:actorId", wrapper.RemoveProjectMember)
+	router.PUT(options.BaseURL+"/api/v1/projects/:projectId/members/:actorId", wrapper.UpdateProjectMember)
 	router.POST(options.BaseURL+"/api/v1/projects/:projectId/applications", wrapper.CreateApplication)
 	router.GET(options.BaseURL+"/api/v1/applications/:applicationId", wrapper.GetApplication)
 	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/deployment-targets", wrapper.CreateDeploymentTarget)
@@ -972,6 +1256,20 @@ func (response CreateDeploymentTarget201JSONResponse) VisitCreateDeploymentTarge
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploymentTarget403JSONResponse Error
+
+func (response CreateDeploymentTarget403JSONResponse) VisitCreateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1098,6 +1396,20 @@ func (response UpdateDeploymentTarget200JSONResponse) VisitUpdateDeploymentTarge
 	return err
 }
 
+type UpdateDeploymentTarget403JSONResponse Error
+
+func (response UpdateDeploymentTarget403JSONResponse) VisitUpdateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UpdateDeploymentTarget404JSONResponse Error
 
 func (response UpdateDeploymentTarget404JSONResponse) VisitUpdateDeploymentTargetResponse(w http.ResponseWriter) error {
@@ -1177,6 +1489,20 @@ func (response CreateRelease400JSONResponse) VisitCreateReleaseResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRelease403JSONResponse Error
+
+func (response CreateRelease403JSONResponse) VisitCreateReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1463,6 +1789,20 @@ func (response CreateApplication201JSONResponse) VisitCreateApplicationResponse(
 	return err
 }
 
+type CreateApplication403JSONResponse Error
+
+func (response CreateApplication403JSONResponse) VisitCreateApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateApplication404JSONResponse Error
 
 func (response CreateApplication404JSONResponse) VisitCreateApplicationResponse(w http.ResponseWriter) error {
@@ -1497,6 +1837,351 @@ type CreateApplicationdefaultJSONResponse struct {
 }
 
 func (response CreateApplicationdefaultJSONResponse) VisitCreateApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProjectMembersRequestObject struct {
+	ProjectId openapi_types.UUID `json:"projectId"`
+}
+
+type ListProjectMembersResponseObject interface {
+	VisitListProjectMembersResponse(w http.ResponseWriter) error
+}
+
+type ListProjectMembers200JSONResponse []ProjectMember
+
+func (response ListProjectMembers200JSONResponse) VisitListProjectMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProjectMembers404JSONResponse Error
+
+func (response ListProjectMembers404JSONResponse) VisitListProjectMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProjectMembersdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListProjectMembersdefaultJSONResponse) VisitListProjectMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddProjectMemberRequestObject struct {
+	ProjectId openapi_types.UUID `json:"projectId"`
+	Params    AddProjectMemberParams
+	Body      *AddProjectMemberJSONRequestBody
+}
+
+type AddProjectMemberResponseObject interface {
+	VisitAddProjectMemberResponse(w http.ResponseWriter) error
+}
+
+type AddProjectMember201JSONResponse ProjectMember
+
+func (response AddProjectMember201JSONResponse) VisitAddProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddProjectMember400JSONResponse Error
+
+func (response AddProjectMember400JSONResponse) VisitAddProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddProjectMember403JSONResponse Error
+
+func (response AddProjectMember403JSONResponse) VisitAddProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddProjectMember404JSONResponse Error
+
+func (response AddProjectMember404JSONResponse) VisitAddProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddProjectMember409JSONResponse Error
+
+func (response AddProjectMember409JSONResponse) VisitAddProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddProjectMemberdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AddProjectMemberdefaultJSONResponse) VisitAddProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProjectMemberRequestObject struct {
+	ProjectId openapi_types.UUID `json:"projectId"`
+	ActorId   string             `json:"actorId"`
+	Params    RemoveProjectMemberParams
+}
+
+type RemoveProjectMemberResponseObject interface {
+	VisitRemoveProjectMemberResponse(w http.ResponseWriter) error
+}
+
+type RemoveProjectMember200JSONResponse ProjectMember
+
+func (response RemoveProjectMember200JSONResponse) VisitRemoveProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProjectMember400JSONResponse Error
+
+func (response RemoveProjectMember400JSONResponse) VisitRemoveProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProjectMember403JSONResponse Error
+
+func (response RemoveProjectMember403JSONResponse) VisitRemoveProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProjectMember404JSONResponse Error
+
+func (response RemoveProjectMember404JSONResponse) VisitRemoveProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProjectMember409JSONResponse Error
+
+func (response RemoveProjectMember409JSONResponse) VisitRemoveProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProjectMemberdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RemoveProjectMemberdefaultJSONResponse) VisitRemoveProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProjectMemberRequestObject struct {
+	ProjectId openapi_types.UUID `json:"projectId"`
+	ActorId   string             `json:"actorId"`
+	Params    UpdateProjectMemberParams
+	Body      *UpdateProjectMemberJSONRequestBody
+}
+
+type UpdateProjectMemberResponseObject interface {
+	VisitUpdateProjectMemberResponse(w http.ResponseWriter) error
+}
+
+type UpdateProjectMember200JSONResponse ProjectMember
+
+func (response UpdateProjectMember200JSONResponse) VisitUpdateProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProjectMember400JSONResponse Error
+
+func (response UpdateProjectMember400JSONResponse) VisitUpdateProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProjectMember403JSONResponse Error
+
+func (response UpdateProjectMember403JSONResponse) VisitUpdateProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProjectMember404JSONResponse Error
+
+func (response UpdateProjectMember404JSONResponse) VisitUpdateProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProjectMember409JSONResponse Error
+
+func (response UpdateProjectMember409JSONResponse) VisitUpdateProjectMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProjectMemberdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateProjectMemberdefaultJSONResponse) VisitUpdateProjectMemberResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -1593,6 +2278,18 @@ type StrictServerInterface interface {
 	// CreateApplication 创建应用
 	// (POST /api/v1/projects/{projectId}/applications)
 	CreateApplication(ctx context.Context, request CreateApplicationRequestObject) (CreateApplicationResponseObject, error)
+	// ListProjectMembers 查询项目成员
+	// (GET /api/v1/projects/{projectId}/members)
+	ListProjectMembers(ctx context.Context, request ListProjectMembersRequestObject) (ListProjectMembersResponseObject, error)
+	// AddProjectMember 添加项目成员
+	// (POST /api/v1/projects/{projectId}/members)
+	AddProjectMember(ctx context.Context, request AddProjectMemberRequestObject) (AddProjectMemberResponseObject, error)
+	// RemoveProjectMember 移除项目成员
+	// (DELETE /api/v1/projects/{projectId}/members/{actorId})
+	RemoveProjectMember(ctx context.Context, request RemoveProjectMemberRequestObject) (RemoveProjectMemberResponseObject, error)
+	// UpdateProjectMember 修改项目成员角色
+	// (PUT /api/v1/projects/{projectId}/members/{actorId})
+	UpdateProjectMember(ctx context.Context, request UpdateProjectMemberRequestObject) (UpdateProjectMemberResponseObject, error)
 	// GetRelease 查询发布
 	// (GET /api/v1/releases/{releaseId})
 	GetRelease(ctx context.Context, request GetReleaseRequestObject) (GetReleaseResponseObject, error)
@@ -1954,6 +2651,129 @@ func (sh *strictHandler) CreateApplication(ctx *gin.Context, projectId openapi_t
 	}
 }
 
+// ListProjectMembers operation middleware
+func (sh *strictHandler) ListProjectMembers(ctx *gin.Context, projectId openapi_types.UUID) {
+	var request ListProjectMembersRequestObject
+
+	request.ProjectId = projectId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListProjectMembers(ctx, request.(ListProjectMembersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListProjectMembers")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListProjectMembersResponseObject); ok {
+		if err := validResponse.VisitListProjectMembersResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddProjectMember operation middleware
+func (sh *strictHandler) AddProjectMember(ctx *gin.Context, projectId openapi_types.UUID, params AddProjectMemberParams) {
+	var request AddProjectMemberRequestObject
+
+	request.ProjectId = projectId
+	request.Params = params
+
+	var body AddProjectMemberJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AddProjectMember(ctx, request.(AddProjectMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddProjectMember")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(AddProjectMemberResponseObject); ok {
+		if err := validResponse.VisitAddProjectMemberResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveProjectMember operation middleware
+func (sh *strictHandler) RemoveProjectMember(ctx *gin.Context, projectId openapi_types.UUID, actorId string, params RemoveProjectMemberParams) {
+	var request RemoveProjectMemberRequestObject
+
+	request.ProjectId = projectId
+	request.ActorId = actorId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveProjectMember(ctx, request.(RemoveProjectMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveProjectMember")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(RemoveProjectMemberResponseObject); ok {
+		if err := validResponse.VisitRemoveProjectMemberResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateProjectMember operation middleware
+func (sh *strictHandler) UpdateProjectMember(ctx *gin.Context, projectId openapi_types.UUID, actorId string, params UpdateProjectMemberParams) {
+	var request UpdateProjectMemberRequestObject
+
+	request.ProjectId = projectId
+	request.ActorId = actorId
+	request.Params = params
+
+	var body UpdateProjectMemberJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateProjectMember(ctx, request.(UpdateProjectMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateProjectMember")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(UpdateProjectMemberResponseObject); ok {
+		if err := validResponse.VisitUpdateProjectMemberResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetRelease operation middleware
 func (sh *strictHandler) GetRelease(ctx *gin.Context, releaseId openapi_types.UUID) {
 	var request GetReleaseRequestObject
@@ -1985,43 +2805,50 @@ func (sh *strictHandler) GetRelease(ctx *gin.Context, releaseId openapi_types.UU
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"AP//",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

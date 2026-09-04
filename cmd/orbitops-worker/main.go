@@ -16,6 +16,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/OrbitOps/internal/platform/process"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -53,7 +54,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	operations := operation.New(db)
-	releases := delivery.New(db, operations)
+	releases := delivery.New(db, operations, projectauth.New(db))
 	metrics := observability.NewMetrics(operations.CountPending)
 	tracing := observability.NewTracing(logger)
 	defer func() {

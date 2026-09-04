@@ -9,6 +9,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"go.opentelemetry.io/otel/propagation"
 )
 
@@ -37,10 +38,15 @@ func (s *Server) CreateRelease(
 				Code:    "invalid_image_reference",
 				Message: "image reference must contain a valid OCI digest",
 			}, nil
-		case errors.Is(err, delivery.ErrDeploymentTargetNotFound):
+		case errors.Is(err, delivery.ErrDeploymentTargetNotFound), errors.Is(err, projectauth.ErrNotMember):
 			return api.CreateRelease404JSONResponse{
 				Code:    "deployment_target_not_found",
 				Message: "deployment target not found",
+			}, nil
+		case errors.Is(err, projectauth.ErrForbidden):
+			return api.CreateRelease403JSONResponse{
+				Code:    "project_permission_denied",
+				Message: "current project role cannot create releases",
 			}, nil
 		case errors.Is(err, idempotency.ErrConflict):
 			return api.CreateRelease409JSONResponse{
@@ -74,6 +80,20 @@ func (s *Server) GetRelease(
 		return nil, err
 	}
 	observability.SetRequestProjectID(ctx, release.TargetSnapshot.ProjectID)
+	if err := s.authorizer.Require(
+		httpRequestContext(ctx),
+		release.TargetSnapshot.ProjectID,
+		s.localActorID,
+		projectauth.PermissionRead,
+	); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return api.GetRelease404JSONResponse{
+				Code:    "release_not_found",
+				Message: "release not found",
+			}, nil
+		}
+		return nil, err
+	}
 
 	return api.GetRelease200JSONResponse(releaseResponse(release)), nil
 }
@@ -97,6 +117,20 @@ func (s *Server) GetOperation(
 		return nil, err
 	}
 	observability.SetRequestProjectID(ctx, release.TargetSnapshot.ProjectID)
+	if err := s.authorizer.Require(
+		httpRequestContext(ctx),
+		release.TargetSnapshot.ProjectID,
+		s.localActorID,
+		projectauth.PermissionRead,
+	); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return api.GetOperation404JSONResponse{
+				Code:    "operation_not_found",
+				Message: "operation not found",
+			}, nil
+		}
+		return nil, err
+	}
 
 	return api.GetOperation200JSONResponse(operationResponse(operationRecord)), nil
 }

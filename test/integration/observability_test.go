@@ -14,6 +14,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/app"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -136,7 +137,7 @@ func TestReleaseTraceContinuesIntoWorkerAttempt(t *testing.T) {
 
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := operation.New(db)
-	releases := delivery.New(db, operations)
+	releases := delivery.New(db, operations, projectauth.New(db))
 	publisher := &traceRecordingPublisher{}
 	runner, err := worker.New(worker.Config{
 		WorkerID:         "trace-worker",

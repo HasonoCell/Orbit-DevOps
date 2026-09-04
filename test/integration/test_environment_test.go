@@ -18,6 +18,31 @@ type testEnvironment struct {
 	databaseURL string
 }
 
+// serverForActor 使用同一数据库启动另一个本地身份，用于端到端验证项目授权。
+func (e *testEnvironment) serverForActor(t *testing.T, actorID string) *httptest.Server {
+	t.Helper()
+
+	runtime, err := app.NewWithDependencies(context.Background(), app.Config{
+		DatabaseURL:     e.databaseURL,
+		LocalActorID:    actorID,
+		LocalClusterRef: "kind-orbitops-s1",
+		LocalNamespace:  "orbitops-s1",
+		MigrateOnBoot:   false,
+	}, app.Dependencies{})
+	if err != nil {
+		t.Fatalf("start OrbitOps for actor %q: %v", actorID, err)
+	}
+	t.Cleanup(func() {
+		if err := runtime.Close(); err != nil {
+			t.Errorf("close OrbitOps for actor %q: %v", actorID, err)
+		}
+	})
+
+	server := httptest.NewServer(runtime.Handler())
+	t.Cleanup(server.Close)
+	return server
+}
+
 type projectDocument struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
