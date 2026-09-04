@@ -2,9 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/HasonoCell/OrbitOps/internal/api"
+	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
@@ -12,6 +15,8 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"go.opentelemetry.io/otel/propagation"
 )
+
+const defaultReleaseHistoryPageSize = 20
 
 func (s *Server) CreateRelease(
 	ctx context.Context,
@@ -69,7 +74,7 @@ func (s *Server) GetRelease(
 	ctx context.Context,
 	request api.GetReleaseRequestObject,
 ) (api.GetReleaseResponseObject, error) {
-	release, err := s.delivery.GetRelease(httpRequestContext(ctx), request.ReleaseId)
+	detail, err := s.delivery.GetDetail(httpRequestContext(ctx), request.ReleaseId)
 	if err != nil {
 		if errors.Is(err, delivery.ErrReleaseNotFound) {
 			return api.GetRelease404JSONResponse{
@@ -79,10 +84,10 @@ func (s *Server) GetRelease(
 		}
 		return nil, err
 	}
-	observability.SetRequestProjectID(ctx, release.TargetSnapshot.ProjectID)
+	observability.SetRequestProjectID(ctx, detail.Release.TargetSnapshot.ProjectID)
 	if err := s.authorizer.Require(
 		httpRequestContext(ctx),
-		release.TargetSnapshot.ProjectID,
+		detail.Release.TargetSnapshot.ProjectID,
 		s.localActorID,
 		projectauth.PermissionRead,
 	); err != nil {
@@ -95,7 +100,121 @@ func (s *Server) GetRelease(
 		return nil, err
 	}
 
-	return api.GetRelease200JSONResponse(releaseResponse(release)), nil
+	response, err := releaseDetailResponse(detail)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetRelease200JSONResponse(response), nil
+}
+
+// ListReleaseHistory 返回轻量历史摘要；完整 Attempt 与审计只在详情接口展开。
+func (s *Server) ListReleaseHistory(
+	ctx context.Context,
+	request api.ListReleaseHistoryRequestObject,
+) (api.ListReleaseHistoryResponseObject, error) {
+	requestContext := httpRequestContext(ctx)
+	target, err := s.catalog.GetDeploymentTarget(requestContext, request.DeploymentTargetId)
+	if err != nil {
+		if errors.Is(err, catalog.ErrDeploymentTargetNotFound) {
+			return api.ListReleaseHistory404JSONResponse{
+				Code: "deployment_target_not_found", Message: "deployment target not found",
+			}, nil
+		}
+		return nil, err
+	}
+	observability.SetRequestProjectID(ctx, target.ProjectID)
+	if err := s.authorizer.Require(
+		requestContext,
+		target.ProjectID,
+		s.localActorID,
+		projectauth.PermissionRead,
+	); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return api.ListReleaseHistory404JSONResponse{
+				Code: "deployment_target_not_found", Message: "deployment target not found",
+			}, nil
+		}
+		return nil, err
+	}
+	limit := defaultReleaseHistoryPageSize
+	if request.Params.Limit != nil {
+		limit = *request.Params.Limit
+	}
+	cursor := ""
+	if request.Params.Cursor != nil {
+		cursor = *request.Params.Cursor
+	}
+	page, err := s.delivery.ListHistory(requestContext, delivery.ListHistoryQuery{
+		DeploymentTargetID: request.DeploymentTargetId,
+		Limit:              limit,
+		Cursor:             cursor,
+	})
+	if err != nil {
+		if errors.Is(err, delivery.ErrInvalidCursor) {
+			return api.ListReleaseHistory400JSONResponse{
+				Code: "invalid_release_cursor", Message: "release history cursor is invalid",
+			}, nil
+		}
+		return nil, err
+	}
+	items := make([]api.ReleaseHistoryItem, 0, len(page.Items))
+	for _, item := range page.Items {
+		items = append(items, api.ReleaseHistoryItem{
+			Release: releaseResponse(item.Release),
+			Operation: api.OperationSummary{
+				Id:           item.Operation.ID,
+				Status:       api.OperationSummaryStatus(item.Operation.Status),
+				AttemptCount: item.Operation.AttemptCount,
+				ErrorCode:    item.Operation.ErrorCode,
+				ErrorSummary: item.Operation.ErrorSummary,
+				QueuedAt:     item.Operation.QueuedAt,
+				StartedAt:    item.Operation.StartedAt,
+				FinishedAt:   item.Operation.FinishedAt,
+			},
+		})
+	}
+	return api.ListReleaseHistory200JSONResponse{
+		Items: items, NextCursor: page.NextCursor,
+	}, nil
+}
+
+// RollbackRelease 将历史 Release 的完整快照作为新的、可审计的发布意图接纳。
+func (s *Server) RollbackRelease(
+	ctx context.Context,
+	request api.RollbackReleaseRequestObject,
+) (api.RollbackReleaseResponseObject, error) {
+	requestContext := httpRequestContext(ctx)
+	traceCarrier := propagation.MapCarrier{}
+	s.propagator.Inject(requestContext, traceCarrier)
+	acceptance, err := s.delivery.Rollback(requestContext, delivery.RollbackCommand{
+		SourceReleaseID: request.ReleaseId,
+		ActorID:         s.localActorID,
+		IdempotencyKey:  request.Params.IdempotencyKey,
+		TraceParent:     traceCarrier.Get("traceparent"),
+		TraceState:      traceCarrier.Get("tracestate"),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, delivery.ErrReleaseNotFound), errors.Is(err, projectauth.ErrNotMember):
+			return api.RollbackRelease404JSONResponse{
+				Code: "release_not_found", Message: "release not found",
+			}, nil
+		case errors.Is(err, projectauth.ErrForbidden):
+			return api.RollbackRelease403JSONResponse{
+				Code: "project_permission_denied", Message: "current project role cannot create rollbacks",
+			}, nil
+		case errors.Is(err, idempotency.ErrConflict):
+			return api.RollbackRelease409JSONResponse{
+				Code: "idempotency_conflict", Message: "idempotency key was already used with a different request",
+			}, nil
+		default:
+			return nil, err
+		}
+	}
+	observability.SetRequestProjectID(ctx, acceptance.Release.TargetSnapshot.ProjectID)
+	return api.RollbackRelease201JSONResponse{
+		Release: releaseResponse(acceptance.Release), Operation: operationResponse(acceptance.Operation),
+	}, nil
 }
 
 func (s *Server) GetOperation(
@@ -137,9 +256,10 @@ func (s *Server) GetOperation(
 
 func releaseResponse(release delivery.Release) api.Release {
 	return api.Release{
-		Id:                 release.ID,
-		DeploymentTargetId: release.DeploymentTargetID,
-		ImageReference:     release.ImageReference,
+		Id:                  release.ID,
+		DeploymentTargetId:  release.DeploymentTargetID,
+		ImageReference:      release.ImageReference,
+		RollbackOfReleaseId: release.RollbackOfReleaseID,
 		TargetSnapshot: api.ReleaseTargetSnapshot{
 			ProjectId:     release.TargetSnapshot.ProjectID,
 			ApplicationId: release.TargetSnapshot.ApplicationID,
@@ -152,6 +272,40 @@ func releaseResponse(release delivery.Release) api.Release {
 		CreatedBy: release.CreatedBy,
 		CreatedAt: release.CreatedAt,
 	}
+}
+
+func releaseDetailResponse(detail delivery.Detail) (api.ReleaseDetail, error) {
+	differences := make([]api.SnapshotDifference, 0, len(detail.SnapshotDifferences))
+	for _, difference := range detail.SnapshotDifferences {
+		differences = append(differences, api.SnapshotDifference{
+			Field:        difference.Field,
+			ReleaseValue: difference.ReleaseValue,
+			CurrentValue: difference.CurrentValue,
+		})
+	}
+	timeline := make([]api.AuditRecord, 0, len(detail.AuditTimeline))
+	for _, record := range detail.AuditTimeline {
+		var summary map[string]interface{}
+		if err := json.Unmarshal(record.Summary, &summary); err != nil {
+			return api.ReleaseDetail{}, fmt.Errorf("decode release audit summary: %w", err)
+		}
+		timeline = append(timeline, api.AuditRecord{
+			Id:         record.ID,
+			ActorId:    record.ActorID,
+			ActorKind:  api.AuditRecordActorKind(record.ActorKind),
+			Action:     record.Action,
+			TargetType: record.TargetType,
+			TargetId:   record.TargetID,
+			Summary:    summary,
+			CreatedAt:  record.CreatedAt,
+		})
+	}
+	return api.ReleaseDetail{
+		Release:             releaseResponse(detail.Release),
+		SnapshotDifferences: differences,
+		Operation:           operationResponse(detail.Operation),
+		AuditTimeline:       timeline,
+	}, nil
 }
 
 func operationResponse(record operation.Record) api.Operation {

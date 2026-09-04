@@ -512,6 +512,21 @@ func (m *Module) ClaimNext(
 	); err != nil {
 		return Lease{}, false, fmt.Errorf("insert operation attempt: %w", err)
 	}
+	if err := audit.Append(ctx, tx, audit.Entry{
+		ActorID:    request.WorkerID,
+		ActorKind:  audit.ActorKindSystem,
+		Action:     "operation.claimed",
+		TargetType: "operation",
+		TargetID:   candidate.ID,
+		Summary: map[string]any{
+			"attemptId":     attemptID.String(),
+			"attemptNumber": attemptNumber,
+			"recovery":      recovery,
+		},
+		CreatedAt: now,
+	}); err != nil {
+		return Lease{}, false, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return Lease{}, false, fmt.Errorf("commit operation claim: %w", err)

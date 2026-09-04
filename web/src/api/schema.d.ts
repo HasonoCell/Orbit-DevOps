@@ -150,7 +150,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 分页查询部署目标的发布历史 */
+        get: operations["listReleaseHistory"];
         put?: never;
         /** 创建发布并接纳异步操作 */
         post: operations["createRelease"];
@@ -188,6 +189,23 @@ export interface paths {
         get: operations["getRelease"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/releases/{releaseId}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 从历史不可变快照创建回滚发布 */
+        post: operations["rollbackRelease"];
         delete?: never;
         options?: never;
         head?: never;
@@ -383,9 +401,61 @@ export interface components {
             deploymentTargetId: string;
             imageReference: string;
             targetSnapshot: components["schemas"]["ReleaseTargetSnapshot"];
+            /** Format: uuid */
+            rollbackOfReleaseId?: string;
             createdBy: string;
             /** Format: date-time */
             createdAt: string;
+        };
+        ReleaseHistoryPage: {
+            items: components["schemas"]["ReleaseHistoryItem"][];
+            nextCursor?: string;
+        };
+        ReleaseHistoryItem: {
+            release: components["schemas"]["Release"];
+            operation: components["schemas"]["OperationSummary"];
+        };
+        OperationSummary: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "pending" | "running" | "cancel_requested" | "succeeded" | "failed" | "canceled" | "attention_required";
+            attemptCount: number;
+            errorCode?: string;
+            errorSummary?: string;
+            /** Format: date-time */
+            queuedAt: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            finishedAt?: string;
+        };
+        SnapshotDifference: {
+            field: string;
+            releaseValue: string;
+            currentValue: string;
+        };
+        AuditRecord: {
+            /** Format: uuid */
+            id: string;
+            actorId: string;
+            /** @enum {string} */
+            actorKind: "user" | "system";
+            action: string;
+            targetType: string;
+            /** Format: uuid */
+            targetId: string;
+            summary: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ReleaseDetail: {
+            release: components["schemas"]["Release"];
+            snapshotDifferences: components["schemas"]["SnapshotDifference"][];
+            operation: components["schemas"]["Operation"];
+            auditTimeline: components["schemas"]["AuditRecord"][];
         };
         /** @enum {string} */
         RetryDisposition: "retryable" | "non_retryable" | "unknown_outcome";
@@ -1113,6 +1183,58 @@ export interface operations {
             };
         };
     };
+    listReleaseHistory: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                deploymentTargetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 按创建时间和标识倒序排列的发布历史 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseHistoryPage"];
+                };
+            };
+            /** @description 分页游标无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 部署目标不存在或当前操作者不是项目成员 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     createRelease: {
         parameters: {
             query?: never;
@@ -1244,11 +1366,72 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Release"];
+                    "application/json": components["schemas"]["ReleaseDetail"];
                 };
             };
             /** @description 发布不存在 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    rollbackRelease: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前操作者与写操作范围内的幂等标识。 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                releaseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 回滚 Release 与待处理 Operation 已原子创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseAcceptance"];
+                };
+            };
+            /** @description 当前项目角色不能创建回滚 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 来源 Release 不存在或当前操作者不是项目成员 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 幂等键已经用于不同请求 */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

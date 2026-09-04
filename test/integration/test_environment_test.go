@@ -76,12 +76,58 @@ type deploymentTargetDocument struct {
 }
 
 type releaseDocument struct {
-	ID                 string                `json:"id"`
-	DeploymentTargetID string                `json:"deploymentTargetId"`
-	ImageReference     string                `json:"imageReference"`
-	TargetSnapshot     releaseTargetSnapshot `json:"targetSnapshot"`
-	CreatedBy          string                `json:"createdBy"`
-	CreatedAt          time.Time             `json:"createdAt"`
+	ID                  string                `json:"id"`
+	DeploymentTargetID  string                `json:"deploymentTargetId"`
+	ImageReference      string                `json:"imageReference"`
+	TargetSnapshot      releaseTargetSnapshot `json:"targetSnapshot"`
+	RollbackOfReleaseID *string               `json:"rollbackOfReleaseId"`
+	CreatedBy           string                `json:"createdBy"`
+	CreatedAt           time.Time             `json:"createdAt"`
+}
+
+type releaseDetailDocument struct {
+	Release             releaseDocument              `json:"release"`
+	SnapshotDifferences []snapshotDifferenceDocument `json:"snapshotDifferences"`
+	Operation           operationDocument            `json:"operation"`
+	AuditTimeline       []auditRecordDocument        `json:"auditTimeline"`
+}
+
+type snapshotDifferenceDocument struct {
+	Field        string `json:"field"`
+	ReleaseValue string `json:"releaseValue"`
+	CurrentValue string `json:"currentValue"`
+}
+
+type auditRecordDocument struct {
+	ID         string         `json:"id"`
+	ActorID    string         `json:"actorId"`
+	ActorKind  string         `json:"actorKind"`
+	Action     string         `json:"action"`
+	TargetType string         `json:"targetType"`
+	TargetID   string         `json:"targetId"`
+	Summary    map[string]any `json:"summary"`
+	CreatedAt  time.Time      `json:"createdAt"`
+}
+
+type operationSummaryDocument struct {
+	ID           string     `json:"id"`
+	Status       string     `json:"status"`
+	AttemptCount int        `json:"attemptCount"`
+	ErrorCode    *string    `json:"errorCode"`
+	ErrorSummary *string    `json:"errorSummary"`
+	QueuedAt     time.Time  `json:"queuedAt"`
+	StartedAt    *time.Time `json:"startedAt"`
+	FinishedAt   *time.Time `json:"finishedAt"`
+}
+
+type releaseHistoryItemDocument struct {
+	Release   releaseDocument          `json:"release"`
+	Operation operationSummaryDocument `json:"operation"`
+}
+
+type releaseHistoryPageDocument struct {
+	Items      []releaseHistoryItemDocument `json:"items"`
+	NextCursor *string                      `json:"nextCursor"`
 }
 
 type releaseTargetSnapshot struct {
@@ -360,12 +406,17 @@ func decodeReleaseAcceptance(
 func decodeRelease(t *testing.T, response *http.Response) releaseDocument {
 	t.Helper()
 
-	var release releaseDocument
-	if err := json.NewDecoder(response.Body).Decode(&release); err != nil {
+	return decodeReleaseDetail(t, response).Release
+}
+
+func decodeReleaseDetail(t *testing.T, response *http.Response) releaseDetailDocument {
+	t.Helper()
+
+	var detail releaseDetailDocument
+	if err := json.NewDecoder(response.Body).Decode(&detail); err != nil {
 		t.Fatalf("decode release response: %v", err)
 	}
-
-	return release
+	return detail
 }
 
 func decodeOperation(t *testing.T, response *http.Response) operationDocument {

@@ -114,6 +114,7 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/api/v1/deployment-targets/" + target.ID,
+		"/api/v1/deployment-targets/" + target.ID + "/releases",
 		"/api/v1/deployment-targets/" + target.ID + "/runtime-snapshot",
 		"/api/v1/releases/" + acceptance.Release.ID,
 		"/api/v1/operations/" + acceptance.Operation.ID,
@@ -159,6 +160,29 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 	)
 	defer viewerRelease.Body.Close()
 	assertError(t, viewerRelease, http.StatusForbidden, "project_permission_denied")
+
+	developerRollback := requestJSON(
+		t,
+		developerServer,
+		http.MethodPost,
+		"/api/v1/releases/"+acceptance.Release.ID+"/rollback",
+		"developer-rollback-release",
+		"",
+	)
+	defer developerRollback.Body.Close()
+	if developerRollback.StatusCode != http.StatusCreated {
+		t.Errorf("developer rollback status = %d, want %d", developerRollback.StatusCode, http.StatusCreated)
+	}
+	viewerRollback := requestJSON(
+		t,
+		viewerServer,
+		http.MethodPost,
+		"/api/v1/releases/"+acceptance.Release.ID+"/rollback",
+		"viewer-rollback-release",
+		"",
+	)
+	defer viewerRollback.Body.Close()
+	assertError(t, viewerRollback, http.StatusForbidden, "project_permission_denied")
 
 	viewerCancel := requestJSON(
 		t,
@@ -257,6 +281,7 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 	for _, path := range []string{
 		"/api/v1/applications/" + application.ID,
 		"/api/v1/deployment-targets/" + target.ID,
+		"/api/v1/deployment-targets/" + target.ID + "/releases",
 		"/api/v1/releases/" + acceptance.Release.ID,
 		"/api/v1/operations/" + acceptance.Operation.ID,
 	} {
@@ -268,6 +293,16 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		}
 		response.Body.Close()
 	}
+	outsiderRollback := requestJSON(
+		t,
+		outsiderServer,
+		http.MethodPost,
+		"/api/v1/releases/"+acceptance.Release.ID+"/rollback",
+		"outsider-rollback-release",
+		"",
+	)
+	defer outsiderRollback.Body.Close()
+	assertError(t, outsiderRollback, http.StatusNotFound, "release_not_found")
 
 	outsiderWrite := requestJSON(
 		t,

@@ -184,6 +184,17 @@ func TestReliableOperationMigrationBackfillsSchedulingState(t *testing.T) {
 	if recoveryRequired {
 		t.Error("migrated terminal operation unexpectedly requires recovery")
 	}
+	var rollbackOfReleaseID sql.NullString
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT rollback_of_release_id FROM releases WHERE id = $1`,
+		releaseID,
+	).Scan(&rollbackOfReleaseID); err != nil {
+		t.Fatalf("load migrated release lineage: %v", err)
+	}
+	if rollbackOfReleaseID.Valid {
+		t.Errorf("ordinary migrated release unexpectedly became rollback of %q", rollbackOfReleaseID.String)
+	}
 }
 
 func migrateDatabaseToVersion(t *testing.T, databaseURL string, version uint) {

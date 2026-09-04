@@ -22,6 +22,24 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AuditRecordActorKind.
+const (
+	System AuditRecordActorKind = "system"
+	User   AuditRecordActorKind = "user"
+)
+
+// Valid indicates whether the value is a known member of the AuditRecordActorKind enum.
+func (e AuditRecordActorKind) Valid() bool {
+	switch e {
+	case System:
+		return true
+	case User:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateDeploymentTargetRequestStage.
 const (
 	CreateDeploymentTargetRequestStageDevelopment CreateDeploymentTargetRequestStage = "development"
@@ -121,6 +139,39 @@ func (e OperationAttemptStatus) Valid() bool {
 	case OperationAttemptStatusRunning:
 		return true
 	case OperationAttemptStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperationSummaryStatus.
+const (
+	OperationSummaryStatusAttentionRequired OperationSummaryStatus = "attention_required"
+	OperationSummaryStatusCancelRequested   OperationSummaryStatus = "cancel_requested"
+	OperationSummaryStatusCanceled          OperationSummaryStatus = "canceled"
+	OperationSummaryStatusFailed            OperationSummaryStatus = "failed"
+	OperationSummaryStatusPending           OperationSummaryStatus = "pending"
+	OperationSummaryStatusRunning           OperationSummaryStatus = "running"
+	OperationSummaryStatusSucceeded         OperationSummaryStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the OperationSummaryStatus enum.
+func (e OperationSummaryStatus) Valid() bool {
+	switch e {
+	case OperationSummaryStatusAttentionRequired:
+		return true
+	case OperationSummaryStatusCancelRequested:
+		return true
+	case OperationSummaryStatusCanceled:
+		return true
+	case OperationSummaryStatusFailed:
+		return true
+	case OperationSummaryStatusPending:
+		return true
+	case OperationSummaryStatusRunning:
+		return true
+	case OperationSummaryStatusSucceeded:
 		return true
 	default:
 		return false
@@ -248,6 +299,21 @@ type Application struct {
 	Slug      string             `json:"slug"`
 }
 
+// AuditRecord defines model for AuditRecord.
+type AuditRecord struct {
+	Action     string                 `json:"action"`
+	ActorId    string                 `json:"actorId"`
+	ActorKind  AuditRecordActorKind   `json:"actorKind"`
+	CreatedAt  time.Time              `json:"createdAt"`
+	Id         openapi_types.UUID     `json:"id"`
+	Summary    map[string]interface{} `json:"summary"`
+	TargetId   openapi_types.UUID     `json:"targetId"`
+	TargetType string                 `json:"targetType"`
+}
+
+// AuditRecordActorKind defines model for AuditRecord.ActorKind.
+type AuditRecordActorKind string
+
 // CreateApplicationRequest defines model for CreateApplicationRequest.
 type CreateApplicationRequest struct {
 	Name string `json:"name"`
@@ -350,6 +416,21 @@ type OperationAttempt struct {
 // OperationAttemptStatus defines model for OperationAttempt.Status.
 type OperationAttemptStatus string
 
+// OperationSummary defines model for OperationSummary.
+type OperationSummary struct {
+	AttemptCount int                    `json:"attemptCount"`
+	ErrorCode    *string                `json:"errorCode,omitempty"`
+	ErrorSummary *string                `json:"errorSummary,omitempty"`
+	FinishedAt   *time.Time             `json:"finishedAt,omitempty"`
+	Id           openapi_types.UUID     `json:"id"`
+	QueuedAt     time.Time              `json:"queuedAt"`
+	StartedAt    *time.Time             `json:"startedAt,omitempty"`
+	Status       OperationSummaryStatus `json:"status"`
+}
+
+// OperationSummaryStatus defines model for OperationSummary.Status.
+type OperationSummaryStatus string
+
 // Project defines model for Project.
 type Project struct {
 	CreatedAt time.Time          `json:"createdAt"`
@@ -374,18 +455,39 @@ type ProjectRole string
 
 // Release defines model for Release.
 type Release struct {
-	CreatedAt          time.Time             `json:"createdAt"`
-	CreatedBy          string                `json:"createdBy"`
-	DeploymentTargetId openapi_types.UUID    `json:"deploymentTargetId"`
-	Id                 openapi_types.UUID    `json:"id"`
-	ImageReference     string                `json:"imageReference"`
-	TargetSnapshot     ReleaseTargetSnapshot `json:"targetSnapshot"`
+	CreatedAt           time.Time             `json:"createdAt"`
+	CreatedBy           string                `json:"createdBy"`
+	DeploymentTargetId  openapi_types.UUID    `json:"deploymentTargetId"`
+	Id                  openapi_types.UUID    `json:"id"`
+	ImageReference      string                `json:"imageReference"`
+	RollbackOfReleaseId *openapi_types.UUID   `json:"rollbackOfReleaseId,omitempty"`
+	TargetSnapshot      ReleaseTargetSnapshot `json:"targetSnapshot"`
 }
 
 // ReleaseAcceptance defines model for ReleaseAcceptance.
 type ReleaseAcceptance struct {
 	Operation Operation `json:"operation"`
 	Release   Release   `json:"release"`
+}
+
+// ReleaseDetail defines model for ReleaseDetail.
+type ReleaseDetail struct {
+	AuditTimeline       []AuditRecord        `json:"auditTimeline"`
+	Operation           Operation            `json:"operation"`
+	Release             Release              `json:"release"`
+	SnapshotDifferences []SnapshotDifference `json:"snapshotDifferences"`
+}
+
+// ReleaseHistoryItem defines model for ReleaseHistoryItem.
+type ReleaseHistoryItem struct {
+	Operation OperationSummary `json:"operation"`
+	Release   Release          `json:"release"`
+}
+
+// ReleaseHistoryPage defines model for ReleaseHistoryPage.
+type ReleaseHistoryPage struct {
+	Items      []ReleaseHistoryItem `json:"items"`
+	NextCursor *string              `json:"nextCursor,omitempty"`
 }
 
 // ReleaseTargetSnapshot defines model for ReleaseTargetSnapshot.
@@ -445,6 +547,13 @@ type RuntimeSnapshotFreshness string
 // RuntimeSnapshotSource defines model for RuntimeSnapshot.Source.
 type RuntimeSnapshotSource string
 
+// SnapshotDifference defines model for SnapshotDifference.
+type SnapshotDifference struct {
+	CurrentValue string `json:"currentValue"`
+	Field        string `json:"field"`
+	ReleaseValue string `json:"releaseValue"`
+}
+
 // UpdateDeploymentTargetRequest defines model for UpdateDeploymentTargetRequest.
 type UpdateDeploymentTargetRequest struct {
 	ContainerPort int                                `json:"containerPort"`
@@ -473,6 +582,12 @@ type CreateDeploymentTargetParams struct {
 type UpdateDeploymentTargetParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ListReleaseHistoryParams defines parameters for ListReleaseHistory.
+type ListReleaseHistoryParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // CreateReleaseParams defines parameters for CreateRelease.
@@ -535,6 +650,12 @@ type UpdateProjectMemberParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// RollbackReleaseParams defines parameters for RollbackRelease.
+type RollbackReleaseParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // CreateDeploymentTargetJSONRequestBody defines body for CreateDeploymentTarget for application/json ContentType.
 type CreateDeploymentTargetJSONRequestBody = CreateDeploymentTargetRequest
 
@@ -573,6 +694,9 @@ type ServerInterface interface {
 	// UpdateDeploymentTarget 更新部署目标的可变期望配置
 	// (PUT /api/v1/deployment-targets/{deploymentTargetId})
 	UpdateDeploymentTarget(c *gin.Context, deploymentTargetId openapi_types.UUID, params UpdateDeploymentTargetParams)
+	// ListReleaseHistory 分页查询部署目标的发布历史
+	// (GET /api/v1/deployment-targets/{deploymentTargetId}/releases)
+	ListReleaseHistory(c *gin.Context, deploymentTargetId openapi_types.UUID, params ListReleaseHistoryParams)
 	// CreateRelease 创建发布并接纳异步操作
 	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
 	CreateRelease(c *gin.Context, deploymentTargetId openapi_types.UUID, params CreateReleaseParams)
@@ -618,6 +742,9 @@ type ServerInterface interface {
 	// GetRelease 查询发布
 	// (GET /api/v1/releases/{releaseId})
 	GetRelease(c *gin.Context, releaseId openapi_types.UUID)
+	// RollbackRelease 从历史不可变快照创建回滚发布
+	// (POST /api/v1/releases/{releaseId}/rollback)
+	RollbackRelease(c *gin.Context, releaseId openapi_types.UUID, params RollbackReleaseParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -781,6 +908,50 @@ func (siw *ServerInterfaceWrapper) UpdateDeploymentTarget(c *gin.Context) {
 	}
 
 	siw.Handler.UpdateDeploymentTarget(c, deploymentTargetId, params)
+}
+
+// ListReleaseHistory operation middleware
+func (siw *ServerInterfaceWrapper) ListReleaseHistory(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deploymentTargetId" -------------
+	var deploymentTargetId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deploymentTargetId", c.Param("deploymentTargetId"), &deploymentTargetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deploymentTargetId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListReleaseHistoryParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListReleaseHistory(c, deploymentTargetId, params)
 }
 
 // CreateRelease operation middleware
@@ -1437,6 +1608,58 @@ func (siw *ServerInterfaceWrapper) GetRelease(c *gin.Context) {
 	siw.Handler.GetRelease(c, releaseId)
 }
 
+// RollbackRelease operation middleware
+func (siw *ServerInterfaceWrapper) RollbackRelease(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "releaseId" -------------
+	var releaseId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "releaseId", c.Param("releaseId"), &releaseId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter releaseId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RollbackReleaseParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RollbackRelease(c, releaseId, params)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -1475,9 +1698,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/deployment-targets", wrapper.CreateDeploymentTarget)
 	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.GetDeploymentTarget)
 	router.PUT(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.UpdateDeploymentTarget)
+	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/releases", wrapper.ListReleaseHistory)
 	router.POST(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/releases", wrapper.CreateRelease)
 	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/runtime-snapshot", wrapper.GetRuntimeSnapshot)
 	router.GET(options.BaseURL+"/api/v1/releases/:releaseId", wrapper.GetRelease)
+	router.POST(options.BaseURL+"/api/v1/releases/:releaseId/rollback", wrapper.RollbackRelease)
 	router.GET(options.BaseURL+"/api/v1/operations/:operationId", wrapper.GetOperation)
 	router.POST(options.BaseURL+"/api/v1/operations/:operationId/retry", wrapper.RetryOperation)
 	router.POST(options.BaseURL+"/api/v1/operations/:operationId/reconcile", wrapper.ReconcileOperation)
@@ -1746,6 +1971,74 @@ type UpdateDeploymentTargetdefaultJSONResponse struct {
 }
 
 func (response UpdateDeploymentTargetdefaultJSONResponse) VisitUpdateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReleaseHistoryRequestObject struct {
+	DeploymentTargetId openapi_types.UUID `json:"deploymentTargetId"`
+	Params             ListReleaseHistoryParams
+}
+
+type ListReleaseHistoryResponseObject interface {
+	VisitListReleaseHistoryResponse(w http.ResponseWriter) error
+}
+
+type ListReleaseHistory200JSONResponse ReleaseHistoryPage
+
+func (response ListReleaseHistory200JSONResponse) VisitListReleaseHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReleaseHistory400JSONResponse Error
+
+func (response ListReleaseHistory400JSONResponse) VisitListReleaseHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReleaseHistory404JSONResponse Error
+
+func (response ListReleaseHistory404JSONResponse) VisitListReleaseHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReleaseHistorydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListReleaseHistorydefaultJSONResponse) VisitListReleaseHistoryResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -2832,7 +3125,7 @@ type GetReleaseResponseObject interface {
 	VisitGetReleaseResponse(w http.ResponseWriter) error
 }
 
-type GetRelease200JSONResponse Release
+type GetRelease200JSONResponse ReleaseDetail
 
 func (response GetRelease200JSONResponse) VisitGetReleaseResponse(w http.ResponseWriter) error {
 
@@ -2877,6 +3170,88 @@ func (response GetReleasedefaultJSONResponse) VisitGetReleaseResponse(w http.Res
 	return err
 }
 
+type RollbackReleaseRequestObject struct {
+	ReleaseId openapi_types.UUID `json:"releaseId"`
+	Params    RollbackReleaseParams
+}
+
+type RollbackReleaseResponseObject interface {
+	VisitRollbackReleaseResponse(w http.ResponseWriter) error
+}
+
+type RollbackRelease201JSONResponse ReleaseAcceptance
+
+func (response RollbackRelease201JSONResponse) VisitRollbackReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackRelease403JSONResponse Error
+
+func (response RollbackRelease403JSONResponse) VisitRollbackReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackRelease404JSONResponse Error
+
+func (response RollbackRelease404JSONResponse) VisitRollbackReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackRelease409JSONResponse Error
+
+func (response RollbackRelease409JSONResponse) VisitRollbackReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackReleasedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RollbackReleasedefaultJSONResponse) VisitRollbackReleaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// GetApplication 查询应用
@@ -2891,6 +3266,9 @@ type StrictServerInterface interface {
 	// UpdateDeploymentTarget 更新部署目标的可变期望配置
 	// (PUT /api/v1/deployment-targets/{deploymentTargetId})
 	UpdateDeploymentTarget(ctx context.Context, request UpdateDeploymentTargetRequestObject) (UpdateDeploymentTargetResponseObject, error)
+	// ListReleaseHistory 分页查询部署目标的发布历史
+	// (GET /api/v1/deployment-targets/{deploymentTargetId}/releases)
+	ListReleaseHistory(ctx context.Context, request ListReleaseHistoryRequestObject) (ListReleaseHistoryResponseObject, error)
 	// CreateRelease 创建发布并接纳异步操作
 	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
 	CreateRelease(ctx context.Context, request CreateReleaseRequestObject) (CreateReleaseResponseObject, error)
@@ -2936,6 +3314,9 @@ type StrictServerInterface interface {
 	// GetRelease 查询发布
 	// (GET /api/v1/releases/{releaseId})
 	GetRelease(ctx context.Context, request GetReleaseRequestObject) (GetReleaseResponseObject, error)
+	// RollbackRelease 从历史不可变快照创建回滚发布
+	// (POST /api/v1/releases/{releaseId}/rollback)
+	RollbackRelease(ctx context.Context, request RollbackReleaseRequestObject) (RollbackReleaseResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx *gin.Context, request any) (any, error)
@@ -3108,6 +3489,33 @@ func (sh *strictHandler) UpdateDeploymentTarget(ctx *gin.Context, deploymentTarg
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(UpdateDeploymentTargetResponseObject); ok {
 		if err := validResponse.VisitUpdateDeploymentTargetResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListReleaseHistory operation middleware
+func (sh *strictHandler) ListReleaseHistory(ctx *gin.Context, deploymentTargetId openapi_types.UUID, params ListReleaseHistoryParams) {
+	var request ListReleaseHistoryRequestObject
+
+	request.DeploymentTargetId = deploymentTargetId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListReleaseHistory(ctx, request.(ListReleaseHistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListReleaseHistory")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListReleaseHistoryResponseObject); ok {
+		if err := validResponse.VisitListReleaseHistoryResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -3558,65 +3966,100 @@ func (sh *strictHandler) GetRelease(ctx *gin.Context, releaseId openapi_types.UU
 	}
 }
 
+// RollbackRelease operation middleware
+func (sh *strictHandler) RollbackRelease(ctx *gin.Context, releaseId openapi_types.UUID, params RollbackReleaseParams) {
+	var request RollbackReleaseRequestObject
+
+	request.ReleaseId = releaseId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RollbackRelease(ctx, request.(RollbackReleaseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RollbackRelease")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(RollbackReleaseResponseObject); ok {
+		if err := validResponse.VisitRollbackReleaseResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"3k/nc4Wp0++9cO5NRbNg27mONDU19b8AAAD//w==",
+	"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",
+	"5b60N0MP6NYOStKDVqxqa5wwOvrfAAAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

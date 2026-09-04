@@ -22,6 +22,7 @@ var (
 	ErrDeploymentTargetNotFound = errors.New("deployment target not found")
 	ErrInvalidImageReference    = errors.New("image reference must contain an OCI digest")
 	ErrReleaseNotFound          = errors.New("release not found")
+	ErrInvalidCursor            = errors.New("invalid release history cursor")
 )
 
 type TargetSnapshot struct {
@@ -60,12 +61,13 @@ func (s TargetSnapshot) Value() (driver.Value, error) {
 }
 
 type Release struct {
-	ID                 uuid.UUID      `db:"id"`
-	DeploymentTargetID uuid.UUID      `db:"deployment_target_id"`
-	ImageReference     string         `db:"image_reference"`
-	TargetSnapshot     TargetSnapshot `db:"target_snapshot"`
-	CreatedBy          string         `db:"created_by"`
-	CreatedAt          time.Time      `db:"created_at"`
+	ID                  uuid.UUID      `db:"id"`
+	DeploymentTargetID  uuid.UUID      `db:"deployment_target_id"`
+	ImageReference      string         `db:"image_reference"`
+	TargetSnapshot      TargetSnapshot `db:"target_snapshot"`
+	RollbackOfReleaseID *uuid.UUID     `db:"rollback_of_release_id"`
+	CreatedBy           string         `db:"created_by"`
+	CreatedAt           time.Time      `db:"created_at"`
 }
 
 type Acceptance struct {
@@ -202,12 +204,14 @@ func (m *Module) CreateRelease(
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO releases
-		 (id, deployment_target_id, image_reference, target_snapshot, created_by, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		 (id, deployment_target_id, image_reference, target_snapshot,
+		  rollback_of_release_id, created_by, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		release.ID,
 		release.DeploymentTargetID,
 		release.ImageReference,
 		release.TargetSnapshot,
+		release.RollbackOfReleaseID,
 		release.CreatedBy,
 		release.CreatedAt,
 	); err != nil {
@@ -264,10 +268,7 @@ func (m *Module) GetRelease(ctx context.Context, id uuid.UUID) (Release, error) 
 	if err := m.db.GetContext(
 		ctx,
 		&release,
-		`SELECT id, deployment_target_id, image_reference, target_snapshot,
-		        created_by, created_at
-		 FROM releases
-		 WHERE id = $1`,
+		releaseSelect+` WHERE id = $1`,
 		id,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -310,10 +311,7 @@ func (m *Module) replayReleaseCreate(
 	if err := tx.GetContext(
 		ctx,
 		&release,
-		`SELECT id, deployment_target_id, image_reference, target_snapshot,
-		        created_by, created_at
-		 FROM releases
-		 WHERE id = $1`,
+		releaseSelect+` WHERE id = $1`,
 		releaseID,
 	); err != nil {
 		return Acceptance{}, fmt.Errorf("load idempotent release result: %w", err)
@@ -341,3 +339,7 @@ func validateImageReference(imageReference string) error {
 	}
 	return nil
 }
+
+const releaseSelect = `SELECT id, deployment_target_id, image_reference, target_snapshot,
+       rollback_of_release_id, created_by, created_at
+ FROM releases`
