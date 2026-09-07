@@ -12,10 +12,12 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/app"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
+	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -101,9 +103,14 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 		acceptance := environment.acceptRelease(t, "recovery", readyImage)
 		targetID := uuid.MustParse(acceptance.TargetID)
 		cleanupResources(t, client, targetID)
-		lease, claimed, err := environment.operations.ClaimNext(context.Background(), operation.ClaimRequest{
+		items, err := environment.operations.ReserveDispatches(context.Background(), 100, time.Second)
+		if err != nil || len(items) != 1 {
+			t.Fatalf("reserve pre-interruption intent: %d %v", len(items), err)
+		}
+		claim, err := environment.operations.ClaimDispatch(context.Background(), items[0].DispatchRef, operation.ClaimRequest{
 			WorkerID: "kind-lost-worker", LeaseDuration: 300 * time.Millisecond,
 		})
+		lease, claimed := claim.Lease, claim.Disposition == operation.DispatchClaimed
 		if err != nil || !claimed || lease.OperationID.String() != acceptance.OperationID {
 			t.Fatalf("claim operation before simulated process loss = %#v, %v, %v", lease, claimed, err)
 		}
@@ -235,10 +242,11 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 }
 
 type kindControlPlane struct {
-	server     *httptest.Server
-	runner     *worker.Runner
-	operations *operation.Module
-	releases   *delivery.Module
+	databaseURL string
+	server      *httptest.Server
+	runner      *kindQueueRunner
+	operations  *operation.Module
+	releases    *delivery.Module
 }
 
 type releaseAcceptance struct {
@@ -338,7 +346,61 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 	}
 
 	return &kindControlPlane{
-		server: server, runner: runner, operations: operations, releases: releases,
+		databaseURL: databaseURL,
+		server:      server, runner: &kindQueueRunner{address: redisAddress(t), runner: runner, operations: operations, db: db}, operations: operations, releases: releases,
+	}
+}
+
+func redisAddress(t *testing.T) string { _, address := testsupport.StartRedis(t); return address }
+
+// kindQueueRunner 只给既有验收提供等待边界：真正领取始终来自 Redis 中的指定消息。
+// 数据库查询仅选择需要等待的结果，不调用 ClaimNext，也不直接触发 Runner。
+type kindQueueRunner struct {
+	address    string
+	runner     *worker.Runner
+	operations *operation.Module
+	db         *sqlx.DB
+}
+
+func (r *kindQueueRunner) RunOnce(parent context.Context) (bool, error) {
+	ctx, cancel := context.WithTimeout(parent, 70*time.Second)
+	defer cancel()
+	var ids []uuid.UUID
+	if err := r.db.SelectContext(ctx, &ids, `SELECT id FROM operations WHERE status IN ('pending','running','cancel_requested')`); err != nil {
+		return false, err
+	}
+	if len(ids) == 0 {
+		return false, nil
+	}
+	service, err := dispatch.New(dispatch.Config{RedisAddress: r.address, Concurrency: 4, PollInterval: 50 * time.Millisecond, RepairInterval: 100 * time.Millisecond,
+		ConsumptionGrace: time.Second, TaskTimeout: 60 * time.Second, ShutdownTimeout: time.Second}, r.operations, r.runner)
+	if err != nil {
+		return false, err
+	}
+	done := make(chan error, 1)
+	go func() { done <- service.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		complete := true
+		for _, id := range ids {
+			current, err := r.operations.Get(ctx, id)
+			if err != nil {
+				return true, err
+			}
+			if current.Status == operation.StatusPending || current.Status == operation.StatusRunning || current.Status == operation.StatusCancelRequested {
+				complete = false
+			}
+		}
+		if complete {
+			return true, nil
+		}
+		select {
+		case <-ctx.Done():
+			return true, ctx.Err()
+		case <-ticker.C:
+		}
 	}
 }
 

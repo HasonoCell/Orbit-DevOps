@@ -126,7 +126,14 @@ func TestDispatchRetryKeepsBudgetAndRejectsOldGeneration(t *testing.T) {
 	if err != nil || early.Disposition != operation.DispatchDeferred {
 		t.Fatalf("early = %#v %v", early, err)
 	}
+	// 延期先于旧发送者确认，迟到确认不能把下一次可调度时间推到一个小时之后。
+	if err := operations.ConfirmDispatch(ctx, next[0], "", time.Hour); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(time.Minute)
+	if ready, err := operations.ReserveDispatches(ctx, 10, time.Second); err != nil || len(ready) != 1 || ready[0].Generation != 2 {
+		t.Fatalf("late confirmation overwrote deferred schedule: %+v %v", ready, err)
+	}
 	second, err := operations.ClaimDispatch(ctx, next[0].DispatchRef, operation.ClaimRequest{WorkerID: "second", LeaseDuration: time.Minute})
 	if err != nil || second.Lease.AttemptNumber != 2 {
 		t.Fatalf("second = %#v %v", second, err)

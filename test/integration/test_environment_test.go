@@ -14,9 +14,10 @@ import (
 )
 
 type testEnvironment struct {
-	server       *httptest.Server
-	databaseURL  string
-	dependencies app.Dependencies
+	server              *httptest.Server
+	databaseURL         string
+	dependencies        app.Dependencies
+	postgresContainerID string
 }
 
 // serverForActor 使用同一数据库启动另一个本地身份，用于端到端验证项目授权。
@@ -265,6 +266,7 @@ func newTestEnvironmentWithDependencies(
 
 	return &testEnvironment{
 		server: server, databaseURL: databaseURL, dependencies: dependencies,
+		postgresContainerID: postgresContainer.GetContainerID(),
 	}
 }
 

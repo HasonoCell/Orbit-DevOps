@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
+	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
@@ -146,18 +147,39 @@ func TestWorkerInterruptionHelper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create helper Worker: %v", err)
 	}
+	if address := os.Getenv("ORBITOPS_TEST_INTERRUPTION_REDIS_ADDRESS"); address != "" {
+		config := queueConfig(address)
+		config.AfterEnqueue = func(operation.Dispatch) {
+			if mode == "after_enqueue" {
+				os.Exit(91)
+			}
+		}
+		service, err := dispatch.New(config, operations, runner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mode == "after_enqueue" {
+			t.Fatal(service.PublishOnce(context.Background()))
+		}
+		t.Fatal(service.Run(context.Background()))
+	}
 	processed, err := runner.RunOnce(context.Background())
 	t.Fatalf("helper Worker unexpectedly returned: processed=%v error=%v", processed, err)
 }
 
-func runInterruptedWorkerProcess(t *testing.T, databaseURL string, mode string, marker string) {
+func runInterruptedWorkerProcess(t *testing.T, databaseURL string, mode string, marker string, queueAddress ...string) {
 	t.Helper()
-	command := exec.Command(os.Args[0], "-test.run=^TestWorkerInterruptionHelper$")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestWorkerInterruptionHelper$")
 	command.Env = append(os.Environ(),
 		workerInterruptionModeEnv+"="+mode,
 		workerInterruptionDBEnv+"="+databaseURL,
 		workerInterruptionMarkerEnv+"="+marker,
 	)
+	if len(queueAddress) > 0 {
+		command.Env = append(command.Env, "ORBITOPS_TEST_INTERRUPTION_REDIS_ADDRESS="+queueAddress[0])
+	}
 	var output bytes.Buffer
 	command.Stdout = &output
 	command.Stderr = &output
