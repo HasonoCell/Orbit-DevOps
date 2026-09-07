@@ -19,8 +19,8 @@ func TestAcceptedReleaseHasOneDurableDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(dispatches) != 1 || dispatches[0].OperationID.String() != accepted.Operation.ID || dispatches[0].Generation != 1 {
-		t.Fatalf("dispatches = %#v, want accepted operation at generation 1", dispatches)
+	if len(dispatches) != 1 || dispatches[0].OperationID.String() != accepted.Operation.ID || dispatches[0].Sequence != 1 {
+		t.Fatalf("dispatches = %#v, want accepted operation at sequence 1", dispatches)
 	}
 	if again, err := operations.ReserveDispatches(ctx, 10, time.Second); err != nil || len(again) != 0 {
 		t.Fatalf("reserved twice: %#v, error %v", again, err)
@@ -95,8 +95,8 @@ func TestPublishedDispatchIsRedeliveredWithoutNewBusinessAttempt(t *testing.T) {
 	}
 }
 
-// 自动重试必须持久化新的意图；旧消息不能跨越业务重试代次。
-func TestDispatchRetryKeepsBudgetAndRejectsOldGeneration(t *testing.T) {
+// 自动重试必须持久化新的意图；旧消息不能跨越业务重试序列。
+func TestDispatchRetryKeepsBudgetAndRejectsOldSequence(t *testing.T) {
 	environment := newTestEnvironment(t)
 	accepted := createRelease(t, environment, "dispatch-retry")
 	now := time.Now().UTC().Add(time.Minute)
@@ -107,7 +107,7 @@ func TestDispatchRetryKeepsBudgetAndRejectsOldGeneration(t *testing.T) {
 		t.Fatalf("reserve = %#v %v", items, err)
 	}
 	first, err := operations.ClaimDispatch(ctx, items[0].DispatchRef, operation.ClaimRequest{WorkerID: "retry", LeaseDuration: time.Minute})
-	if err != nil || first.Disposition != operation.DispatchClaimed {
+	if err != nil || first.Outcome != operation.ClaimOutcomeClaimed {
 		t.Fatalf("claim = %#v %v", first, err)
 	}
 	result, err := operations.Fail(ctx, first.Lease, operation.Failure{Code: "kubernetes_unavailable", Summary: "temporarily unavailable", Disposition: operation.Retryable})
@@ -115,15 +115,15 @@ func TestDispatchRetryKeepsBudgetAndRejectsOldGeneration(t *testing.T) {
 		t.Fatalf("retry = %#v %v", result, err)
 	}
 	next, err := operations.ReserveDispatches(ctx, 10, time.Second)
-	if err != nil || len(next) != 1 || next[0].Generation != 2 {
+	if err != nil || len(next) != 1 || next[0].Sequence != 2 {
 		t.Fatalf("retry dispatch = %#v %v", next, err)
 	}
 	old, err := operations.ClaimDispatch(ctx, items[0].DispatchRef, operation.ClaimRequest{WorkerID: "old", LeaseDuration: time.Minute})
-	if err != nil || old.Disposition != operation.DispatchIgnored {
+	if err != nil || old.Outcome != operation.ClaimOutcomeIgnored {
 		t.Fatalf("old = %#v %v", old, err)
 	}
 	early, err := operations.ClaimDispatch(ctx, next[0].DispatchRef, operation.ClaimRequest{WorkerID: "early", LeaseDuration: time.Minute})
-	if err != nil || early.Disposition != operation.DispatchDeferred {
+	if err != nil || early.Outcome != operation.ClaimOutcomeDeferred {
 		t.Fatalf("early = %#v %v", early, err)
 	}
 	// 延期先于旧发送者确认，迟到确认不能把下一次可调度时间推到一个小时之后。
@@ -131,7 +131,7 @@ func TestDispatchRetryKeepsBudgetAndRejectsOldGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(time.Minute)
-	if ready, err := operations.ReserveDispatches(ctx, 10, time.Second); err != nil || len(ready) != 1 || ready[0].Generation != 2 {
+	if ready, err := operations.ReserveDispatches(ctx, 10, time.Second); err != nil || len(ready) != 1 || ready[0].Sequence != 2 {
 		t.Fatalf("late confirmation overwrote deferred schedule: %+v %v", ready, err)
 	}
 	second, err := operations.ClaimDispatch(ctx, next[0].DispatchRef, operation.ClaimRequest{WorkerID: "second", LeaseDuration: time.Minute})
@@ -166,11 +166,11 @@ func TestDispatchClaimsOnlyItsOperationAndFencesDuplicateDelivery(t *testing.T) 
 		}
 	}
 	claim, err := operations.ClaimDispatch(ctx, dispatch.DispatchRef, operation.ClaimRequest{WorkerID: "queue-worker", LeaseDuration: time.Second})
-	if err != nil || claim.Disposition != operation.DispatchClaimed || claim.Lease.OperationID.String() != second.Operation.ID {
+	if err != nil || claim.Outcome != operation.ClaimOutcomeClaimed || claim.Lease.OperationID.String() != second.Operation.ID {
 		t.Fatalf("claim = %#v, %v", claim, err)
 	}
 	duplicate, err := operations.ClaimDispatch(ctx, dispatch.DispatchRef, operation.ClaimRequest{WorkerID: "duplicate", LeaseDuration: time.Second})
-	if err != nil || duplicate.Disposition != operation.DispatchIgnored {
+	if err != nil || duplicate.Outcome != operation.ClaimOutcomeIgnored {
 		t.Fatalf("duplicate = %#v, %v", duplicate, err)
 	}
 	current, err := operations.Get(ctx, mustOperationID(t, first.Operation.ID))
@@ -209,7 +209,7 @@ func TestExpiredDispatchCreatesOneRecoveryIntentAndFencesOldWorker(t *testing.T)
 	}
 	now = now.Add(2 * time.Second)
 	old, err := operations.ClaimDispatch(ctx, items[0].DispatchRef, operation.ClaimRequest{WorkerID: "redelivery", LeaseDuration: time.Second})
-	if err != nil || old.Disposition != operation.DispatchIgnored {
+	if err != nil || old.Outcome != operation.ClaimOutcomeIgnored {
 		t.Fatalf("old: %#v %v", old, err)
 	}
 	if count, err := operations.RepairDispatches(ctx, 100); err != nil || count != 1 {
@@ -219,7 +219,7 @@ func TestExpiredDispatchCreatesOneRecoveryIntentAndFencesOldWorker(t *testing.T)
 		t.Fatalf("repeat repair: %d %v", count, err)
 	}
 	recovered, err := operations.ReserveDispatches(ctx, 10, time.Second)
-	if err != nil || len(recovered) != 1 || recovered[0].Generation != 2 {
+	if err != nil || len(recovered) != 1 || recovered[0].Sequence != 2 {
 		t.Fatalf("recovery: %#v %v", recovered, err)
 	}
 	second, err := operations.ClaimDispatch(ctx, recovered[0].DispatchRef, operation.ClaimRequest{WorkerID: "new", LeaseDuration: time.Second})

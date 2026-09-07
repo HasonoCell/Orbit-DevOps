@@ -66,7 +66,7 @@ func awaitQueueCondition(t *testing.T, timeout time.Duration, condition func() b
 	t.Fatal("queue condition not reached before deadline")
 }
 
-func awaitQueuedStatus(t *testing.T, operations *operation.Module, id string, status string) operation.Record {
+func awaitQueuedStatus(t *testing.T, operations *operation.Module, id string, status operation.OperationStatus) operation.Record {
 	t.Helper()
 	var result operation.Record
 	deadline := time.Now().Add(15 * time.Second)
@@ -252,13 +252,13 @@ func TestQueueRejectsMalformedMessagesAndRedactsErrors(t *testing.T) {
 	operations := operation.New(openTestDatabase(t, environment.databaseURL))
 	var ref operation.DispatchRef
 	db := openTestDatabase(t, environment.databaseURL)
-	if err := db.Get(&ref, `SELECT id,operation_id,generation,version FROM operation_dispatches WHERE operation_id=$1`, accepted.Operation.ID); err != nil {
+	if err := db.Get(&ref, `SELECT id,operation_id,sequence,protocol_version FROM operation_dispatches WHERE operation_id=$1`, accepted.Operation.ID); err != nil {
 		t.Fatal(err)
 	}
 	var logs bytes.Buffer
 	config := queueConfig(address)
 	config.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
-	service, err := dispatch.New(config, operations, executorFunc(func(context.Context, operation.DispatchRef) (string, error) {
+	service, err := dispatch.New(config, operations, executorFunc(func(context.Context, operation.DispatchRef) (operation.ClaimOutcome, error) {
 		return "", errors.New("secret-probe-not-real-credential")
 	}))
 	if err != nil {
@@ -267,7 +267,7 @@ func TestQueueRejectsMalformedMessagesAndRedactsErrors(t *testing.T) {
 	client := asynq.NewClient(asynq.RedisClientOpt{Addr: address})
 	defer client.Close()
 	bad := ref
-	bad.Version = 99
+	bad.ProtocolVersion = 99
 	payload, _ := json.Marshal(bad)
 	if _, err := client.Enqueue(asynq.NewTask(dispatch.TaskType, payload), asynq.Queue(config.Queue), asynq.MaxRetry(0)); err != nil {
 		t.Fatal(err)
@@ -312,8 +312,8 @@ func TestQueueRejectsMalformedMessagesAndRedactsErrors(t *testing.T) {
 	}
 }
 
-type executorFunc func(context.Context, operation.DispatchRef) (string, error)
+type executorFunc func(context.Context, operation.DispatchRef) (operation.ClaimOutcome, error)
 
-func (f executorFunc) RunDispatch(ctx context.Context, ref operation.DispatchRef) (string, error) {
+func (f executorFunc) RunDispatch(ctx context.Context, ref operation.DispatchRef) (operation.ClaimOutcome, error) {
 	return f(ctx, ref)
 }

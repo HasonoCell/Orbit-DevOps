@@ -13,41 +13,41 @@ import (
 
 // DispatchRef 只定位一次业务调度意图；消息不携带发布配置或权限凭据。
 type DispatchRef struct {
-	DispatchID  uuid.UUID `db:"id" json:"dispatch_id"`
-	OperationID uuid.UUID `db:"operation_id" json:"operation_id"`
-	Generation  int64     `db:"generation" json:"generation"`
-	Version     int       `db:"version" json:"version"`
+	DispatchID      uuid.UUID `db:"id" json:"dispatch_id"`
+	OperationID     uuid.UUID `db:"operation_id" json:"operation_id"`
+	Sequence        int64     `db:"sequence" json:"generation"`
+	ProtocolVersion int       `db:"protocol_version" json:"version"`
 }
 
 // Dispatch 是投递器取得的短期运输权限，不是 Worker 的业务执行租约。
 type Dispatch struct {
 	DispatchRef
-	AvailableAt   time.Time `db:"available_at"`
-	PublishToken  uuid.UUID `db:"publish_token"`
-	DeliveryCount int       `db:"delivery_count"`
+	AvailableAt      time.Time `db:"available_at"`
+	PublishToken     uuid.UUID `db:"publish_token"`
+	ReservationCount int       `db:"reservation_count"`
 }
 
 // scheduleDispatch 与调用者的业务状态变化共用事务，保证提交后必有待投递意图。
 // 调度元数据不更新 Operation.updated_at，避免破坏人工恢复的观测版本。
-func scheduleDispatch(ctx context.Context, tx *sqlx.Tx, operationID uuid.UUID, reason string, now time.Time) error {
+func scheduleDispatch(ctx context.Context, tx *sqlx.Tx, operationID uuid.UUID, dispatchReason string, now time.Time) error {
 	var current struct {
-		Generation   int64     `db:"dispatch_generation"`
+		Sequence     int64     `db:"current_dispatch_sequence"`
 		AvailableAt  time.Time `db:"available_at"`
 		AttemptCount int       `db:"attempt_count"`
 	}
 	if err := tx.GetContext(ctx, &current, `UPDATE operations
-	 SET dispatch_generation = dispatch_generation + 1 WHERE id = $1
-	 RETURNING dispatch_generation, available_at, attempt_count`, operationID); err != nil {
-		return fmt.Errorf("advance dispatch generation: %w", err)
+	 SET current_dispatch_sequence = current_dispatch_sequence + 1 WHERE id = $1
+	 RETURNING current_dispatch_sequence, available_at, attempt_count`, operationID); err != nil {
+		return fmt.Errorf("advance dispatch sequence: %w", err)
 	}
 	if err := obsoleteDispatches(ctx, tx, operationID, now); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO operation_dispatches
-	 (id, operation_id, generation, reason, expected_attempt_count, state,
+	 (id, operation_id, sequence, dispatch_reason, expected_attempt_count, state,
 	  available_at, next_dispatch_at, created_at, updated_at)
 	 VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $7, $7)`,
-		uuid.New(), operationID, current.Generation, reason, current.AttemptCount, current.AvailableAt, now)
+		uuid.New(), operationID, current.Sequence, dispatchReason, current.AttemptCount, current.AvailableAt, now)
 	if err != nil {
 		return fmt.Errorf("record durable dispatch: %w", err)
 	}
@@ -73,7 +73,7 @@ func (m *Module) ReserveDispatches(ctx context.Context, limit int, leaseDuration
 	// 只依据数据库当前意图隔离未知协议；外部损坏载荷不能改变合法工作。
 	if _, err := m.db.ExecContext(ctx, `WITH invalid AS (
 	 SELECT d.id FROM operation_dispatches d JOIN operations o ON o.id = d.operation_id
-	 WHERE d.state IN ('pending','published') AND d.generation = o.dispatch_generation AND d.version <> 1
+	 WHERE d.state IN ('pending','published') AND d.sequence = o.current_dispatch_sequence AND d.protocol_version <> 1
 	 ORDER BY d.id FOR UPDATE OF d SKIP LOCKED LIMIT $2
 	) UPDATE operation_dispatches d SET state = 'quarantined', publish_token = NULL, publish_expires_at = NULL,
 	 last_error_code = 'unsupported_dispatch_version', updated_at = $1 FROM invalid WHERE d.id = invalid.id`, now, limit); err != nil {
@@ -81,17 +81,17 @@ func (m *Module) ReserveDispatches(ctx context.Context, limit int, leaseDuration
 	}
 	err := m.db.SelectContext(ctx, &items, `WITH due AS (
 	 SELECT d.id FROM operation_dispatches d JOIN operations o ON o.id = d.operation_id
-	 WHERE d.state IN ('pending', 'published') AND d.version = 1 AND d.next_dispatch_at <= $1
+	 WHERE d.state IN ('pending', 'published') AND d.protocol_version = 1 AND d.next_dispatch_at <= $1
 	   AND (d.publish_expires_at IS NULL OR d.publish_expires_at <= $1)
-	   AND d.generation = o.dispatch_generation AND d.expected_attempt_count = o.attempt_count
+	   AND d.sequence = o.current_dispatch_sequence AND d.expected_attempt_count = o.attempt_count
 	   AND (o.status = 'pending' OR (o.status IN ('running', 'cancel_requested') AND o.lease_expires_at <= $1))
 	   AND NOT EXISTS (SELECT 1 FROM operations p WHERE p.deployment_target_id = o.deployment_target_id
 	     AND p.status IN ('pending', 'running', 'cancel_requested', 'attention_required')
 	     AND (p.queued_at, p.id) < (o.queued_at, o.id))
 	 ORDER BY d.next_dispatch_at, d.id FOR UPDATE OF d SKIP LOCKED LIMIT $2
 	) UPDATE operation_dispatches d SET publish_token = $3, publish_expires_at = $4,
-	 delivery_count = delivery_count + 1, updated_at = $1 FROM due WHERE d.id = due.id
-	 RETURNING d.id, d.operation_id, d.generation, d.version, d.available_at, d.publish_token, d.delivery_count`,
+	 reservation_count = reservation_count + 1, updated_at = $1 FROM due WHERE d.id = due.id
+	 RETURNING d.id, d.operation_id, d.sequence, d.protocol_version, d.available_at, d.publish_token, d.reservation_count`,
 		now, limit, uuid.New(), now.Add(leaseDuration))
 	if err != nil {
 		return nil, fmt.Errorf("reserve dispatches: %w", err)
@@ -99,24 +99,38 @@ func (m *Module) ReserveDispatches(ctx context.Context, limit int, leaseDuration
 	return items, nil
 }
 
+// DispatchState 是持久化调度意图的状态，不表示单次领取调用的处理结果。
+type DispatchState string
+
 const (
-	DispatchClaimed  = "claimed"
-	DispatchIgnored  = "ignored"
-	DispatchDeferred = "deferred"
-	DispatchResolved = "resolved"
+	DispatchStatePending     DispatchState = "pending"
+	DispatchStatePublished   DispatchState = "published"
+	DispatchStateConsumed    DispatchState = "consumed"
+	DispatchStateObsolete    DispatchState = "obsolete"
+	DispatchStateQuarantined DispatchState = "quarantined"
+)
+
+// ClaimOutcome 描述一次领取调用的处理结论，不会被持久化为 DispatchState。
+type ClaimOutcome string
+
+const (
+	ClaimOutcomeClaimed  ClaimOutcome = "claimed"
+	ClaimOutcomeIgnored  ClaimOutcome = "ignored"
+	ClaimOutcomeDeferred ClaimOutcome = "deferred"
+	ClaimOutcomeResolved ClaimOutcome = "resolved"
 )
 
 // DispatchClaim 区分已取得执行权、重复消息、持久化延期与无须外部执行的状态收束。
 type DispatchClaim struct {
-	Disposition string
-	Lease       Lease
+	Outcome ClaimOutcome
+	Lease   Lease
 }
 
 // ClaimDispatch 只领取指定代次。先锁 Operation 再锁 Outbox，与业务受理/重试保持相同锁序。
 // 代次被消费与业务租约创建在同一事务内完成，重复消息不能制造新的 Attempt。
 func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request ClaimRequest) (DispatchClaim, error) {
-	ignored := DispatchClaim{Disposition: DispatchIgnored}
-	if ref.DispatchID == uuid.Nil || ref.OperationID == uuid.Nil || ref.Generation <= 0 || ref.Version != 1 {
+	ignored := DispatchClaim{Outcome: ClaimOutcomeIgnored}
+	if ref.DispatchID == uuid.Nil || ref.OperationID == uuid.Nil || ref.Sequence <= 0 || ref.ProtocolVersion != 1 {
 		return ignored, errors.New("invalid dispatch reference")
 	}
 	if request.WorkerID == "" || request.LeaseDuration <= 0 {
@@ -130,35 +144,35 @@ func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request Cla
 	var candidate claimCandidate
 	err = tx.GetContext(ctx, &candidate, `SELECT id, release_id, deployment_target_id, status,
 	 attempt_count, automatic_retry_count, recovery_required, traceparent, tracestate,
-	 dispatch_generation, available_at, lease_expires_at FROM operations WHERE id = $1 FOR UPDATE`, ref.OperationID)
+	 current_dispatch_sequence, available_at, lease_expires_at FROM operations WHERE id = $1 FOR UPDATE`, ref.OperationID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ignored, nil
 	}
 	if err != nil {
 		return ignored, err
 	}
-	if candidate.DispatchGeneration != ref.Generation {
+	if candidate.CurrentDispatchSequence != ref.Sequence {
 		return ignored, nil
 	}
 	var intent struct {
-		State    string `db:"state"`
-		Expected int    `db:"expected_attempt_count"`
-		Version  int    `db:"version"`
+		State           DispatchState `db:"state"`
+		Expected        int           `db:"expected_attempt_count"`
+		ProtocolVersion int           `db:"protocol_version"`
 	}
-	err = tx.GetContext(ctx, &intent, `SELECT state, expected_attempt_count, version
-	 FROM operation_dispatches WHERE id = $1 AND operation_id = $2 AND generation = $3 FOR UPDATE`,
-		ref.DispatchID, ref.OperationID, ref.Generation)
+	err = tx.GetContext(ctx, &intent, `SELECT state, expected_attempt_count, protocol_version
+	 FROM operation_dispatches WHERE id = $1 AND operation_id = $2 AND sequence = $3 FOR UPDATE`,
+		ref.DispatchID, ref.OperationID, ref.Sequence)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ignored, nil
 	}
 	if err != nil {
 		return ignored, err
 	}
-	if intent.State != "pending" && intent.State != "published" {
+	if intent.State != DispatchStatePending && intent.State != DispatchStatePublished {
 		return ignored, nil
 	}
 	now := m.now()
-	if intent.Version != 1 {
+	if intent.ProtocolVersion != 1 {
 		_, err = tx.ExecContext(ctx, `UPDATE operation_dispatches SET state = 'quarantined',
 		 publish_token = NULL, publish_expires_at = NULL, last_error_code = 'unsupported_dispatch_version', updated_at = $2 WHERE id = $1`, ref.DispatchID, now)
 		if err != nil {
@@ -192,7 +206,7 @@ func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request Cla
 		if err != nil {
 			return ignored, err
 		}
-		return DispatchClaim{Disposition: DispatchDeferred}, tx.Commit()
+		return DispatchClaim{Outcome: ClaimOutcomeDeferred}, tx.Commit()
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE operation_dispatches SET state = 'consumed',
 	 consumed_at = $2, publish_token = NULL, publish_expires_at = NULL, updated_at = $2 WHERE id = $1`, ref.DispatchID, now); err != nil {
@@ -203,9 +217,9 @@ func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request Cla
 		return ignored, err
 	}
 	if !claimed {
-		return DispatchClaim{Disposition: DispatchResolved}, nil
+		return DispatchClaim{Outcome: ClaimOutcomeResolved}, nil
 	}
-	return DispatchClaim{Disposition: DispatchClaimed, Lease: lease}, nil
+	return DispatchClaim{Outcome: ClaimOutcomeClaimed, Lease: lease}, nil
 }
 
 // ConfirmDispatch 仅确认本轮运输 token。消费或延期先于确认时，迟到确认是安全的空操作。
@@ -218,18 +232,18 @@ func (m *Module) ConfirmDispatch(ctx context.Context, dispatch Dispatch, errorCo
 		return errors.New("invalid dispatch error code")
 	}
 	now := m.now()
-	state := "published"
+	state := DispatchStatePublished
 	// 持续未消费时逐步降低补发频率，最多增加 30 秒；业务可执行时间不变。
-	if dispatch.DeliveryCount > 1 {
-		grace += dispatchBackoff(dispatch.DeliveryCount - 1)
+	if dispatch.ReservationCount > 1 {
+		grace += dispatchBackoff(dispatch.ReservationCount - 1)
 	}
 	next := now.Add(grace)
 	if dispatch.AvailableAt.After(now) {
 		next = dispatch.AvailableAt.Add(grace)
 	}
 	if errorCode != "" {
-		state = "pending"
-		next = now.Add(dispatchBackoff(dispatch.DeliveryCount))
+		state = DispatchStatePending
+		next = now.Add(dispatchBackoff(dispatch.ReservationCount))
 	}
 	_, err := m.db.ExecContext(ctx, `UPDATE operation_dispatches SET state = $3,
 	 next_dispatch_at = $4, publish_token = NULL, publish_expires_at = NULL,
@@ -240,9 +254,9 @@ func (m *Module) ConfirmDispatch(ctx context.Context, dispatch Dispatch, errorCo
 }
 
 // dispatchBackoff 限制基础设施重发频率，不改变业务重试预算或最早执行时间。
-func dispatchBackoff(attempt int) time.Duration {
+func dispatchBackoff(reservation int) time.Duration {
 	delay := time.Second
-	for n := 1; n < attempt && delay < 30*time.Second; n++ {
+	for n := 1; n < reservation && delay < 30*time.Second; n++ {
 		delay *= 2
 	}
 	if delay > 30*time.Second {
@@ -267,7 +281,7 @@ func (m *Module) RepairDispatches(ctx context.Context, limit int) (int, error) {
 	err = tx.SelectContext(ctx, &ids, `SELECT o.id FROM operations o
 	 WHERE o.status IN ('running', 'cancel_requested') AND o.lease_expires_at <= $1
 	 AND NOT EXISTS (SELECT 1 FROM operation_dispatches d WHERE d.operation_id = o.id
-	   AND d.generation = o.dispatch_generation AND d.expected_attempt_count = o.attempt_count
+	   AND d.sequence = o.current_dispatch_sequence AND d.expected_attempt_count = o.attempt_count
 	   AND d.state IN ('pending', 'published', 'quarantined'))
 	 ORDER BY o.lease_expires_at, o.id FOR UPDATE OF o SKIP LOCKED LIMIT $2`, now, limit)
 	if err != nil {

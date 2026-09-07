@@ -20,7 +20,7 @@ func TestRecoveryUsesKubernetesEvidenceBeforePublishing(t *testing.T) {
 		name             string
 		observation      worker.RecoveryObservation
 		inspectError     error
-		wantStatus       string
+		wantStatus       operation.OperationStatus
 		wantErrorCode    string
 		wantPublishCalls int
 		wantRecoveryWait bool
@@ -332,7 +332,7 @@ func TestAttentionRetryRequiresSafeExternalEvidence(t *testing.T) {
 		name       string
 		action     worker.RecoveryAction
 		wantStatus int
-		wantState  string
+		wantState  operation.OperationStatus
 	}{
 		{name: "absent resources are safe", action: worker.RecoveryApply, wantStatus: http.StatusOK, wantState: operation.StatusPending},
 		{name: "ambiguous resources remain blocked", action: worker.RecoveryAttention, wantStatus: http.StatusConflict, wantState: operation.StatusAttentionRequired},

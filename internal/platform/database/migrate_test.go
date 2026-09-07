@@ -197,6 +197,157 @@ func TestReliableOperationMigrationBackfillsSchedulingState(t *testing.T) {
 	}
 }
 
+// 调度术语迁移只重命名已有 Schema，不重建表或丢失既有升级路径。
+func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
+	ctx := context.Background()
+	container, err := postgres.Run(
+		ctx,
+		"postgres:17-alpine",
+		postgres.WithDatabase("orbitops"),
+		postgres.WithUsername("orbitops"),
+		postgres.WithPassword("orbitops"),
+		postgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		t.Fatalf("start PostgreSQL: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := container.Terminate(context.Background()); err != nil {
+			t.Errorf("terminate PostgreSQL: %v", err)
+		}
+	})
+	databaseURL, err := container.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("get PostgreSQL connection string: %v", err)
+	}
+
+	// 先停在 Q1 原始 Schema，确保迁移适用于已经运行过 000013/000014 的数据库。
+	migrateDatabaseToVersion(t, databaseURL, 14)
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open PostgreSQL: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	projectID := uuid.New()
+	applicationID := uuid.New()
+	targetID := uuid.New()
+	releaseID := uuid.New()
+	operationID := uuid.New()
+	dispatchID := uuid.New()
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO projects (id, name, slug, created_by, created_at)
+		  VALUES ($1, 'Dispatch migration', 'dispatch-migration', 'owner', $2)`, []any{projectID, createdAt}},
+		{`INSERT INTO applications (id, project_id, name, slug, created_by, created_at)
+		  VALUES ($1, $2, 'API', 'api', 'owner', $3)`, []any{applicationID, projectID, createdAt}},
+		{`INSERT INTO deployment_targets
+		  (id, application_id, stage, cluster_ref, namespace, replicas, container_port,
+		   created_by, created_at, updated_at)
+		  VALUES ($1, $2, 'development', 'kind-orbitops-s1', 'orbitops-s1', 1, 8080,
+		          'owner', $3, $3)`, []any{targetID, applicationID, createdAt}},
+		{`INSERT INTO releases
+		  (id, deployment_target_id, image_reference, target_snapshot, created_by, created_at)
+		  VALUES ($1, $2, 'registry.example/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+		          '{}', 'owner', $3)`, []any{releaseID, targetID, createdAt}},
+		{`INSERT INTO operations
+		  (id, operation_type, release_id, deployment_target_id, actor_id, idempotency_key,
+		   status, queued_at, available_at, created_at, updated_at, dispatch_generation)
+		  VALUES ($1, 'release.deploy', $2, $3, 'owner', 'dispatch-migration',
+		          'pending', $4, $4, $4, $4, 7)`, []any{operationID, releaseID, targetID, createdAt}},
+		{`INSERT INTO operation_dispatches
+		  (id, operation_id, generation, version, reason, expected_attempt_count, state,
+		   available_at, next_dispatch_at, delivery_count, created_at, updated_at)
+		  VALUES ($1, $2, 7, 1, 'accepted', 0, 'published', $3, $3, 2, $3, $3)`,
+			[]any{dispatchID, operationID, createdAt}},
+	}
+	for _, statement := range statements {
+		if _, err := database.ExecContext(ctx, statement.query, statement.args...); err != nil {
+			t.Fatalf("seed Q1 dispatch: %v", err)
+		}
+	}
+	if err := Migrate(databaseURL); err != nil {
+		t.Fatalf("upgrade dispatch terminology: %v", err)
+	}
+
+	if _, err := database.ExecContext(ctx, `SELECT current_dispatch_sequence FROM operations LIMIT 0`); err != nil {
+		t.Fatalf("query renamed operation sequence: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `SELECT sequence, protocol_version, dispatch_reason, reservation_count FROM operation_dispatches LIMIT 0`); err != nil {
+		t.Fatalf("query renamed dispatch fields: %v", err)
+	}
+	var oldColumnCount int
+	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = 'public' AND (
+			(table_name = 'operations' AND column_name = 'dispatch_generation') OR
+			(table_name = 'operation_dispatches' AND column_name IN ('generation', 'version', 'reason', 'delivery_count'))
+		)`).Scan(&oldColumnCount); err != nil {
+		t.Fatalf("inspect old dispatch fields: %v", err)
+	}
+	if oldColumnCount != 0 {
+		t.Fatalf("old dispatch fields remain: %d", oldColumnCount)
+	}
+	var renamedConstraintCount int
+	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM pg_constraint
+		WHERE conname IN (
+			'operations_current_dispatch_sequence_check',
+			'operation_dispatches_sequence_check',
+			'operation_dispatches_reservation_count_check',
+			'operation_dispatches_operation_id_sequence_key'
+		)`).Scan(&renamedConstraintCount); err != nil {
+		t.Fatalf("inspect renamed dispatch constraints: %v", err)
+	}
+	if renamedConstraintCount != 4 {
+		t.Fatalf("renamed dispatch constraints = %d, want 4", renamedConstraintCount)
+	}
+	var operationSequence, dispatchSequence int64
+	var protocolVersion, reservationCount int
+	var dispatchReason string
+	if err := database.QueryRowContext(ctx, `SELECT o.current_dispatch_sequence,
+		d.sequence, d.protocol_version, d.dispatch_reason, d.reservation_count
+		FROM operations o JOIN operation_dispatches d ON d.operation_id = o.id
+		WHERE o.id = $1 AND d.id = $2`, operationID, dispatchID).Scan(
+		&operationSequence,
+		&dispatchSequence,
+		&protocolVersion,
+		&dispatchReason,
+		&reservationCount,
+	); err != nil {
+		t.Fatalf("load renamed dispatch data: %v", err)
+	}
+	if operationSequence != 7 || dispatchSequence != 7 || protocolVersion != 1 || dispatchReason != "accepted" || reservationCount != 2 {
+		t.Fatalf("renamed dispatch data = operation sequence %d, dispatch sequence %d, version %d, reason %q, reservations %d",
+			operationSequence, dispatchSequence, protocolVersion, dispatchReason, reservationCount)
+	}
+
+	// Down migration 必须只恢复旧术语；既有调度事实随后仍可再次升级。
+	migrateDatabaseToVersion(t, databaseURL, 14)
+	var operationGeneration, dispatchGeneration int64
+	var version, deliveryCount int
+	var reason string
+	if err := database.QueryRowContext(ctx, `SELECT o.dispatch_generation,
+		d.generation, d.version, d.reason, d.delivery_count
+		FROM operations o JOIN operation_dispatches d ON d.operation_id = o.id
+		WHERE o.id = $1 AND d.id = $2`, operationID, dispatchID).Scan(
+		&operationGeneration,
+		&dispatchGeneration,
+		&version,
+		&reason,
+		&deliveryCount,
+	); err != nil {
+		t.Fatalf("load dispatch data after down migration: %v", err)
+	}
+	if operationGeneration != 7 || dispatchGeneration != 7 || version != 1 || reason != "accepted" || deliveryCount != 2 {
+		t.Fatalf("restored dispatch data = operation generation %d, dispatch generation %d, version %d, reason %q, deliveries %d",
+			operationGeneration, dispatchGeneration, version, reason, deliveryCount)
+	}
+	if err := Migrate(databaseURL); err != nil {
+		t.Fatalf("reapply dispatch terminology migration: %v", err)
+	}
+}
+
 func migrateDatabaseToVersion(t *testing.T, databaseURL string, version uint) {
 	t.Helper()
 	source, err := iofs.New(migrations, "migrations")

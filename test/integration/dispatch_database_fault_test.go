@@ -72,7 +72,7 @@ func TestQueueArchivedInfrastructureFailuresRemainRecoverable(t *testing.T) {
 	var available atomic.Bool
 	config := queueConfig(address)
 	config.ConsumptionGrace = time.Hour
-	service, err := dispatch.New(config, operations, executorFunc(func(ctx context.Context, ref operation.DispatchRef) (string, error) {
+	service, err := dispatch.New(config, operations, executorFunc(func(ctx context.Context, ref operation.DispatchRef) (operation.ClaimOutcome, error) {
 		if !available.Load() {
 			return "", errors.New("injected infrastructure unavailable")
 		}

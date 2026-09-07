@@ -13,23 +13,33 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+const TypeReleaseDeploy = "release.deploy"
+
+// OperationStatus 表示一次业务工作的整体状态，不描述单次执行或消息运输结果。
+type OperationStatus string
+
 const (
-	TypeReleaseDeploy = "release.deploy"
+	StatusPending           OperationStatus = "pending"
+	StatusRunning           OperationStatus = "running"
+	StatusCancelRequested   OperationStatus = "cancel_requested"
+	StatusSucceeded         OperationStatus = "succeeded"
+	StatusFailed            OperationStatus = "failed"
+	StatusCanceled          OperationStatus = "canceled"
+	StatusAttentionRequired OperationStatus = "attention_required"
+)
 
-	StatusPending           = "pending"
-	StatusRunning           = "running"
-	StatusCancelRequested   = "cancel_requested"
-	StatusSucceeded         = "succeeded"
-	StatusFailed            = "failed"
-	StatusCanceled          = "canceled"
-	StatusAttentionRequired = "attention_required"
+// AttemptStatus 表示某个 Worker 单次执行的结果，与 OperationStatus 的业务结论分离。
+type AttemptStatus string
 
-	AttemptRunning        = "running"
-	AttemptSucceeded      = "succeeded"
-	AttemptFailed         = "failed"
-	AttemptCanceled       = "canceled"
-	AttemptOutcomeUnknown = "outcome_unknown"
+const (
+	AttemptRunning        AttemptStatus = "running"
+	AttemptSucceeded      AttemptStatus = "succeeded"
+	AttemptFailed         AttemptStatus = "failed"
+	AttemptCanceled       AttemptStatus = "canceled"
+	AttemptOutcomeUnknown AttemptStatus = "outcome_unknown"
+)
 
+const (
 	Retryable      = "retryable"
 	NonRetryable   = "non_retryable"
 	UnknownOutcome = "unknown_outcome"
@@ -45,40 +55,40 @@ var (
 )
 
 type Record struct {
-	ID                  uuid.UUID  `db:"id"`
-	Type                string     `db:"operation_type"`
-	ReleaseID           uuid.UUID  `db:"release_id"`
-	DeploymentTargetID  uuid.UUID  `db:"deployment_target_id"`
-	CreatedBy           string     `db:"actor_id"`
-	IdempotencyKey      string     `db:"idempotency_key"`
-	TraceParent         string     `db:"traceparent"`
-	TraceState          string     `db:"tracestate"`
-	Status              string     `db:"status"`
-	AttemptCount        int        `db:"attempt_count"`
-	AutomaticRetryCount int        `db:"automatic_retry_count"`
-	RecoveryRequired    bool       `db:"recovery_required"`
-	ErrorCode           *string    `db:"error_code"`
-	ErrorSummary        *string    `db:"error_summary"`
-	RetryDisposition    *string    `db:"retry_disposition"`
-	QueuedAt            time.Time  `db:"queued_at"`
-	AvailableAt         time.Time  `db:"available_at"`
-	CreatedAt           time.Time  `db:"created_at"`
-	UpdatedAt           time.Time  `db:"updated_at"`
-	StartedAt           *time.Time `db:"started_at"`
-	FinishedAt          *time.Time `db:"finished_at"`
+	ID                  uuid.UUID       `db:"id"`
+	Type                string          `db:"operation_type"`
+	ReleaseID           uuid.UUID       `db:"release_id"`
+	DeploymentTargetID  uuid.UUID       `db:"deployment_target_id"`
+	CreatedBy           string          `db:"actor_id"`
+	IdempotencyKey      string          `db:"idempotency_key"`
+	TraceParent         string          `db:"traceparent"`
+	TraceState          string          `db:"tracestate"`
+	Status              OperationStatus `db:"status"`
+	AttemptCount        int             `db:"attempt_count"`
+	AutomaticRetryCount int             `db:"automatic_retry_count"`
+	RecoveryRequired    bool            `db:"recovery_required"`
+	ErrorCode           *string         `db:"error_code"`
+	ErrorSummary        *string         `db:"error_summary"`
+	RetryDisposition    *string         `db:"retry_disposition"`
+	QueuedAt            time.Time       `db:"queued_at"`
+	AvailableAt         time.Time       `db:"available_at"`
+	CreatedAt           time.Time       `db:"created_at"`
+	UpdatedAt           time.Time       `db:"updated_at"`
+	StartedAt           *time.Time      `db:"started_at"`
+	FinishedAt          *time.Time      `db:"finished_at"`
 	Attempts            []Attempt
 }
 
 type Attempt struct {
-	ID               uuid.UUID  `db:"id"`
-	Number           int        `db:"attempt_number"`
-	WorkerID         string     `db:"worker_id"`
-	Status           string     `db:"status"`
-	ErrorCode        *string    `db:"error_code"`
-	ErrorSummary     *string    `db:"error_summary"`
-	RetryDisposition *string    `db:"retry_disposition"`
-	StartedAt        time.Time  `db:"started_at"`
-	FinishedAt       *time.Time `db:"finished_at"`
+	ID               uuid.UUID     `db:"id"`
+	Number           int           `db:"attempt_number"`
+	WorkerID         string        `db:"worker_id"`
+	Status           AttemptStatus `db:"status"`
+	ErrorCode        *string       `db:"error_code"`
+	ErrorSummary     *string       `db:"error_summary"`
+	RetryDisposition *string       `db:"retry_disposition"`
+	StartedAt        time.Time     `db:"started_at"`
+	FinishedAt       *time.Time    `db:"finished_at"`
 }
 
 type CreatePendingCommand struct {
@@ -124,24 +134,24 @@ type Failure struct {
 
 // FailureResult 告诉 Worker 本次失败是终结了 Operation，还是已进入自动重试等待。
 type FailureResult struct {
-	Status         string
+	Status         OperationStatus
 	RetryScheduled bool
 	AvailableAt    *time.Time
 }
 
 type claimCandidate struct {
-	ID                  uuid.UUID  `db:"id"`
-	ReleaseID           uuid.UUID  `db:"release_id"`
-	DeploymentTargetID  uuid.UUID  `db:"deployment_target_id"`
-	Status              string     `db:"status"`
-	AttemptCount        int        `db:"attempt_count"`
-	AutomaticRetryCount int        `db:"automatic_retry_count"`
-	RecoveryRequired    bool       `db:"recovery_required"`
-	TraceParent         string     `db:"traceparent"`
-	TraceState          string     `db:"tracestate"`
-	DispatchGeneration  int64      `db:"dispatch_generation"`
-	AvailableAt         time.Time  `db:"available_at"`
-	LeaseExpiresAt      *time.Time `db:"lease_expires_at"`
+	ID                      uuid.UUID       `db:"id"`
+	ReleaseID               uuid.UUID       `db:"release_id"`
+	DeploymentTargetID      uuid.UUID       `db:"deployment_target_id"`
+	Status                  OperationStatus `db:"status"`
+	AttemptCount            int             `db:"attempt_count"`
+	AutomaticRetryCount     int             `db:"automatic_retry_count"`
+	RecoveryRequired        bool            `db:"recovery_required"`
+	TraceParent             string          `db:"traceparent"`
+	TraceState              string          `db:"tracestate"`
+	CurrentDispatchSequence int64           `db:"current_dispatch_sequence"`
+	AvailableAt             time.Time       `db:"available_at"`
+	LeaseExpiresAt          *time.Time      `db:"lease_expires_at"`
 }
 
 type Module struct {
@@ -540,8 +550,8 @@ func (m *Module) claimCandidate(ctx context.Context, tx *sqlx.Tx, candidate clai
 		return Lease{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE operation_dispatches SET attempt_id = $2
-	 WHERE operation_id = $1 AND generation = $3 AND state = 'consumed' AND attempt_id IS NULL`,
-		candidate.ID, attemptID, candidate.DispatchGeneration); err != nil {
+	 WHERE operation_id = $1 AND sequence = $3 AND state = 'consumed' AND attempt_id IS NULL`,
+		candidate.ID, attemptID, candidate.CurrentDispatchSequence); err != nil {
 		return Lease{}, false, fmt.Errorf("link dispatch attempt: %w", err)
 	}
 
@@ -586,7 +596,7 @@ func (m *Module) Renew(
 
 	now := m.now()
 	expiresAt := now.Add(leaseDuration)
-	var status string
+	var status OperationStatus
 	err := m.db.GetContext(
 		ctx,
 		&status,
@@ -943,7 +953,7 @@ func completeAttempt(
 	ctx context.Context,
 	tx *sqlx.Tx,
 	lease Lease,
-	status string,
+	status AttemptStatus,
 	failure Failure,
 	now time.Time,
 ) error {
@@ -985,7 +995,7 @@ func recordCompletion(
 	tx *sqlx.Tx,
 	action string,
 	lease Lease,
-	status string,
+	status OperationStatus,
 	failure *Failure,
 	now time.Time,
 ) error {

@@ -18,14 +18,14 @@ import (
 const maximumReleaseHistoryPageSize = 100
 
 type OperationSummary struct {
-	ID           uuid.UUID  `db:"operation_id"`
-	Status       string     `db:"operation_status"`
-	AttemptCount int        `db:"operation_attempt_count"`
-	ErrorCode    *string    `db:"operation_error_code"`
-	ErrorSummary *string    `db:"operation_error_summary"`
-	QueuedAt     time.Time  `db:"operation_queued_at"`
-	StartedAt    *time.Time `db:"operation_started_at"`
-	FinishedAt   *time.Time `db:"operation_finished_at"`
+	ID           uuid.UUID                 `db:"operation_id"`
+	Status       operation.OperationStatus `db:"operation_status"`
+	AttemptCount int                       `db:"operation_attempt_count"`
+	ErrorCode    *string                   `db:"operation_error_code"`
+	ErrorSummary *string                   `db:"operation_error_summary"`
+	QueuedAt     time.Time                 `db:"operation_queued_at"`
+	StartedAt    *time.Time                `db:"operation_started_at"`
+	FinishedAt   *time.Time                `db:"operation_finished_at"`
 }
 
 type HistoryItem struct {

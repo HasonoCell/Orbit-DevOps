@@ -34,7 +34,7 @@ func TestQueueFIFOAndAttentionReleaseAcrossWorkers(t *testing.T) {
 	secondService, _ := newQueueWithPublisher(t, environment, address, publisher)
 	db := openTestDatabase(t, environment.databaseURL)
 	var tail operation.DispatchRef
-	if err := db.Get(&tail, `SELECT id,operation_id,generation,version FROM operation_dispatches WHERE operation_id=$1`, second.Operation.ID); err != nil {
+	if err := db.Get(&tail, `SELECT id,operation_id,sequence,protocol_version FROM operation_dispatches WHERE operation_id=$1`, second.Operation.ID); err != nil {
 		t.Fatal(err)
 	}
 	client := asynq.NewClient(asynq.RedisClientOpt{Addr: address})
@@ -110,7 +110,7 @@ func TestQueueCancellationAndLostCancellation(t *testing.T) {
 				}
 			} else if mode == "lost" {
 				claim, err := operations.ClaimDispatch(ctx, items[0].DispatchRef, operation.ClaimRequest{WorkerID: "lost-cancel-worker", LeaseDuration: 500 * time.Millisecond})
-				if err != nil || claim.Disposition != operation.DispatchClaimed {
+				if err != nil || claim.Outcome != operation.ClaimOutcomeClaimed {
 					t.Fatalf("lost claim: %+v %v", claim, err)
 				}
 			}
@@ -190,7 +190,7 @@ func TestDispatchRetryIntentFailureRollsBackBusinessState(t *testing.T) {
 		t.Fatal(err)
 	}
 	items, err = operations.ReserveDispatches(ctx, 10, time.Second)
-	if err != nil || len(items) != 1 || items[0].Generation != 2 {
+	if err != nil || len(items) != 1 || items[0].Sequence != 2 {
 		t.Fatalf("retried intent: %+v %v", items, err)
 	}
 }

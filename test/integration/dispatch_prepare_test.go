@@ -40,11 +40,11 @@ func TestDispatchPreparationIsAtomicAndReentrant(t *testing.T) {
 		t.Fatalf("repeated prepare: %+v %v", again, err)
 	}
 	claim, err := operations.ClaimDispatch(ctx, old[0].DispatchRef, operation.ClaimRequest{WorkerID: "stale", LeaseDuration: time.Second})
-	if err != nil || claim.Disposition != operation.DispatchIgnored {
+	if err != nil || claim.Outcome != operation.ClaimOutcomeIgnored {
 		t.Fatalf("old message: %+v %v", claim, err)
 	}
 	items, err := operations.ReserveDispatches(ctx, 10, time.Second)
-	if err != nil || len(items) != 1 || items[0].Generation != 2 {
+	if err != nil || len(items) != 1 || items[0].Sequence != 2 {
 		t.Fatalf("prepared intents: %+v %v", items, err)
 	}
 	after, err := operations.Get(ctx, mustOperationID(t, accepted.Operation.ID))
@@ -55,7 +55,7 @@ func TestDispatchPreparationIsAtomicAndReentrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	items, err = operations.ReserveDispatches(ctx, 10, time.Second)
-	if err != nil || len(items) != 1 || items[0].Generation != 3 {
+	if err != nil || len(items) != 1 || items[0].Sequence != 3 {
 		t.Fatalf("second cutover: %+v %v", items, err)
 	}
 }
@@ -67,7 +67,7 @@ func TestUnsupportedStoredDispatchIsQuarantinedAndCanBePrepared(t *testing.T) {
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := operation.New(db)
 	ctx := context.Background()
-	if _, err := db.Exec(`UPDATE operation_dispatches SET version = 99`); err != nil {
+	if _, err := db.Exec(`UPDATE operation_dispatches SET protocol_version = 99`); err != nil {
 		t.Fatal(err)
 	}
 	items, err := operations.ReserveDispatches(ctx, 10, time.Second)
@@ -82,7 +82,7 @@ func TestUnsupportedStoredDispatchIsQuarantinedAndCanBePrepared(t *testing.T) {
 		t.Fatal(err)
 	}
 	items, err = operations.ReserveDispatches(ctx, 10, time.Second)
-	if err != nil || len(items) != 1 || items[0].Version != 1 {
+	if err != nil || len(items) != 1 || items[0].ProtocolVersion != 1 {
 		t.Fatalf("protocol repair: %+v %v", items, err)
 	}
 }
@@ -138,7 +138,7 @@ func TestDispatchPreparationPreservesBackoffAndActiveLeases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if item.OperationID == ids["delayed"] && claim.Disposition != operation.DispatchDeferred {
+		if item.OperationID == ids["delayed"] && claim.Outcome != operation.ClaimOutcomeDeferred {
 			t.Fatal("backoff executed early")
 		}
 		if item.OperationID == ids["expired"] && (!claim.Lease.Recovery || claim.Lease.AttemptNumber != 2) {

@@ -110,7 +110,7 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 		claim, err := environment.operations.ClaimDispatch(context.Background(), items[0].DispatchRef, operation.ClaimRequest{
 			WorkerID: "kind-lost-worker", LeaseDuration: 300 * time.Millisecond,
 		})
-		lease, claimed := claim.Lease, claim.Disposition == operation.DispatchClaimed
+		lease, claimed := claim.Lease, claim.Outcome == operation.ClaimOutcomeClaimed
 		if err != nil || !claimed || lease.OperationID.String() != acceptance.OperationID {
 			t.Fatalf("claim operation before simulated process loss = %#v, %v, %v", lease, claimed, err)
 		}
@@ -257,14 +257,14 @@ type releaseAcceptance struct {
 }
 
 type operationResponse struct {
-	Status       string                     `json:"status"`
+	Status       operation.OperationStatus  `json:"status"`
 	AttemptCount int                        `json:"attemptCount"`
 	ErrorCode    *string                    `json:"errorCode"`
 	Attempts     []operationAttemptResponse `json:"attempts"`
 }
 
 type operationAttemptResponse struct {
-	Status string `json:"status"`
+	Status operation.AttemptStatus `json:"status"`
 }
 
 type runtimeSnapshotResponse struct {
@@ -580,7 +580,7 @@ func eventuallyOperationStatus(
 	t *testing.T,
 	environment *kindControlPlane,
 	operationID string,
-	want string,
+	want operation.OperationStatus,
 	timeout time.Duration,
 ) {
 	t.Helper()

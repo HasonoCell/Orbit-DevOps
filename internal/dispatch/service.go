@@ -23,7 +23,7 @@ const TaskType = "orbitops:release-dispatch:v1"
 
 // Executor 的实现负责数据库执行权与业务结果，返回值只描述本条意图是否已处理。
 type Executor interface {
-	RunDispatch(context.Context, operation.DispatchRef) (string, error)
+	RunDispatch(context.Context, operation.DispatchRef) (operation.ClaimOutcome, error)
 }
 
 // Config 将运输预算与业务预算分离；密码只用于建立连接，不进入任务或日志。
@@ -120,8 +120,8 @@ func (s *Service) PublishOnce(ctx context.Context) error {
 
 // publish 每条发送有独立截止时间；批次有界并发，不让排队网络等待耗尽投递租约。
 func (s *Service) publish(ctx context.Context, item operation.Dispatch) error {
-	if item.DeliveryCount >= 5 {
-		s.config.Logger.WarnContext(ctx, "发布意图持续未消费，正在退避补发", "operation_id", item.OperationID, "dispatch_id", item.DispatchID, "generation", item.Generation, "delivery_count", item.DeliveryCount)
+	if item.ReservationCount >= 5 {
+		s.config.Logger.WarnContext(ctx, "发布意图持续未消费，正在退避补发", "operation_id", item.OperationID, "dispatch_id", item.DispatchID, "sequence", item.Sequence, "reservation_count", item.ReservationCount)
 	}
 	payload, err := json.Marshal(item.DispatchRef)
 	if err != nil {
@@ -136,7 +136,7 @@ func (s *Service) publish(ctx context.Context, item operation.Dispatch) error {
 		code = "queue_unavailable"
 		s.sendErrors.Add(1)
 	} else {
-		s.config.Logger.InfoContext(ctx, "发布意图已入队", "operation_id", item.OperationID, "dispatch_id", item.DispatchID, "generation", item.Generation, "task_id", info.ID)
+		s.config.Logger.InfoContext(ctx, "发布意图已入队", "operation_id", item.OperationID, "dispatch_id", item.DispatchID, "sequence", item.Sequence, "task_id", info.ID)
 		if s.config.AfterEnqueue != nil {
 			s.config.AfterEnqueue(item)
 		}
@@ -241,7 +241,7 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	decoder := json.NewDecoder(bytes.NewReader(task.Payload()))
 	decoder.DisallowUnknownFields()
 	if task.Type() != TaskType || len(task.Payload()) > 1024 || decoder.Decode(&ref) != nil || decoder.Decode(new(any)) != io.EOF ||
-		ref.Version != 1 || ref.Generation <= 0 || ref.OperationID == uuid.Nil || ref.DispatchID == uuid.Nil {
+		ref.ProtocolVersion != 1 || ref.Sequence <= 0 || ref.OperationID == uuid.Nil || ref.DispatchID == uuid.Nil {
 		s.invalid.Add(1)
 		s.config.Logger.WarnContext(ctx, "忽略非法投递消息")
 		return asynq.SkipRetry
@@ -252,16 +252,16 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	if _, err := uuid.Parse(taskID); err != nil {
 		taskID = "invalid"
 	}
-	s.config.Logger.InfoContext(ctx, "消费发布意图", "operation_id", ref.OperationID, "dispatch_id", ref.DispatchID, "generation", ref.Generation, "task_id", taskID)
-	disposition, err := s.executor.RunDispatch(ctx, ref)
+	s.config.Logger.InfoContext(ctx, "消费发布意图", "operation_id", ref.OperationID, "dispatch_id", ref.DispatchID, "sequence", ref.Sequence, "task_id", taskID)
+	outcome, err := s.executor.RunDispatch(ctx, ref)
 	if err != nil {
 		s.executionErrors.Add(1)
 		return errors.New("dispatch_execution_interrupted")
 	}
-	if disposition == operation.DispatchIgnored {
+	if outcome == operation.ClaimOutcomeIgnored {
 		s.ignored.Add(1)
 	}
-	s.config.Logger.InfoContext(ctx, "发布意图已处理", "operation_id", ref.OperationID, "dispatch_id", ref.DispatchID, "generation", ref.Generation, "disposition", disposition)
+	s.config.Logger.InfoContext(ctx, "发布意图已处理", "operation_id", ref.OperationID, "dispatch_id", ref.DispatchID, "sequence", ref.Sequence, "claim_outcome", outcome)
 	return nil
 }
 

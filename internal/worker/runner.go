@@ -222,7 +222,7 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 }
 
 // RunDispatch 是队列的唯一业务执行入口，只处理消息指定的有效意图，不扫描其他任务。
-func (r *Runner) RunDispatch(ctx context.Context, ref operation.DispatchRef) (string, error) {
+func (r *Runner) RunDispatch(ctx context.Context, ref operation.DispatchRef) (operation.ClaimOutcome, error) {
 	started := time.Now()
 	claimContext, cancelClaim := context.WithTimeout(ctx, 5*time.Second)
 	claim, err := r.operations.ClaimDispatch(claimContext, ref, operation.ClaimRequest{
@@ -233,11 +233,11 @@ func (r *Runner) RunDispatch(ctx context.Context, ref operation.DispatchRef) (st
 	if err != nil {
 		return "", err
 	}
-	if claim.Disposition != operation.DispatchClaimed {
-		return claim.Disposition, nil
+	if claim.Outcome != operation.ClaimOutcomeClaimed {
+		return claim.Outcome, nil
 	}
 	_, err = r.runLease(ctx, claim.Lease)
-	return claim.Disposition, err
+	return claim.Outcome, err
 }
 
 // runLease 复用已验证的续期、取消与读后写恢复；仅在业务领取事务提交后调用。
@@ -564,9 +564,9 @@ func (r *Runner) executeDelivery(
 	}
 }
 
-func (r *Runner) recordTerminal(status string, category string, startedAt time.Time) {
+func (r *Runner) recordTerminal(status operation.OperationStatus, category string, startedAt time.Time) {
 	if r.recorder != nil {
-		r.recorder.RecordOperation(status, category, time.Since(startedAt))
+		r.recorder.RecordOperation(string(status), category, time.Since(startedAt))
 	}
 }
 

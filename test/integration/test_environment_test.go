@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/app"
+	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
@@ -111,14 +112,14 @@ type auditRecordDocument struct {
 }
 
 type operationSummaryDocument struct {
-	ID           string     `json:"id"`
-	Status       string     `json:"status"`
-	AttemptCount int        `json:"attemptCount"`
-	ErrorCode    *string    `json:"errorCode"`
-	ErrorSummary *string    `json:"errorSummary"`
-	QueuedAt     time.Time  `json:"queuedAt"`
-	StartedAt    *time.Time `json:"startedAt"`
-	FinishedAt   *time.Time `json:"finishedAt"`
+	ID           string                    `json:"id"`
+	Status       operation.OperationStatus `json:"status"`
+	AttemptCount int                       `json:"attemptCount"`
+	ErrorCode    *string                   `json:"errorCode"`
+	ErrorSummary *string                   `json:"errorSummary"`
+	QueuedAt     time.Time                 `json:"queuedAt"`
+	StartedAt    *time.Time                `json:"startedAt"`
+	FinishedAt   *time.Time                `json:"finishedAt"`
 }
 
 type releaseHistoryItemDocument struct {
@@ -148,7 +149,7 @@ type operationDocument struct {
 	DeploymentTargetID  string                     `json:"deploymentTargetId"`
 	CreatedBy           string                     `json:"createdBy"`
 	IdempotencyKey      string                     `json:"idempotencyKey"`
-	Status              string                     `json:"status"`
+	Status              operation.OperationStatus  `json:"status"`
 	AttemptCount        int                        `json:"attemptCount"`
 	AutomaticRetryCount int                        `json:"automaticRetryCount"`
 	RecoveryRequired    bool                       `json:"recoveryRequired"`
@@ -165,15 +166,15 @@ type operationDocument struct {
 }
 
 type operationAttemptDocument struct {
-	ID               string     `json:"id"`
-	Number           int        `json:"number"`
-	WorkerID         string     `json:"workerId"`
-	Status           string     `json:"status"`
-	ErrorCode        *string    `json:"errorCode"`
-	ErrorSummary     *string    `json:"errorSummary"`
-	RetryDisposition *string    `json:"retryDisposition"`
-	StartedAt        time.Time  `json:"startedAt"`
-	FinishedAt       *time.Time `json:"finishedAt"`
+	ID               string                  `json:"id"`
+	Number           int                     `json:"number"`
+	WorkerID         string                  `json:"workerId"`
+	Status           operation.AttemptStatus `json:"status"`
+	ErrorCode        *string                 `json:"errorCode"`
+	ErrorSummary     *string                 `json:"errorSummary"`
+	RetryDisposition *string                 `json:"retryDisposition"`
+	StartedAt        time.Time               `json:"startedAt"`
+	FinishedAt       *time.Time              `json:"finishedAt"`
 }
 
 type releaseAcceptanceDocument struct {

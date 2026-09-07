@@ -23,8 +23,8 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 		publishError      error
 		waitForTimeout    bool
 		operationTimeout  time.Duration
-		wantStatus        string
-		wantAttemptStatus string
+		wantStatus        operation.OperationStatus
+		wantAttemptStatus operation.AttemptStatus
 		wantErrorCode     string
 	}{
 		{
@@ -173,7 +173,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 				category = "none"
 			}
 			wantMetric := `orbitops_operation_terminal_total{category="` + category +
-				`",status="` + testCase.wantStatus + `"} 1`
+				`",status="` + string(testCase.wantStatus) + `"} 1`
 			if !strings.Contains(string(metricPayload), wantMetric) {
 				t.Errorf("worker metrics do not contain %q", wantMetric)
 			}

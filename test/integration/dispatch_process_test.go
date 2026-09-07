@@ -35,7 +35,7 @@ func TestQueueRecoversAcrossProcessInterruptions(t *testing.T) {
 				// 真实入队已成功但确认尚未提交，重复制同一消息模拟租约到期后的补发。
 				db := openTestDatabase(t, environment.databaseURL)
 				var ref operation.DispatchRef
-				if err := db.Get(&ref, `SELECT id,operation_id,generation,version FROM operation_dispatches WHERE operation_id=$1 AND published_at IS NULL`, accepted.Operation.ID); err != nil {
+				if err := db.Get(&ref, `SELECT id,operation_id,sequence,protocol_version FROM operation_dispatches WHERE operation_id=$1 AND published_at IS NULL`, accepted.Operation.ID); err != nil {
 					t.Fatal(err)
 				}
 				payload, _ := json.Marshal(ref)
