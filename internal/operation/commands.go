@@ -349,6 +349,14 @@ func (m *Module) executeUserCommand(
 	if err != nil {
 		return Record{}, err
 	}
+	// 幂等重放已在前面返回；只有本次真正发生的用户状态变化才更新投递意图。
+	if updated.Status == StatusPending {
+		if err := scheduleDispatch(ctx, tx, operationID, commandType, now); err != nil {
+			return Record{}, err
+		}
+	} else if err := obsoleteDispatches(ctx, tx, operationID, now); err != nil {
+		return Record{}, err
+	}
 	if err := idempotency.StoreResponse(ctx, tx, scope, updated); err != nil {
 		return Record{}, err
 	}

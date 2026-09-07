@@ -130,15 +130,18 @@ type FailureResult struct {
 }
 
 type claimCandidate struct {
-	ID                  uuid.UUID `db:"id"`
-	ReleaseID           uuid.UUID `db:"release_id"`
-	DeploymentTargetID  uuid.UUID `db:"deployment_target_id"`
-	Status              string    `db:"status"`
-	AttemptCount        int       `db:"attempt_count"`
-	AutomaticRetryCount int       `db:"automatic_retry_count"`
-	RecoveryRequired    bool      `db:"recovery_required"`
-	TraceParent         string    `db:"traceparent"`
-	TraceState          string    `db:"tracestate"`
+	ID                  uuid.UUID  `db:"id"`
+	ReleaseID           uuid.UUID  `db:"release_id"`
+	DeploymentTargetID  uuid.UUID  `db:"deployment_target_id"`
+	Status              string     `db:"status"`
+	AttemptCount        int        `db:"attempt_count"`
+	AutomaticRetryCount int        `db:"automatic_retry_count"`
+	RecoveryRequired    bool       `db:"recovery_required"`
+	TraceParent         string     `db:"traceparent"`
+	TraceState          string     `db:"tracestate"`
+	DispatchGeneration  int64      `db:"dispatch_generation"`
+	AvailableAt         time.Time  `db:"available_at"`
+	LeaseExpiresAt      *time.Time `db:"lease_expires_at"`
 }
 
 type Module struct {
@@ -255,6 +258,9 @@ func (m *Module) CreatePending(
 		return Record{}, fmt.Errorf("insert release operation: %w", err)
 	}
 
+	if err := scheduleDispatch(ctx, tx, record.ID, "accepted", command.CreatedAt); err != nil {
+		return Record{}, err
+	}
 	return record, nil
 }
 
@@ -374,6 +380,12 @@ func (m *Module) ClaimNext(
 		return Lease{}, false, fmt.Errorf("select operation claim: %w", err)
 	}
 
+	return m.claimCandidate(ctx, tx, candidate, request, now)
+}
+
+// claimCandidate 在调用者已锁定并校验候选后统一执行 S2 领取、过期恢复与 Attempt 事务。
+// 成功路径在此提交；任何错误由入口的 defer 回滚，外部副作用只能发生在提交之后。
+func (m *Module) claimCandidate(ctx context.Context, tx *sqlx.Tx, candidate claimCandidate, request ClaimRequest, now time.Time) (Lease, bool, error) {
 	leaseExpired := candidate.Status == StatusRunning || candidate.Status == StatusCancelRequested
 	recovery := candidate.Status == StatusRunning || candidate.RecoveryRequired
 	if leaseExpired {
@@ -526,6 +538,11 @@ func (m *Module) ClaimNext(
 		CreatedAt: now,
 	}); err != nil {
 		return Lease{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE operation_dispatches SET attempt_id = $2
+	 WHERE operation_id = $1 AND generation = $3 AND state = 'consumed' AND attempt_id IS NULL`,
+		candidate.ID, attemptID, candidate.DispatchGeneration); err != nil {
+		return Lease{}, false, fmt.Errorf("link dispatch attempt: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -971,6 +988,14 @@ func appendCompletionAudit(
 	failure *Failure,
 	now time.Time,
 ) error {
+	// 执行结束后的新业务意图与 Attempt、状态、审计一起提交，不能在 Runner 返回后补写。
+	if status == StatusPending {
+		if err := scheduleDispatch(ctx, tx, lease.OperationID, action, now); err != nil {
+			return err
+		}
+	} else if err := obsoleteDispatches(ctx, tx, lease.OperationID, now); err != nil {
+		return err
+	}
 	summary := map[string]any{
 		"attemptNumber": lease.AttemptNumber,
 		"workerId":      lease.WorkerID,
