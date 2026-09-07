@@ -151,6 +151,11 @@ func (m *Metrics) Handler() http.Handler {
 	})
 }
 
+// RegisterCollector 在启动阶段接入可选运行模块的指标，不让核心观测层依赖队列实现。
+func (m *Metrics) RegisterCollector(collector prometheus.Collector) {
+	m.registry.MustRegister(collector)
+}
+
 func (m *Metrics) RecordHTTPRequest(method string, route string, status int, duration time.Duration) {
 	m.httpRequests.WithLabelValues(method, route, strconv.Itoa(status)).Inc()
 	m.httpDuration.WithLabelValues(method, route).Observe(duration.Seconds())

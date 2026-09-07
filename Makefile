@@ -7,7 +7,7 @@ kind-up:
 	./scripts/setup-kind.sh
 
 db-up:
-	docker compose up -d --wait postgres
+	docker compose up -d --wait postgres redis
 
 db-down:
 	docker compose down
@@ -35,4 +35,5 @@ test:
 	corepack pnpm web:test:e2e
 
 test-kind:
+	ORBITOPS_NAMESPACE=orbitops-q1 ./scripts/setup-kind.sh
 	ORBITOPS_KIND_E2E=1 go test ./test/kind -count=1 -v

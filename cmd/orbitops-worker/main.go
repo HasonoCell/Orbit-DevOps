@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
+	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
@@ -109,7 +110,20 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	// 正常入口只消费指定投递意图；Redis 故障不回退到全局数据库领取。
+	queue, err := dispatch.New(dispatch.Config{
+		RedisAddress: config.Queue.RedisAddress, RedisUsername: config.Queue.RedisUsername,
+		RedisPassword: config.Queue.RedisPassword, RedisDB: config.Queue.RedisDB,
+		Queue: config.Queue.Name, Concurrency: config.Queue.Concurrency, PollInterval: config.PollInterval,
+		RepairInterval: config.Queue.RepairInterval, ConsumptionGrace: config.Queue.ConsumptionGrace,
+		TaskTimeout: config.Queue.TaskTimeout, ShutdownTimeout: config.Queue.ShutdownTimeout, Logger: logger,
+	}, operations, runner)
+	if err != nil {
+		return err
+	}
 	mux := http.NewServeMux()
+	metrics.RegisterCollector(queue)
+	mux.Handle("/readyz", queue.ReadinessHandler())
 	mux.Handle("/metrics", metrics.Handler())
 	mux.HandleFunc("/healthz", func(response http.ResponseWriter, request *http.Request) {
 		checkContext, cancel := context.WithTimeout(request.Context(), time.Second)
@@ -135,39 +149,10 @@ func run(logger *slog.Logger) error {
 		results <- processruntime.ServeHTTP(runContext, server, logger)
 	}()
 	go func() {
-		results <- runWorker(runContext, runner, config.PollInterval, logger)
+		results <- queue.Run(runContext)
 	}()
 	firstErr := <-results
 	cancel()
 	secondErr := <-results
 	return errors.Join(firstErr, secondErr)
-}
-
-func runWorker(
-	ctx context.Context,
-	runner *worker.Runner,
-	pollInterval time.Duration,
-	logger *slog.Logger,
-) error {
-	for {
-		processed, err := runner.RunOnce(ctx)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			logger.ErrorContext(ctx, "Worker 执行失败", "error", err)
-		}
-		if ctx.Err() != nil {
-			return nil
-		}
-		if err == nil && processed {
-			continue
-		}
-		timer := time.NewTimer(pollInterval)
-		select {
-		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
-			return nil
-		case <-timer.C:
-		}
-	}
 }

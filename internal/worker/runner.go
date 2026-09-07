@@ -218,6 +218,30 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 	if !claimed {
 		return false, nil
 	}
+	return r.runLease(ctx, lease)
+}
+
+// RunDispatch 是队列的唯一业务执行入口，只处理消息指定的有效意图，不扫描其他任务。
+func (r *Runner) RunDispatch(ctx context.Context, ref operation.DispatchRef) (string, error) {
+	started := time.Now()
+	claimContext, cancelClaim := context.WithTimeout(ctx, 5*time.Second)
+	claim, err := r.operations.ClaimDispatch(claimContext, ref, operation.ClaimRequest{
+		WorkerID: r.config.WorkerID, LeaseDuration: r.config.LeaseDuration,
+	})
+	cancelClaim()
+	r.recordPhase("claim", started)
+	if err != nil {
+		return "", err
+	}
+	if claim.Disposition != operation.DispatchClaimed {
+		return claim.Disposition, nil
+	}
+	_, err = r.runLease(ctx, claim.Lease)
+	return claim.Disposition, err
+}
+
+// runLease 复用已验证的续期、取消与读后写恢复；仅在业务领取事务提交后调用。
+func (r *Runner) runLease(ctx context.Context, lease operation.Lease) (bool, error) {
 	attemptStartedAt := time.Now()
 	carrier := propagation.MapCarrier{}
 	if lease.TraceParent != "" {
@@ -248,8 +272,14 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 		"trace_id", span.SpanContext().TraceID(),
 	)
 
-	release, err := r.releases.GetRelease(attemptContext, lease.ReleaseID)
+	readContext, cancelRead := context.WithTimeout(attemptContext, min(r.config.LeaseDuration/3, 5*time.Second))
+	release, err := r.releases.GetRelease(readContext, lease.ReleaseID)
+	cancelRead()
 	if err != nil {
+		// 存储连接或读取超时不是发布失败，保留当前执行事实供租约恢复，交给运输层有限重投。
+		if !errors.Is(err, delivery.ErrReleaseNotFound) {
+			return true, err
+		}
 		failure := operation.Failure{
 			Code:        "release_load_failed",
 			Summary:     "accepted release could not be loaded for delivery",
@@ -259,9 +289,10 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 			return true, errors.Join(err, completionErr)
 		}
 		r.recordTerminal(operation.StatusFailed, failure.Code, attemptStartedAt)
-		span.RecordError(err)
+		span.RecordError(errors.New(failure.Code))
 		span.SetStatus(codes.Error, failure.Code)
-		return true, fmt.Errorf("load claimed release: %w", err)
+		// 失败已经可靠落库，不再把业务失败返回为队列运输失败。
+		return true, nil
 	}
 
 	request := PublishRequest{
@@ -292,6 +323,17 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 	)
 	if r.config.DeliveryHook != nil {
 		r.config.DeliveryHook(DeliveryBeforePublish, request)
+	}
+	// 输入读取或进程调度可能消耗旧租约；外部调用前重新验证，避免等待期间失权后才开始 Apply。
+	checkContext, cancelCheck := context.WithTimeout(attemptContext, min(r.config.LeaseDuration/3, 5*time.Second))
+	renewal, err := r.operations.Renew(checkContext, lease, r.config.LeaseDuration)
+	cancelCheck()
+	if err != nil {
+		return true, err
+	}
+	lease = renewal.Lease
+	if renewal.CancelRequested {
+		return true, r.finishCancellation(attemptContext, lease, release.ID, release.CreatedAt, attemptStartedAt)
 	}
 
 	executionContext, cancelExecution := context.WithTimeout(attemptContext, r.config.OperationTimeout)
@@ -567,7 +609,10 @@ func (r *Runner) maintainLease(ctx context.Context, lease operation.Lease) (bool
 		case <-ctx.Done():
 			return false, nil
 		case <-ticker.C:
-			renewal, err := r.operations.Renew(ctx, lease, r.config.LeaseDuration)
+			// 续期失联必须在原租约到期前停止外部调用，不能等待队列的长任务截止时间。
+			renewContext, cancelRenew := context.WithTimeout(ctx, interval)
+			renewal, err := r.operations.Renew(renewContext, lease, r.config.LeaseDuration)
+			cancelRenew()
 			if err != nil {
 				return false, fmt.Errorf("renew claimed operation: %w", err)
 			}

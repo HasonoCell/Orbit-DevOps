@@ -656,7 +656,7 @@ func (m *Module) ConfirmCanceled(ctx context.Context, lease Lease) error {
 	if err := completeAttempt(ctx, tx, lease, AttemptCanceled, Failure{}, now); err != nil {
 		return err
 	}
-	if err := appendCompletionAudit(
+	if err := recordCompletion(
 		ctx,
 		tx,
 		"operation.canceled",
@@ -756,7 +756,7 @@ func (m *Module) Fail(
 		}
 	}
 
-	if err := appendCompletionAudit(
+	if err := recordCompletion(
 		ctx,
 		tx,
 		action,
@@ -847,7 +847,7 @@ func (m *Module) HandleUnknownOutcome(
 			return FailureResult{}, fmt.Errorf("require attention for unknown outcome: %w", err)
 		}
 	}
-	if err := appendCompletionAudit(
+	if err := recordCompletion(
 		ctx,
 		tx,
 		action,
@@ -887,7 +887,7 @@ func (m *Module) completeSuccess(ctx context.Context, lease Lease) error {
 	if err := completeAttempt(ctx, tx, lease, AttemptSucceeded, Failure{}, now); err != nil {
 		return err
 	}
-	if err := appendCompletionAudit(
+	if err := recordCompletion(
 		ctx,
 		tx,
 		"operation.succeeded",
@@ -979,7 +979,8 @@ func completeAttempt(
 	return nil
 }
 
-func appendCompletionAudit(
+// recordCompletion 将结束/重排意图和审计纳入调用者的业务完成事务。
+func recordCompletion(
 	ctx context.Context,
 	tx *sqlx.Tx,
 	action string,

@@ -70,9 +70,18 @@ func (m *Module) ReserveDispatches(ctx context.Context, limit int, leaseDuration
 	}
 	now := m.now()
 	items := []Dispatch{}
+	// 只依据数据库当前意图隔离未知协议；外部损坏载荷不能改变合法工作。
+	if _, err := m.db.ExecContext(ctx, `WITH invalid AS (
+	 SELECT d.id FROM operation_dispatches d JOIN operations o ON o.id = d.operation_id
+	 WHERE d.state IN ('pending','published') AND d.generation = o.dispatch_generation AND d.version <> 1
+	 ORDER BY d.id FOR UPDATE OF d SKIP LOCKED LIMIT $2
+	) UPDATE operation_dispatches d SET state = 'quarantined', publish_token = NULL, publish_expires_at = NULL,
+	 last_error_code = 'unsupported_dispatch_version', updated_at = $1 FROM invalid WHERE d.id = invalid.id`, now, limit); err != nil {
+		return nil, err
+	}
 	err := m.db.SelectContext(ctx, &items, `WITH due AS (
 	 SELECT d.id FROM operation_dispatches d JOIN operations o ON o.id = d.operation_id
-	 WHERE d.state IN ('pending', 'published') AND d.next_dispatch_at <= $1
+	 WHERE d.state IN ('pending', 'published') AND d.version = 1 AND d.next_dispatch_at <= $1
 	   AND (d.publish_expires_at IS NULL OR d.publish_expires_at <= $1)
 	   AND d.generation = o.dispatch_generation AND d.expected_attempt_count = o.attempt_count
 	   AND (o.status = 'pending' OR (o.status IN ('running', 'cancel_requested') AND o.lease_expires_at <= $1))
@@ -210,6 +219,10 @@ func (m *Module) ConfirmDispatch(ctx context.Context, dispatch Dispatch, errorCo
 	}
 	now := m.now()
 	state := "published"
+	// 持续未消费时逐步降低补发频率，最多增加 30 秒；业务可执行时间不变。
+	if dispatch.DeliveryCount > 1 {
+		grace += dispatchBackoff(dispatch.DeliveryCount - 1)
+	}
 	next := now.Add(grace)
 	if dispatch.AvailableAt.After(now) {
 		next = dispatch.AvailableAt.Add(grace)

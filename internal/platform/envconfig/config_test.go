@@ -2,9 +2,27 @@ package envconfig_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
 )
+
+func TestQueueDefaultsReserveBusinessCompletionTime(t *testing.T) {
+	t.Setenv("ORBITOPS_OPERATION_TIMEOUT", "3m")
+	t.Setenv("ORBITOPS_REDIS_ADDRESS", "")
+	t.Setenv("ORBITOPS_QUEUE_TASK_TIMEOUT", "")
+	config, err := envconfig.LoadWorker()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Queue.RedisAddress != "127.0.0.1:6379" || config.Queue.TaskTimeout < 3*time.Minute+30*time.Second || config.Queue.Concurrency != 4 {
+		t.Fatalf("queue defaults do not reserve completion time")
+	}
+	t.Setenv("ORBITOPS_QUEUE_TASK_TIMEOUT", "3m")
+	if _, err := envconfig.LoadWorker(); err == nil {
+		t.Fatal("queue timeout shorter than business envelope accepted")
+	}
+}
 
 func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 	for _, name := range []string{
