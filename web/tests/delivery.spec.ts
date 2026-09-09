@@ -18,7 +18,7 @@ test("成功发布显示 Operation 终态与 Kubernetes 就绪状态", async ({ 
 
   await expect(page.getByTestId("operation-status")).toHaveText(/已成功/);
   await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("Ready");
-  await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("实时");
+  await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("完整");
   await expect(page.getByText(ids.release, { exact: true })).toBeVisible();
 });
 
@@ -32,7 +32,20 @@ test("镜像拉取失败显示结构化失败与 Pod 原因", async ({ page }) =
   await expect(page.getByTestId("operation-status")).toHaveText(/已失败/);
   await expect(page.getByRole("region", { name: "发布操作" })).toContainText("image_pull_failed");
   await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("ImagePullBackOff");
-  await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("实时");
+  await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("pod_waiting");
+  await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("部分可用");
+  await expect(page.getByRole("region", { name: "Kubernetes 实况" })).not.toContainText("不可用");
+});
+
+test("运行中的 Release 不匹配时显示明确提示", async ({ page }) => {
+  await mockControlPlane(page, "failed", "different");
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "创建并发布" }).click();
+
+  await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("runtime_release_different");
+  await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("集群当前运行的是另一个 Release");
+  await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("其他 Release");
 });
 
 test("移动端可以打开和关闭产品导航", async ({ page }) => {
@@ -49,7 +62,11 @@ test("移动端可以打开和关闭产品导航", async ({ page }) => {
   await expect(navigation).toBeHidden();
 });
 
-async function mockControlPlane(page: Page, terminal: "succeeded" | "failed") {
+async function mockControlPlane(
+  page: Page,
+  terminal: "succeeded" | "failed",
+  relation: "matches" | "different" = "matches",
+) {
   let operationPolls = 0;
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
@@ -99,8 +116,8 @@ async function mockControlPlane(page: Page, terminal: "succeeded" | "failed") {
       await json(route, 200, operationDocument(operationPolls < 2 ? "running" : terminal));
       return;
     }
-    if (request.method() === "GET" && pathname === `/api/v1/deployment-targets/${ids.target}/runtime-snapshot`) {
-      await json(route, 200, runtimeDocument(terminal));
+    if (request.method() === "GET" && pathname === `/api/v1/releases/${ids.release}/diagnostics`) {
+      await json(route, 200, diagnosticDocument(terminal, relation));
       return;
     }
     await json(route, 404, { code: "not_found", message: pathname });
@@ -184,29 +201,95 @@ function operationDocument(status: "pending" | "running" | "succeeded" | "failed
   };
 }
 
-function runtimeDocument(terminal: "succeeded" | "failed") {
+function diagnosticDocument(
+  terminal: "succeeded" | "failed",
+  relation: "matches" | "different",
+) {
   const succeeded = terminal === "succeeded";
   return {
-    deploymentTargetId: ids.target,
-    source: "kubernetes",
-    observedAt: now,
-    freshness: "fresh",
-    deploymentName: "orbitops-33333333333343338333333333333333",
-    deploymentExists: true,
-    releaseId: ids.release,
-    desiredReplicas: 1,
-    updatedReplicas: 1,
-    readyReplicas: succeeded ? 1 : 0,
-    availableReplicas: succeeded ? 1 : 0,
-    conditions: [],
-    pods: [
-      {
-        name: "orbitops-demo-pod",
-        phase: succeeded ? "Running" : "Pending",
-        ready: succeeded,
-        reason: succeeded ? "Ready" : "ImagePullBackOff",
+    release: releaseDocument(),
+    operation: operationDocument(terminal),
+    targetDifferences: [],
+    runtimeReleaseRelation: relation,
+    workloadObservation: {
+      metadata: {
+        source: "kubernetes",
+        observedAt: now,
+        status: succeeded ? "complete" : "partial",
+        errorCategories: succeeded ? [] : ["events_unavailable"],
       },
+      deployment: {
+        name: "orbitops-33333333333343338333333333333333",
+        uid: "deployment-uid",
+        ownershipMatches: true,
+        releaseId: relation === "matches" ? ids.release : "77777777-7777-4777-8777-777777777777",
+        generation: 1,
+        observedGeneration: 1,
+        desiredReplicas: 1,
+        updatedReplicas: 1,
+        readyReplicas: succeeded ? 1 : 0,
+        availableReplicas: succeeded ? 1 : 0,
+        conditions: [],
+      },
+      service: {
+        name: "orbitops-33333333333343338333333333333333",
+        uid: "service-uid",
+        ownershipMatches: true,
+        ports: [{ name: "http", protocol: "TCP", port: 8080 }],
+      },
+      pods: [
+        {
+          name: "orbitops-demo-pod",
+          uid: "pod-uid",
+          createdAt: now,
+          phase: succeeded ? "Running" : "Pending",
+          ready: succeeded,
+          reason: succeeded ? "Ready" : "ImagePullBackOff",
+          containers: [
+            {
+              name: "app",
+              ready: succeeded,
+              restartCount: succeeded ? 0 : 2,
+              state: succeeded ? "running" : "waiting",
+              reason: succeeded ? "Ready" : "ImagePullBackOff",
+              message: "",
+            },
+          ],
+        },
+      ],
+    },
+    eventObservation: {
+      metadata: {
+        source: "kubernetes",
+        observedAt: now,
+        status: succeeded ? "complete" : "unavailable",
+        errorCategories: succeeded ? [] : ["events_unavailable"],
+      },
+      items: [],
+    },
+    signals: [
+      ...(relation === "different"
+        ? [
+            {
+              code: "runtime_release_different",
+              severity: "warning",
+              summary: "集群当前运行的是另一个 Release",
+              evidenceRefs: [{ source: "kubernetes", kind: "Deployment", id: "deployment-uid" }],
+            },
+          ]
+        : []),
+      ...(succeeded
+        ? []
+        : [
+          {
+            code: "pod_waiting",
+            severity: "error",
+            summary: "Pod 正在等待镜像拉取。",
+            evidenceRefs: [{ source: "kubernetes", kind: "Pod", id: "pod-uid" }],
+          },
+        ]),
     ],
+    generatedAt: now,
   };
 }
 

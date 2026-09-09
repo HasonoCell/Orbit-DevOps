@@ -128,7 +128,8 @@ svg { width: 1em; height: 1em; stroke-width: 1.8; }
 .error-summary b { color: #b73448; font-family: monospace; font-size: 10px; }
 .error-summary p { margin: 4px 0 0; color: #98606a; font-size: 10px; line-height: 1.45; }
 .freshness { padding: 4px 8px; border-radius: 999px; background: #f0f2f5; color: #7c8695; font-size: 9px; font-weight: 650; }
-.freshness.fresh { background: #e7f7ed; color: #17804a; }
+.freshness.complete { background: #e7f7ed; color: #17804a; }
+.freshness.partial { background: #fff4d6; color: #9a6811; }
 .freshness.unavailable { background: #ffeaec; color: #bc3044; }
 .runtime-metrics { display: grid; grid-template-columns: repeat(3, 1fr); }
 .metric { display: grid; gap: 2px; padding: 14px 10px; border-right: 1px solid #edf0f3; text-align: center; }

@@ -20,7 +20,7 @@ export type Application = components["schemas"]["Application"];
 export type DeploymentTarget = components["schemas"]["DeploymentTarget"];
 export type ReleaseAcceptance = components["schemas"]["ReleaseAcceptance"];
 export type Operation = components["schemas"]["Operation"];
-export type RuntimeSnapshot = components["schemas"]["RuntimeSnapshot"];
+export type ReleaseDiagnosticReport = components["schemas"]["ReleaseDiagnosticReport"];
 
 export type DeliveryAcceptance = {
   project: Project;
@@ -97,12 +97,13 @@ export async function getOperation(operationId: string): Promise<Operation> {
   return requireData(result.data, result.error, "查询操作状态");
 }
 
-export async function getRuntimeSnapshot(targetId: string): Promise<RuntimeSnapshot> {
-  const result = await client.GET(
-    "/api/v1/deployment-targets/{deploymentTargetId}/runtime-snapshot",
-    { params: { path: { deploymentTargetId: targetId } } },
-  );
-  return requireData(result.data, result.error, "查询运行状态");
+export async function getReleaseDiagnostics(
+  releaseId: string,
+): Promise<ReleaseDiagnosticReport> {
+  const result = await client.GET("/api/v1/releases/{releaseId}/diagnostics", {
+    params: { path: { releaseId } },
+  });
+  return requireData(result.data, result.error, "查询发布诊断");
 }
 
 function requireData<T>(data: T | undefined, error: unknown, action: string): T {

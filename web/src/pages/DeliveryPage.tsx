@@ -20,17 +20,17 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
   createDelivery,
   getOperation,
-  getRuntimeSnapshot,
+  getReleaseDiagnostics,
   type DeliveryAcceptance,
   type DeliveryInput,
   type Operation,
-  type RuntimeSnapshot,
+  type ReleaseDiagnosticReport,
 } from "../api/client";
 
 const readyImage =
@@ -74,8 +74,8 @@ type WorkspaceProps = {
   operation?: Operation;
   operationFetching: boolean;
   pending: boolean;
-  runtimeError: Error | null;
-  snapshot?: RuntimeSnapshot;
+  diagnosticError: Error | null;
+  diagnosticReport?: ReleaseDiagnosticReport;
   useImage: (image: string) => void;
 };
 
@@ -112,12 +112,26 @@ export function DeliveryPage() {
     initialData: acceptance?.operation,
     refetchInterval: (query) => (isTerminal(query.state.data?.status) ? false : 500),
   });
-  const runtimeQuery = useQuery({
-    queryKey: ["runtime", acceptance?.target.id],
-    queryFn: () => getRuntimeSnapshot(acceptance!.target.id),
+  const operation = operationQuery.data ?? acceptance?.operation;
+  const diagnosticQuery = useQuery({
+    queryKey: ["release-diagnostics", acceptance?.release.id],
+    queryFn: () => getReleaseDiagnostics(acceptance!.release.id),
     enabled: acceptance !== undefined,
-    refetchInterval: acceptance === undefined ? false : 1_000,
+    // 完整诊断需要同时读取 PostgreSQL 和多类 Kubernetes 资源，因此只做低频刷新。
+    refetchInterval: acceptance === undefined || isTerminal(operation?.status) ? false : 4_000,
   });
+  const terminalRefresh = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!acceptance || !isTerminal(operation?.status)) {
+      return;
+    }
+    // Operation 首次进入终态时再取一次证据，随后停止自动轮询。
+    if (terminalRefresh.current !== acceptance.operation.id) {
+      terminalRefresh.current = acceptance.operation.id;
+      void diagnosticQuery.refetch();
+    }
+  }, [acceptance, diagnosticQuery.refetch, operation?.status]);
 
   return (
     <Workspace
@@ -128,11 +142,11 @@ export function DeliveryPage() {
       onCloseMobileNav={() => setMobileNavOpen(false)}
       onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}
       onToggleMobileNav={() => setMobileNavOpen((open) => !open)}
-      operation={operationQuery.data ?? acceptance?.operation}
+      operation={operation}
       operationFetching={operationQuery.isFetching}
       pending={createMutation.isPending}
-      runtimeError={runtimeQuery.error}
-      snapshot={runtimeQuery.data}
+      diagnosticError={diagnosticQuery.error}
+      diagnosticReport={diagnosticQuery.data}
       useImage={(image) => form.setValue("imageReference", image, { shouldDirty: true, shouldValidate: true })}
     />
   );
@@ -244,7 +258,7 @@ function Workspace(props: WorkspaceProps) {
             <aside className="a-observation">
               <EditorHeader index="02" title="实时状态" description="Operation 与 Kubernetes 观测" />
               <OperationPanel operation={props.operation} fetching={props.operationFetching} />
-              <RuntimePanel snapshot={props.snapshot} error={props.runtimeError} />
+              <RuntimePanel report={props.diagnosticReport} error={props.diagnosticError} />
               <IdentityPanel acceptance={props.acceptance} />
             </aside>
           </div>
@@ -313,13 +327,22 @@ function OperationPanel({ operation, fetching }: { operation?: Operation; fetchi
   );
 }
 
-function RuntimePanel({ snapshot, error }: { snapshot?: RuntimeSnapshot; error: Error | null }) {
+function RuntimePanel({ report, error }: { report?: ReleaseDiagnosticReport; error: Error | null }) {
+  const workload = report?.workloadObservation;
+  const deployment = workload?.deployment;
+  const observationStatus = workload?.metadata.status;
   return (
     <section className="observation-block" aria-label="Kubernetes 实况">
-      <div className="block-heading"><span><Server /> Kubernetes</span><span className={`freshness ${snapshot?.freshness ?? "idle"}`}>{snapshot?.freshness === "fresh" ? "实时" : snapshot?.freshness === "unavailable" ? "不可用" : "等待"}</span></div>
-      <div className="runtime-metrics"><Metric label="期望" value={snapshot?.desiredReplicas ?? 0} /><Metric label="已更新" value={snapshot?.updatedReplicas ?? 0} /><Metric label="就绪" value={snapshot?.readyReplicas ?? 0} accent /></div>
-      {snapshot?.pods.map((pod) => <div className="runtime-pod" key={pod.name}><span><CircleDot /> Pod</span><code>{pod.name}</code><strong className={pod.ready ? "ready" : "failed"}>{pod.reason || pod.phase}</strong></div>)}
-      <div className="runtime-detail"><span>Deployment</span><code>{snapshot?.deploymentName ?? "等待首次发布"}</code><span>观测时间</span><strong>{snapshot ? formatTime(snapshot.observedAt) : "—"}</strong></div>
+      <div className="block-heading"><span><Server /> Kubernetes</span><span className={`freshness ${observationStatus ?? "idle"}`}>{observationStatusText(observationStatus)}</span></div>
+      <div className="runtime-metrics"><Metric label="期望" value={deployment?.desiredReplicas ?? 0} /><Metric label="已更新" value={deployment?.updatedReplicas ?? 0} /><Metric label="就绪" value={deployment?.readyReplicas ?? 0} accent /></div>
+      {workload?.pods.map((pod) => {
+        const container = pod.containers.find((item) => item.reason !== "") ?? pod.containers[0];
+        const reason = container?.reason || pod.reason || pod.phase;
+        const restarts = pod.containers.reduce((total, item) => total + item.restartCount, 0);
+        return <div className="runtime-pod" key={pod.name}><span><CircleDot /> Pod</span><code>{pod.name}</code><strong className={pod.ready ? "ready" : "failed"}>{reason}{restarts > 0 ? ` · 重启 ${restarts}` : ""}</strong></div>;
+      })}
+      <div className="runtime-detail"><span>Deployment</span><code>{deployment?.name ?? "等待首次发布"}</code><span>Release 关系</span><strong>{releaseRelationText(report?.runtimeReleaseRelation)}</strong><span>观测时间</span><strong>{workload ? formatTime(workload.metadata.observedAt) : "—"}</strong></div>
+      {report?.signals.map((signal) => <div className="error-summary" key={`${signal.code}-${signal.summary}`}><b>{signal.code}</b><p>{signal.summary}</p></div>)}
       {error && <div className="error-summary"><b>runtime_unavailable</b><p>{error.message}</p></div>}
     </section>
   );
@@ -343,6 +366,14 @@ function ResourceLine({ label, value }: { label: string; value: string }) {
 
 function isTerminal(status?: string): boolean {
   return status === "succeeded" || status === "failed";
+}
+
+function observationStatusText(status?: string): string {
+  return { complete: "完整", partial: "部分可用", unavailable: "不可用" }[status ?? ""] ?? "等待";
+}
+
+function releaseRelationText(relation?: string): string {
+  return { matches: "当前 Release", different: "其他 Release", absent: "尚未部署", unknown: "未知" }[relation ?? ""] ?? "等待";
 }
 
 function statusText(status: string): string {
