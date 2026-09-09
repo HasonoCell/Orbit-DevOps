@@ -35,5 +35,5 @@ test:
 	corepack pnpm web:test:e2e
 
 test-kind:
-	ORBITOPS_NAMESPACE=orbitops-q1 ./scripts/setup-kind.sh
-	ORBITOPS_KIND_E2E=1 go test ./test/kind -count=1 -v
+	ORBITOPS_NAMESPACE=orbitops-s3 ./scripts/setup-kind.sh
+	ORBITOPS_NAMESPACE=orbitops-s3 ORBITOPS_KIND_E2E=1 go test ./test/kind -count=1 -v

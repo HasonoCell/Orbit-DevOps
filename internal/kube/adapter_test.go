@@ -2,6 +2,7 @@ package kube_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,7 +22,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 	clienttesting "k8s.io/client-go/testing"
 )
 
@@ -362,6 +365,141 @@ func TestDiagnosticObservationPrioritizesAbnormalPodsBeforeLimiting(t *testing.T
 	}
 	if observation.Workload.Pods[0].Name != "abnormal-oldest" {
 		t.Fatalf("first pod = %q, want abnormal-oldest", observation.Workload.Pods[0].Name)
+	}
+}
+
+func TestRuntimeLogsRefusesPodFromDifferentRelease(t *testing.T) {
+	request := publishRequest()
+	labels := recoveryLabels(request, uuid.New())
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "application-pod", Namespace: request.Namespace, Labels: labels,
+		},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "application"}}},
+	}
+	adapter, err := kube.New(fake.NewClientset(pod), kube.Config{
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("create adapter: %v", err)
+	}
+
+	_, err = adapter.ReadRuntimeLogs(context.Background(), diagnostics.RuntimeLogQuery{
+		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
+		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+		PodName: "application-pod", Container: "application", TailLines: 200,
+	})
+	if !errors.Is(err, diagnostics.ErrRuntimeLogSourceNotFound) {
+		t.Fatalf("cross-release log error = %v, want ErrRuntimeLogSourceNotFound", err)
+	}
+}
+
+func TestRuntimeLogsReadsTheVerifiedContainerWithBoundedOptions(t *testing.T) {
+	request := publishRequest()
+	labels := recoveryLabels(request, request.ReleaseID)
+	var observedTailLines string
+	var observedPrevious string
+	pod := corev1.Pod{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "application-pod", Namespace: request.Namespace,
+			UID: "application-pod-uid", Labels: labels,
+		},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "application"}}},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, incoming *http.Request) {
+		switch incoming.URL.Path {
+		case "/api/v1/namespaces/orbitops-s1/pods/application-pod":
+			response.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(response).Encode(&pod); err != nil {
+				t.Errorf("encode Pod response: %v", err)
+			}
+		case "/api/v1/namespaces/orbitops-s1/pods":
+			response.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(response).Encode(&corev1.PodList{
+				TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "PodList"},
+				Items:    []corev1.Pod{pod},
+			}); err != nil {
+				t.Errorf("encode Pod list response: %v", err)
+			}
+		case "/api/v1/namespaces/orbitops-s1/pods/application-pod/log":
+			observedTailLines = incoming.URL.Query().Get("tailLines")
+			observedPrevious = incoming.URL.Query().Get("previous")
+			_, _ = io.WriteString(response, "line one\nline two\n")
+		default:
+			http.NotFound(response, incoming)
+		}
+	}))
+	defer server.Close()
+	client, err := kubernetes.NewForConfig(&rest.Config{Host: server.URL})
+	if err != nil {
+		t.Fatalf("create Kubernetes HTTP client: %v", err)
+	}
+	adapter, err := kube.New(client, kube.Config{
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("create adapter: %v", err)
+	}
+
+	result, err := adapter.ReadRuntimeLogs(context.Background(), diagnostics.RuntimeLogQuery{
+		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
+		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+		PodName: "application-pod", Container: "application", TailLines: 37, Previous: true,
+	})
+	if err != nil {
+		t.Fatalf("read runtime logs: %v", err)
+	}
+	if result.Content != "line one\nline two\n" || result.Truncated || result.ObservedAt.IsZero() {
+		t.Fatalf("runtime log result = %#v", result)
+	}
+	if observedTailLines != "37" || observedPrevious != "true" {
+		t.Fatalf("log query tailLines=%q previous=%q", observedTailLines, observedPrevious)
+	}
+}
+
+func TestRuntimeLogsRefusesOwnedPodOutsideTheDiagnosticProjection(t *testing.T) {
+	request := publishRequest()
+	labels := recoveryLabels(request, request.ReleaseID)
+	objects := make([]runtime.Object, 0, 21)
+	for index := 0; index < 21; index++ {
+		objects = append(objects, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("ready-%02d", index), Namespace: request.Namespace,
+				UID: types.UID(fmt.Sprintf("ready-uid-%02d", index)), Labels: labels,
+				CreationTimestamp: metav1.NewTime(time.Date(2026, 9, 9, 17, index, 0, 0, time.UTC)),
+			},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "application"}}},
+			Status: corev1.PodStatus{
+				Phase:      corev1.PodRunning,
+				Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+				ContainerStatuses: []corev1.ContainerStatus{{
+					Name: "application", Ready: true,
+					State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+				}},
+			},
+		})
+	}
+	adapter, err := kube.New(fake.NewClientset(objects...), kube.Config{
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("create adapter: %v", err)
+	}
+
+	_, err = adapter.ReadRuntimeLogs(context.Background(), diagnostics.RuntimeLogQuery{
+		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
+		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+		PodName: "ready-00", Container: "application", TailLines: 200,
+	})
+	if !errors.Is(err, diagnostics.ErrRuntimeLogSourceNotFound) {
+		t.Fatalf("hidden Pod log error = %v, want ErrRuntimeLogSourceNotFound", err)
 	}
 }
 

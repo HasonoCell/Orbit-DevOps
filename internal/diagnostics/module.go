@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
@@ -15,7 +16,18 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-var ErrReleaseNotFound = errors.New("release not found")
+var (
+	ErrReleaseNotFound          = errors.New("release not found")
+	ErrInvalidRuntimeLogQuery   = errors.New("invalid runtime log query")
+	ErrRuntimeLogSourceNotFound = errors.New("runtime log source not found")
+	ErrKubernetesUnavailable    = errors.New("kubernetes unavailable")
+)
+
+const (
+	DefaultRuntimeLogTailLines = 200
+	MaximumRuntimeLogTailLines = 500
+	MaximumRuntimeLogBytes     = 128 * 1024
+)
 
 type targetRecord struct {
 	ProjectID     uuid.UUID `db:"project_id"`
@@ -32,6 +44,7 @@ type Module struct {
 	operations *operation.Module
 	authorizer *projectauth.Module
 	source     RuntimeSource
+	logSource  RuntimeLogSource
 	now        func() time.Time
 }
 
@@ -40,13 +53,96 @@ func New(db *sqlx.DB, authorizer *projectauth.Module, source RuntimeSource) *Mod
 	if source == nil {
 		source = UnavailableSource{}
 	}
+	logSource, ok := source.(RuntimeLogSource)
+	if !ok {
+		logSource = UnavailableSource{}
+	}
 	return &Module{
 		db:         db,
 		operations: operation.New(db),
 		authorizer: authorizer,
 		source:     source,
+		logSource:  logSource,
 		now:        func() time.Time { return time.Now().UTC() },
 	}
+}
+
+// GetRuntimeLogs 授权后读取指定 Release 的临时日志，并统一执行脱敏与 UTF-8 字节上限。
+func (m *Module) GetRuntimeLogs(
+	ctx context.Context,
+	query GetRuntimeLogsQuery,
+) (LogExcerpt, error) {
+	if strings.TrimSpace(query.PodName) == "" || strings.TrimSpace(query.Container) == "" ||
+		query.TailLines < 0 || query.TailLines > MaximumRuntimeLogTailLines {
+		return LogExcerpt{}, ErrInvalidRuntimeLogQuery
+	}
+	if query.TailLines == 0 {
+		query.TailLines = DefaultRuntimeLogTailLines
+	}
+
+	release, err := m.loadReleaseForPermission(
+		ctx,
+		query.ReleaseID,
+		query.ActorID,
+		projectauth.PermissionReadRuntimeLogs,
+	)
+	if err != nil {
+		return LogExcerpt{}, err
+	}
+	result, err := m.logSource.ReadRuntimeLogs(ctx, RuntimeLogQuery{
+		ProjectID: release.TargetSnapshot.ProjectID, ApplicationID: release.TargetSnapshot.ApplicationID,
+		TargetID: release.DeploymentTargetID, ReleaseID: release.ID,
+		ClusterRef: release.TargetSnapshot.ClusterRef, Namespace: release.TargetSnapshot.Namespace,
+		PodName: query.PodName, Container: query.Container,
+		TailLines: query.TailLines, Previous: query.Previous,
+	})
+	if err != nil {
+		return LogExcerpt{}, err
+	}
+	content, truncated := SanitizeRuntimeLog(result.Content, MaximumRuntimeLogBytes)
+	return LogExcerpt{
+		Source: SourceKubernetes, ObservedAt: result.ObservedAt,
+		ProjectID: release.TargetSnapshot.ProjectID, ReleaseID: release.ID,
+		PodName: query.PodName, Container: query.Container,
+		TailLines: query.TailLines, Previous: query.Previous,
+		Content: content, Truncated: result.Truncated || truncated,
+	}, nil
+}
+
+func (m *Module) loadReleaseForPermission(
+	ctx context.Context,
+	releaseID uuid.UUID,
+	actorID string,
+	permission projectauth.Permission,
+) (delivery.Release, error) {
+	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	})
+	if err != nil {
+		return delivery.Release{}, fmt.Errorf("begin release permission query: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var release delivery.Release
+	if err := tx.GetContext(ctx, &release, releaseSelect+` WHERE id = $1`, releaseID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return delivery.Release{}, ErrReleaseNotFound
+		}
+		return delivery.Release{}, fmt.Errorf("load release for permission: %w", err)
+	}
+	if err := m.authorizer.RequireInTransaction(
+		ctx, tx, release.TargetSnapshot.ProjectID, actorID, permission,
+	); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return delivery.Release{}, ErrReleaseNotFound
+		}
+		return delivery.Release{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return delivery.Release{}, fmt.Errorf("commit release permission query: %w", err)
+	}
+	return release, nil
 }
 
 // GetReleaseReport 先取得一致的数据库上下文，再读取 Kubernetes，避免把两者伪装成全局原子快照。

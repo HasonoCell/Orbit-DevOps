@@ -7,6 +7,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/api"
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 )
 
 // GetReleaseDiagnostics 将稳定诊断模块投影为 OpenAPI 契约，不在 Handler 重复组合领域规则。
@@ -31,6 +32,67 @@ func (s *Server) GetReleaseDiagnostics(
 	}
 	observability.SetRequestProjectID(ctx, report.Release.TargetSnapshot.ProjectID)
 	return api.GetReleaseDiagnostics200JSONResponse(diagnosticReportResponse(report)), nil
+}
+
+// GetReleaseRuntimeLogs 只转换查询参数和稳定错误；资源归属、权限及正文安全由诊断模块负责。
+func (s *Server) GetReleaseRuntimeLogs(
+	ctx context.Context,
+	request api.GetReleaseRuntimeLogsRequestObject,
+) (api.GetReleaseRuntimeLogsResponseObject, error) {
+	tailLines := diagnostics.DefaultRuntimeLogTailLines
+	if request.Params.TailLines != nil {
+		tailLines = *request.Params.TailLines
+	}
+	previous := false
+	if request.Params.Previous != nil {
+		previous = *request.Params.Previous
+	}
+	excerpt, err := s.diagnostics.GetRuntimeLogs(
+		httpRequestContext(ctx),
+		diagnostics.GetRuntimeLogsQuery{
+			ReleaseID: request.ReleaseId, ActorID: s.localActorID,
+			PodName: request.Params.PodName, Container: request.Params.Container,
+			TailLines: tailLines, Previous: previous,
+		},
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, diagnostics.ErrInvalidRuntimeLogQuery):
+			return api.GetReleaseRuntimeLogs400JSONResponse{
+				Code: "invalid_runtime_log_query", Message: "runtime log query is invalid",
+			}, nil
+		case errors.Is(err, projectauth.ErrForbidden):
+			return api.GetReleaseRuntimeLogs403JSONResponse{
+				Code: "runtime_logs_forbidden", Message: "current project role cannot read runtime logs",
+			}, nil
+		case errors.Is(err, diagnostics.ErrReleaseNotFound):
+			return api.GetReleaseRuntimeLogs404JSONResponse{
+				Code: "release_not_found", Message: "release not found",
+			}, nil
+		case errors.Is(err, diagnostics.ErrRuntimeLogSourceNotFound):
+			return api.GetReleaseRuntimeLogs404JSONResponse{
+				Code: "runtime_log_source_not_found", Message: "runtime log source not found",
+			}, nil
+		case errors.Is(err, diagnostics.ErrKubernetesUnavailable):
+			return api.GetReleaseRuntimeLogs503JSONResponse{
+				Code: "kubernetes_unavailable", Message: "Kubernetes is unavailable",
+			}, nil
+		default:
+			return nil, err
+		}
+	}
+	observability.SetRequestProjectID(ctx, excerpt.ProjectID)
+	return api.GetReleaseRuntimeLogs200JSONResponse{
+		Source:     api.RuntimeLogExcerptSource(excerpt.Source),
+		ObservedAt: excerpt.ObservedAt,
+		ReleaseId:  excerpt.ReleaseID,
+		PodName:    excerpt.PodName,
+		Container:  excerpt.Container,
+		TailLines:  excerpt.TailLines,
+		Previous:   excerpt.Previous,
+		Content:    excerpt.Content,
+		Truncated:  excerpt.Truncated,
+	}, nil
 }
 
 func diagnosticReportResponse(report diagnostics.Report) api.ReleaseDiagnosticReport {

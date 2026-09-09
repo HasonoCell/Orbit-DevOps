@@ -667,6 +667,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/releases/{releaseId}/runtime-logs:
+    get:
+      operationId: getReleaseRuntimeLogs
+      summary: 读取属于指定 Release 的有界运行日志摘录
+      parameters:
+        - name: releaseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: podName
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 253
+        - name: container
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 63
+        - name: tailLines
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+        - name: previous
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: 已验证归属并完成脱敏的日志摘录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeLogExcerpt"
+        "400":
+          description: 日志查询参数无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: 当前项目角色不能读取原始运行日志
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Release、Pod 或 Container 不存在或不属于指定 Release
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Kubernetes 当前不可用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/releases/{releaseId}/rollback:
     post:
       operationId: rollbackRelease
@@ -1860,6 +1934,45 @@ components:
           type: string
         id:
           type: string
+    RuntimeLogExcerpt:
+      type: object
+      additionalProperties: false
+      required:
+        - source
+        - observedAt
+        - releaseId
+        - podName
+        - container
+        - tailLines
+        - previous
+        - content
+        - truncated
+      properties:
+        source:
+          type: string
+          enum:
+            - kubernetes
+        observedAt:
+          type: string
+          format: date-time
+        releaseId:
+          type: string
+          format: uuid
+        podName:
+          type: string
+        container:
+          type: string
+        tailLines:
+          type: integer
+          minimum: 1
+          maximum: 500
+        previous:
+          type: boolean
+        content:
+          type: string
+          description: 已脱敏且 UTF-8 编码不超过 128 KiB 的一次性日志摘录。
+        truncated:
+          type: boolean
     RuntimeSnapshot:
       type: object
       additionalProperties: false

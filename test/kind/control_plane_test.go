@@ -312,6 +312,7 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 		MigrateOnBoot:   true,
 	}, app.Dependencies{
 		RuntimeObserver:   adapter,
+		DiagnosticSource:  adapter,
 		RecoveryPublisher: adapter,
 	})
 	if err != nil {

@@ -15,9 +15,11 @@ func TestRoleAllowsOnlyDeclaredPermissions(t *testing.T) {
 		{name: "owner resolves unknown", role: RoleOwner, permission: PermissionResolveUnknown, allowed: true},
 		{name: "developer reads", role: RoleDeveloper, permission: PermissionRead, allowed: true},
 		{name: "developer changes delivery", role: RoleDeveloper, permission: PermissionDevelop, allowed: true},
+		{name: "developer reads runtime logs", role: RoleDeveloper, permission: PermissionReadRuntimeLogs, allowed: true},
 		{name: "developer cannot manage members", role: RoleDeveloper, permission: PermissionManageMembers},
 		{name: "developer cannot resolve unknown", role: RoleDeveloper, permission: PermissionResolveUnknown},
 		{name: "viewer reads", role: RoleViewer, permission: PermissionRead, allowed: true},
+		{name: "viewer cannot read runtime logs", role: RoleViewer, permission: PermissionReadRuntimeLogs},
 		{name: "viewer cannot change delivery", role: RoleViewer, permission: PermissionDevelop},
 		{name: "unknown role is denied", role: "unexpected", permission: PermissionRead},
 	}

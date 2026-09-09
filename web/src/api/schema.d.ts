@@ -212,6 +212,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/releases/{releaseId}/runtime-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取属于指定 Release 的有界运行日志摘录 */
+        get: operations["getReleaseRuntimeLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/releases/{releaseId}/rollback": {
         parameters: {
             query?: never;
@@ -651,6 +668,21 @@ export interface components {
             source: string;
             kind: string;
             id: string;
+        };
+        RuntimeLogExcerpt: {
+            /** @enum {string} */
+            source: "kubernetes";
+            /** Format: date-time */
+            observedAt: string;
+            /** Format: uuid */
+            releaseId: string;
+            podName: string;
+            container: string;
+            tailLines: number;
+            previous: boolean;
+            /** @description 已脱敏且 UTF-8 编码不超过 128 KiB 的一次性日志摘录。 */
+            content: string;
+            truncated: boolean;
         };
         RuntimeSnapshot: {
             /** Format: uuid */
@@ -1553,6 +1585,78 @@ export interface operations {
             };
             /** @description Release 不存在或当前操作者不是项目成员 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getReleaseRuntimeLogs: {
+        parameters: {
+            query: {
+                podName: string;
+                container: string;
+                tailLines?: number;
+                previous?: boolean;
+            };
+            header?: never;
+            path: {
+                releaseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已验证归属并完成脱敏的日志摘录 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeLogExcerpt"];
+                };
+            };
+            /** @description 日志查询参数无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 当前项目角色不能读取原始运行日志 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Release、Pod 或 Container 不存在或不属于指定 Release */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Kubernetes 当前不可用 */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -21,3 +21,10 @@ func (UnavailableSource) ObserveRelease(context.Context, RuntimeQuery) RuntimeOb
 		Events:   EventObservation{Metadata: metadata, Items: []EventEvidence{}},
 	}
 }
+
+func (UnavailableSource) ReadRuntimeLogs(
+	context.Context,
+	RuntimeLogQuery,
+) (RuntimeLogResult, error) {
+	return RuntimeLogResult{}, ErrKubernetesUnavailable
+}

@@ -38,10 +38,11 @@ func WithDenialRecorder(ctx context.Context, recorder DenialRecorder) context.Co
 }
 
 const (
-	PermissionRead           Permission = "read"
-	PermissionDevelop        Permission = "develop"
-	PermissionManageMembers  Permission = "manage_members"
-	PermissionResolveUnknown Permission = "resolve_unknown"
+	PermissionRead            Permission = "read"
+	PermissionReadRuntimeLogs Permission = "read_runtime_logs"
+	PermissionDevelop         Permission = "develop"
+	PermissionManageMembers   Permission = "manage_members"
+	PermissionResolveUnknown  Permission = "resolve_unknown"
 )
 
 var (
@@ -465,7 +466,8 @@ func roleAllows(role string, permission Permission) bool {
 	case RoleOwner:
 		return true
 	case RoleDeveloper:
-		return permission == PermissionRead || permission == PermissionDevelop
+		return permission == PermissionRead || permission == PermissionDevelop ||
+			permission == PermissionReadRuntimeLogs
 	case RoleViewer:
 		return permission == PermissionRead
 	default:

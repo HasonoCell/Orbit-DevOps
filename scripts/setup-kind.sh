@@ -4,7 +4,7 @@ set -euo pipefail
 
 cluster_name="${ORBITOPS_KIND_CLUSTER_NAME:-orbitops-s1}"
 context_name="kind-${cluster_name}"
-namespace="${ORBITOPS_NAMESPACE:-orbitops-s1}"
+namespace="${ORBITOPS_NAMESPACE:-orbitops-s3}"
 node_image="kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5"
 
 for command_name in kind kubectl rg; do

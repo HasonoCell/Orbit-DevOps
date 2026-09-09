@@ -139,6 +139,53 @@ type RuntimeSource interface {
 	ObserveRelease(context.Context, RuntimeQuery) RuntimeObservation
 }
 
+// RuntimeLogSource 只暴露经过资源归属校验的单次日志读取，不允许 Follow 或任意 Namespace 浏览。
+type RuntimeLogSource interface {
+	ReadRuntimeLogs(context.Context, RuntimeLogQuery) (RuntimeLogResult, error)
+}
+
+type RuntimeLogQuery struct {
+	ProjectID     uuid.UUID
+	ApplicationID uuid.UUID
+	TargetID      uuid.UUID
+	ReleaseID     uuid.UUID
+	ClusterRef    string
+	Namespace     string
+	PodName       string
+	Container     string
+	TailLines     int
+	Previous      bool
+}
+
+// RuntimeLogResult 是 Kubernetes Adapter 返回的临时原文；诊断模块负责最终脱敏与响应上限。
+type RuntimeLogResult struct {
+	Content    string
+	ObservedAt time.Time
+	Truncated  bool
+}
+
+type LogExcerpt struct {
+	Source     string
+	ObservedAt time.Time
+	ProjectID  uuid.UUID
+	ReleaseID  uuid.UUID
+	PodName    string
+	Container  string
+	TailLines  int
+	Previous   bool
+	Content    string
+	Truncated  bool
+}
+
+type GetRuntimeLogsQuery struct {
+	ReleaseID uuid.UUID
+	ActorID   string
+	PodName   string
+	Container string
+	TailLines int
+	Previous  bool
+}
+
 type RuntimeReleaseRelation string
 
 const (

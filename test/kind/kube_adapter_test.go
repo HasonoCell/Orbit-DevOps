@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/google/uuid"
@@ -17,12 +19,14 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-const (
-	kindContext   = "kind-orbitops-s1"
-	kindCluster   = "kind-orbitops-s1"
-	kindNamespace = "orbitops-q1"
-	readyImage    = "registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a"
+var (
+	kindClusterName = environmentOrDefault("ORBITOPS_KIND_CLUSTER_NAME", "orbitops-s1")
+	kindContext     = "kind-" + kindClusterName
+	kindCluster     = kindContext
+	kindNamespace   = environmentOrDefault("ORBITOPS_NAMESPACE", "orbitops-s3")
 )
+
+const readyImage = "registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a"
 
 func TestKindDeliveryScenarios(t *testing.T) {
 	adapter, client := newKindAdapter(t)
@@ -169,6 +173,71 @@ func TestKindDeliveryScenarios(t *testing.T) {
 	})
 }
 
+func TestKindRuntimeLogsReadsPreviousContainerInstance(t *testing.T) {
+	adapter, client := newKindAdapter(t)
+	request := kindPublishRequest(readyImage)
+	podName := "orbitops-log-" + request.ReleaseID.String()[:8]
+	labels := map[string]string{
+		kube.ManagedByLabel:     kube.ManagedByValue,
+		kube.ProjectIDLabel:     request.ProjectID.String(),
+		kube.ApplicationIDLabel: request.ApplicationID.String(),
+		kube.TargetIDLabel:      request.DeploymentTargetID.String(),
+		kube.ReleaseIDLabel:     request.ReleaseID.String(),
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: podName, Namespace: kindNamespace, Labels: labels},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyAlways,
+			Containers: []corev1.Container{{
+				Name: "application", Image: "registry.k8s.io/coredns/coredns:v1.14.2",
+				ImagePullPolicy: corev1.PullIfNotPresent,
+				Command:         []string{"/coredns", "-version"},
+			}},
+		},
+	}
+	if _, err := client.CoreV1().Pods(kindNamespace).Create(
+		context.Background(), pod, metav1.CreateOptions{},
+	); err != nil {
+		t.Fatalf("create runtime log Pod: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.CoreV1().Pods(kindNamespace).Delete(
+			context.Background(), podName, metav1.DeleteOptions{},
+		)
+	})
+
+	deadline := time.Now().Add(90 * time.Second)
+	for {
+		current, err := client.CoreV1().Pods(kindNamespace).Get(
+			context.Background(), podName, metav1.GetOptions{},
+		)
+		if err != nil {
+			t.Fatalf("get runtime log Pod: %v", err)
+		}
+		if len(current.Status.ContainerStatuses) == 1 &&
+			current.Status.ContainerStatuses[0].LastTerminationState.Terminated != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("runtime log Pod did not produce a previous container instance")
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	result, err := adapter.ReadRuntimeLogs(context.Background(), diagnostics.RuntimeLogQuery{
+		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
+		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
+		ClusterRef: kindCluster, Namespace: kindNamespace,
+		PodName: podName, Container: "application", TailLines: 20, Previous: true,
+	})
+	if err != nil {
+		t.Fatalf("read previous runtime logs: %v", err)
+	}
+	if !strings.Contains(result.Content, "CoreDNS") {
+		t.Fatalf("previous runtime logs = %q", result.Content)
+	}
+}
+
 func newKindAdapter(t *testing.T) (*kube.Adapter, kubernetes.Interface) {
 	t.Helper()
 	if os.Getenv("ORBITOPS_KIND_E2E") != "1" {
@@ -235,4 +304,11 @@ func cleanupResources(t *testing.T, client kubernetes.Interface, targetID uuid.U
 	}
 	cleanup()
 	t.Cleanup(cleanup)
+}
+
+func environmentOrDefault(name string, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
