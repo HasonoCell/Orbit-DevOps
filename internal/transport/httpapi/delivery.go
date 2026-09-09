@@ -30,6 +30,7 @@ func (s *Server) CreateRelease(
 		delivery.CreateReleaseCommand{
 			DeploymentTargetID: request.DeploymentTargetId,
 			ImageReference:     request.Body.ImageReference,
+			ImageArtifactID:    request.Body.ImageArtifactId,
 			ActorID:            s.localActorID,
 			IdempotencyKey:     request.Params.IdempotencyKey,
 			TraceParent:        traceCarrier.Get("traceparent"),
@@ -43,6 +44,10 @@ func (s *Server) CreateRelease(
 				Code:    "invalid_image_reference",
 				Message: "image reference must contain a valid OCI digest",
 			}, nil
+		case errors.Is(err, delivery.ErrImageArtifactNotFound):
+			return api.CreateRelease404JSONResponse{Code: "image_artifact_not_found", Message: "image artifact not found"}, nil
+		case errors.Is(err, delivery.ErrImageArtifactMismatch):
+			return api.CreateRelease400JSONResponse{Code: "image_artifact_mismatch", Message: "image artifact does not match the release target and image reference"}, nil
 		case errors.Is(err, delivery.ErrDeploymentTargetNotFound), errors.Is(err, projectauth.ErrNotMember):
 			return api.CreateRelease404JSONResponse{
 				Code:    "deployment_target_not_found",
@@ -259,6 +264,7 @@ func releaseResponse(release delivery.Release) api.Release {
 		Id:                  release.ID,
 		DeploymentTargetId:  release.DeploymentTargetID,
 		ImageReference:      release.ImageReference,
+		ImageArtifactId:     release.ImageArtifactID,
 		RollbackOfReleaseId: release.RollbackOfReleaseID,
 		TargetSnapshot: api.ReleaseTargetSnapshot{
 			ProjectId:     release.TargetSnapshot.ProjectID,

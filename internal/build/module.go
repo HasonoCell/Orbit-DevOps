@@ -24,6 +24,8 @@ var (
 	ErrApplicationNotFound = errors.New("application not found")
 	ErrInvalidInput        = errors.New("invalid build input")
 	ErrNotFound            = errors.New("build not found")
+	ErrArtifactNotFound    = errors.New("image artifact not found")
+	ErrInvalidCursor       = errors.New("invalid build history cursor")
 )
 
 type Config struct {
@@ -51,7 +53,11 @@ type Record struct {
 type Acceptance struct {
 	Build          Record
 	BuildOperation buildoperation.Record
+	ImageArtifact  *ImageArtifact
 }
+
+// ImageArtifact 复用成功事务产生的不可变制品模型，查询层不再定义第二套字段语义。
+type ImageArtifact = buildoperation.ImageArtifact
 
 type CreateCommand struct {
 	ApplicationID  uuid.UUID
@@ -176,7 +182,37 @@ func (m *Module) Get(ctx context.Context, id uuid.UUID, actorID string) (Accepta
 	if err := m.db.GetContext(ctx, &operation, buildOperationSelect+` WHERE build_id = $1`, record.ID); err != nil {
 		return Acceptance{}, fmt.Errorf("get build operation: %w", err)
 	}
-	return Acceptance{Build: record, BuildOperation: operation}, nil
+	artifact, err := m.getArtifactForBuild(ctx, record.ID)
+	if err != nil {
+		return Acceptance{}, err
+	}
+	return Acceptance{Build: record, BuildOperation: operation, ImageArtifact: artifact}, nil
+}
+
+// GetArtifact 通过制品自身冻结的 Project 归属授权，不接受调用方提供归属提示。
+func (m *Module) GetArtifact(ctx context.Context, id uuid.UUID, actorID string) (ImageArtifact, error) {
+	var artifact ImageArtifact
+	if err := m.db.GetContext(ctx, &artifact, imageArtifactSelect+` WHERE id = $1`, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ImageArtifact{}, ErrArtifactNotFound
+		}
+		return ImageArtifact{}, fmt.Errorf("get image artifact: %w", err)
+	}
+	if err := m.authorizer.Require(ctx, artifact.ProjectID, actorID, projectauth.PermissionRead); err != nil {
+		return ImageArtifact{}, err
+	}
+	return artifact, nil
+}
+
+func (m *Module) getArtifactForBuild(ctx context.Context, buildID uuid.UUID) (*ImageArtifact, error) {
+	var artifact ImageArtifact
+	if err := m.db.GetContext(ctx, &artifact, imageArtifactSelect+` WHERE build_id = $1`, buildID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get build image artifact: %w", err)
+	}
+	return &artifact, nil
 }
 
 // GetForExecution 只供已经通过 BuildDispatch 取得业务 Lease 的 Worker 读取冻结输入。
@@ -280,6 +316,9 @@ const buildOperationSelect = `SELECT id, build_id, actor_id, idempotency_key, tr
  retry_disposition, queued_at, available_at, current_dispatch_sequence, created_at, updated_at,
  started_at, finished_at FROM build_operations`
 
+const imageArtifactSelect = `SELECT id, build_id, project_id, application_id, repository, digest,
+ image_reference, platform, created_by, created_at FROM image_artifacts`
+
 func replayCreate(ctx context.Context, tx *sqlx.Tx, id uuid.UUID) (Acceptance, error) {
 	var record Record
 	if err := tx.GetContext(ctx, &record, buildSelect+` WHERE id = $1`, id); err != nil {
@@ -289,5 +328,12 @@ func replayCreate(ctx context.Context, tx *sqlx.Tx, id uuid.UUID) (Acceptance, e
 	if err := tx.GetContext(ctx, &operation, buildOperationSelect+` WHERE build_id = $1`, record.ID); err != nil {
 		return Acceptance{}, fmt.Errorf("replay build operation: %w", err)
 	}
-	return Acceptance{Build: record, BuildOperation: operation}, nil
+	var artifact ImageArtifact
+	artifactPointer := (*ImageArtifact)(nil)
+	if err := tx.GetContext(ctx, &artifact, imageArtifactSelect+` WHERE build_id = $1`, record.ID); err == nil {
+		artifactPointer = &artifact
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Acceptance{}, fmt.Errorf("replay build artifact: %w", err)
+	}
+	return Acceptance{Build: record, BuildOperation: operation, ImageArtifact: artifactPointer}, nil
 }

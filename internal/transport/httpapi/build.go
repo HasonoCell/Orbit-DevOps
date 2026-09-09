@@ -13,6 +13,8 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
+const defaultBuildHistoryPageSize = 20
+
 // CreateBuild 把 HTTP 输入转换为不可变构建命令；Registry 与资源策略只来自服务端配置。
 func (s *Server) CreateBuild(ctx context.Context, request api.CreateBuildRequestObject) (api.CreateBuildResponseObject, error) {
 	requestContext := httpRequestContext(ctx)
@@ -60,8 +62,51 @@ func (s *Server) GetBuild(ctx context.Context, request api.GetBuildRequestObject
 	return api.GetBuild200JSONResponse(buildAcceptanceResponse(acceptance)), nil
 }
 
+// ListBuildHistory 返回轻量 Build、Operation 摘要和已经产生的 Artifact，不暴露 Dispatch。
+func (s *Server) ListBuildHistory(ctx context.Context, request api.ListBuildHistoryRequestObject) (api.ListBuildHistoryResponseObject, error) {
+	limit := defaultBuildHistoryPageSize
+	if request.Params.Limit != nil {
+		limit = *request.Params.Limit
+	}
+	cursor := ""
+	if request.Params.Cursor != nil {
+		cursor = *request.Params.Cursor
+	}
+	page, err := s.builds.ListHistory(httpRequestContext(ctx), builddomain.ListHistoryQuery{
+		ApplicationID: request.ApplicationId, ActorID: s.localActorID, Limit: limit, Cursor: cursor,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, builddomain.ErrInvalidCursor):
+			return api.ListBuildHistory400JSONResponse{Code: "invalid_build_cursor", Message: "build history cursor is invalid"}, nil
+		case errors.Is(err, builddomain.ErrApplicationNotFound), errors.Is(err, projectauth.ErrNotMember):
+			return api.ListBuildHistory404JSONResponse{Code: "application_not_found", Message: "application not found"}, nil
+		default:
+			return nil, err
+		}
+	}
+	items := make([]api.BuildAcceptance, 0, len(page.Items))
+	for _, item := range page.Items {
+		items = append(items, buildAcceptanceResponse(item))
+	}
+	return api.ListBuildHistory200JSONResponse{Items: items, NextCursor: page.NextCursor}, nil
+}
+
+// GetImageArtifact 返回制品与来源标识；Registry 凭据不属于制品模型。
+func (s *Server) GetImageArtifact(ctx context.Context, request api.GetImageArtifactRequestObject) (api.GetImageArtifactResponseObject, error) {
+	artifact, err := s.builds.GetArtifact(httpRequestContext(ctx), request.ImageArtifactId, s.localActorID)
+	if err != nil {
+		if errors.Is(err, builddomain.ErrArtifactNotFound) || errors.Is(err, projectauth.ErrNotMember) {
+			return api.GetImageArtifact404JSONResponse{Code: "image_artifact_not_found", Message: "image artifact not found"}, nil
+		}
+		return nil, err
+	}
+	observability.SetRequestProjectID(ctx, artifact.ProjectID)
+	return api.GetImageArtifact200JSONResponse(imageArtifactResponse(artifact)), nil
+}
+
 func buildAcceptanceResponse(acceptance builddomain.Acceptance) api.BuildAcceptance {
-	return api.BuildAcceptance{
+	response := api.BuildAcceptance{
 		Build: api.Build{
 			Id: acceptance.Build.ID, ProjectId: acceptance.Build.ProjectID,
 			ApplicationId: acceptance.Build.ApplicationID,
@@ -71,6 +116,20 @@ func buildAcceptanceResponse(acceptance builddomain.Acceptance) api.BuildAccepta
 			CreatedBy: acceptance.Build.CreatedBy, CreatedAt: acceptance.Build.CreatedAt,
 		},
 		BuildOperation: buildOperationResponse(acceptance.BuildOperation),
+	}
+	if acceptance.ImageArtifact != nil {
+		artifact := imageArtifactResponse(*acceptance.ImageArtifact)
+		response.ImageArtifact = &artifact
+	}
+	return response
+}
+
+func imageArtifactResponse(artifact builddomain.ImageArtifact) api.ImageArtifact {
+	return api.ImageArtifact{
+		Id: artifact.ID, BuildId: artifact.BuildID, ProjectId: artifact.ProjectID,
+		ApplicationId: artifact.ApplicationID, Repository: artifact.Repository, Digest: artifact.Digest,
+		ImageReference: artifact.ImageReference, Platform: artifact.Platform,
+		CreatedBy: artifact.CreatedBy, CreatedAt: artifact.CreatedAt,
 	}
 }
 

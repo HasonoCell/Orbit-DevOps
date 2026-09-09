@@ -32,6 +32,19 @@ type buildOperationDocument struct {
 type buildAcceptanceDocument struct {
 	Build          buildDocument          `json:"build"`
 	BuildOperation buildOperationDocument `json:"buildOperation"`
+	ImageArtifact  *imageArtifactDocument `json:"imageArtifact"`
+}
+
+type imageArtifactDocument struct {
+	ID             string    `json:"id"`
+	BuildID        string    `json:"buildId"`
+	ProjectID      string    `json:"projectId"`
+	ApplicationID  string    `json:"applicationId"`
+	Repository     string    `json:"repository"`
+	Digest         string    `json:"digest"`
+	ImageReference string    `json:"imageReference"`
+	Platform       string    `json:"platform"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
 // 创建 Build 必须在一次受理中同时留下不可变输入和可恢复的待执行工作。

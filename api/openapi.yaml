@@ -348,6 +348,54 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
   /api/v1/applications/{applicationId}/builds:
+    get:
+      operationId: listBuildHistory
+      summary: 游标分页查询应用构建历史
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+      responses:
+        "200":
+          description: 按创建时间和标识倒序排列的构建历史
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildHistoryPage"
+        "400":
+          description: 分页游标无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Application 不存在或当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       operationId: createBuild
       summary: 从不可变 Git Commit 创建源码构建
@@ -641,6 +689,36 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           description: BuildAttempt 不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/image-artifacts/{imageArtifactId}:
+    get:
+      operationId: getImageArtifact
+      summary: 查询不可变镜像制品及其 Build 来源
+      parameters:
+        - name: imageArtifactId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ImageArtifact 详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageArtifact"
+        "404":
+          description: ImageArtifact 不存在或当前操作者不是项目成员
           content:
             application/json:
               schema:
@@ -1731,6 +1809,61 @@ components:
           $ref: "#/components/schemas/Build"
         buildOperation:
           $ref: "#/components/schemas/BuildOperation"
+        imageArtifact:
+          $ref: "#/components/schemas/ImageArtifact"
+    BuildHistoryPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuildAcceptance"
+        nextCursor:
+          type: string
+    ImageArtifact:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - buildId
+        - projectId
+        - applicationId
+        - repository
+        - digest
+        - imageReference
+        - platform
+        - createdBy
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        buildId:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        repository:
+          type: string
+        digest:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        imageReference:
+          type: string
+        platform:
+          type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     CreateReleaseRequest:
       type: object
       additionalProperties: false
@@ -1743,6 +1876,10 @@ components:
           maxLength: 512
           pattern: "^[^[:space:]@]+@sha256:[a-f0-9]{64}$"
           description: 包含 sha256 Digest 的不可变 OCI 镜像引用。
+        imageArtifactId:
+          type: string
+          format: uuid
+          description: 可选的 OrbitOps ImageArtifact；服务端会核验其项目、应用和镜像引用。
     ReleaseTargetSnapshot:
       type: object
       additionalProperties: false
@@ -1792,6 +1929,9 @@ components:
           format: uuid
         imageReference:
           type: string
+        imageArtifactId:
+          type: string
+          format: uuid
         targetSnapshot:
           $ref: "#/components/schemas/ReleaseTargetSnapshot"
         rollbackOfReleaseId:

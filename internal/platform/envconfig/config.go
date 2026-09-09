@@ -70,6 +70,8 @@ type BuildWorker struct {
 	BuildkitImage           string
 	RegistrySecretName      string
 	RegistryInsecure        bool
+	DockerHubMirror         string
+	DockerHubMirrorInsecure bool
 	JobTTL                  time.Duration
 	CPU                     string
 	Memory                  string
@@ -147,7 +149,7 @@ func LoadAPI() (API, error) {
 		SourceBuild: SourceBuild{
 			AllowedGitHosts: commaSeparated("ORBITOPS_BUILD_GIT_ALLOWED_HOSTS", []string{"github.com", "gitea.com"}),
 			Platform:        value("ORBITOPS_BUILD_PLATFORM", "linux/amd64"),
-			RegistryHost:    value("ORBITOPS_BUILD_REGISTRY_HOST", "127.0.0.1:5001"),
+			RegistryHost:    value("ORBITOPS_BUILD_REGISTRY_HOST", "orbitops-s4-registry.orbitops-s4-build.svc.cluster.local:5000"),
 			RegistryPrefix:  value("ORBITOPS_BUILD_REGISTRY_PREFIX", "orbitops"),
 		},
 	}, nil
@@ -238,6 +240,10 @@ func LoadBuildWorker() (BuildWorker, error) {
 	if err != nil {
 		return BuildWorker{}, err
 	}
+	dockerHubMirrorInsecure, err := boolean("ORBITOPS_BUILD_DOCKERHUB_MIRROR_INSECURE", false)
+	if err != nil {
+		return BuildWorker{}, err
+	}
 	hostname, err := os.Hostname()
 	if err != nil {
 		return BuildWorker{}, fmt.Errorf("read hostname: %w", err)
@@ -251,6 +257,7 @@ func LoadBuildWorker() (BuildWorker, error) {
 		GitImage:           value("ORBITOPS_BUILD_GIT_IMAGE", "alpine/git:v2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26"),
 		BuildkitImage:      value("ORBITOPS_BUILDKIT_IMAGE", "moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef"),
 		RegistrySecretName: os.Getenv("ORBITOPS_BUILD_REGISTRY_SECRET"), RegistryInsecure: registryInsecure, JobTTL: jobTTL,
+		DockerHubMirror: os.Getenv("ORBITOPS_BUILD_DOCKERHUB_MIRROR"), DockerHubMirrorInsecure: dockerHubMirrorInsecure,
 		CPU: value("ORBITOPS_BUILD_CPU", "1"), Memory: value("ORBITOPS_BUILD_MEMORY", "1Gi"), BuildQueue: queue,
 	}
 	for name, image := range map[string]string{"ORBITOPS_BUILD_GIT_IMAGE": config.GitImage, "ORBITOPS_BUILDKIT_IMAGE": config.BuildkitImage} {

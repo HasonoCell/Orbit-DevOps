@@ -89,7 +89,8 @@ func TestBuildJobConfiguresExplicitInsecureRegistryWithoutExposingCredentials(t 
 		Namespace: "orbitops-build", FieldManager: "orbitops-build-worker",
 		GitImage:         "alpine/git:v2.49.1@sha256:" + strings.Repeat("a", 64),
 		BuildkitImage:    "moby/buildkit:v0.33.0-rootless@sha256:" + strings.Repeat("b", 64),
-		RegistryInsecure: true, ActiveDeadline: 20 * time.Minute,
+		RegistryInsecure: true, DockerHubMirror: "registry.local:5000",
+		DockerHubMirrorInsecure: true, ActiveDeadline: 20 * time.Minute,
 		TTL: time.Hour, CPU: "1", Memory: "1Gi",
 	})
 	if err != nil {
@@ -105,6 +106,10 @@ func TestBuildJobConfiguresExplicitInsecureRegistryWithoutExposingCredentials(t 
 	container := job.Spec.Template.Spec.Containers[0]
 	if !strings.Contains(container.Args[0], `http = true`) || !strings.Contains(container.Args[0], `insecure = true`) {
 		t.Fatalf("insecure registry configuration is absent: %s", container.Args[0])
+	}
+	if !strings.Contains(container.Args[0], `[registry."docker.io"]`) ||
+		!hasEnvironment(container.Env, "DOCKERHUB_MIRROR", "registry.local:5000") {
+		t.Fatalf("Docker Hub mirror configuration is absent: %s / %#v", container.Args[0], container.Env)
 	}
 	for _, environment := range container.Env {
 		if strings.Contains(strings.ToLower(environment.Name), "password") || strings.Contains(strings.ToLower(environment.Name), "token") {

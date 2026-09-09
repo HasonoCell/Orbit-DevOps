@@ -12,6 +12,7 @@ registry_image="registry@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92
 registry_service="${registry_name}.${build_namespace}.svc.cluster.local:5000"
 git_image="alpine/git:v2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26"
 buildkit_image="moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef"
+nginx_image="nginx:mainline-alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3"
 
 for command_name in docker kind kubectl rg; do
   if ! command -v "${command_name}" >/dev/null 2>&1; then
@@ -52,6 +53,16 @@ fi
 # 由宿主 Docker 拉取并只导入本机架构，避免 Kind 节点重复访问公共 Registry。
 docker pull "${git_image}" >/dev/null
 docker pull "${buildkit_image}" >/dev/null
+# 固定基础镜像预置到任务 Registry，BuildKit 通过服务端 Mirror 配置读取，避免验收依赖 Docker Hub 实时可用性。
+kind_node="$(kind get nodes --name "${cluster_name}" | head -n 1)"
+case "$(docker exec "${kind_node}" uname -m)" in
+  aarch64) kind_architecture="arm64" ;;
+  x86_64) kind_architecture="amd64" ;;
+  *) echo "无法识别 Kind 节点架构" >&2; exit 1 ;;
+esac
+docker pull --platform "linux/${kind_architecture}" "${nginx_image}" >/dev/null
+docker tag "${nginx_image}" 127.0.0.1:5001/library/nginx:mainline-alpine
+docker push 127.0.0.1:5001/library/nginx:mainline-alpine >/dev/null
 docker tag "${git_image}" orbitops-local/alpine-git:s4
 docker tag "${buildkit_image}" orbitops-local/buildkit:s4
 build_image_directory="$(mktemp -d)"
@@ -164,4 +175,4 @@ roleRef:
 YAML
 
 echo "Kind 已就绪：context=${context_name} namespace=${namespace} build_namespace=${build_namespace} registry=${registry_service}"
-echo "真实构建验收：ORBITOPS_KIND_BUILD_REGISTRY=${registry_service} ORBITOPS_KIND_BUILD_REGISTRY_API=http://127.0.0.1:5001"
+echo "真实构建验收：ORBITOPS_KIND_BUILD_PLATFORM=linux/${kind_architecture} ORBITOPS_KIND_BUILD_REGISTRY=${registry_service} ORBITOPS_KIND_BUILD_REGISTRY_API=http://127.0.0.1:5001"

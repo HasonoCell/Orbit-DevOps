@@ -317,11 +317,15 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 	}
 
 	runtime, err := app.NewWithDependencies(ctx, app.Config{
-		DatabaseURL:     databaseURL,
-		LocalActorID:    "kind-developer",
-		LocalClusterRef: kindCluster,
-		LocalNamespace:  kindNamespace,
-		MigrateOnBoot:   true,
+		DatabaseURL:          databaseURL,
+		LocalActorID:         "kind-developer",
+		LocalClusterRef:      kindCluster,
+		LocalNamespace:       kindNamespace,
+		BuildAllowedGitHosts: []string{"github.com"},
+		BuildPlatform:        environmentOrDefault("ORBITOPS_KIND_BUILD_PLATFORM", "linux/amd64"),
+		BuildRegistryHost:    environmentOrDefault("ORBITOPS_KIND_BUILD_REGISTRY", "orbitops-s4-registry.orbitops-s4-build.svc.cluster.local:5000"),
+		BuildRegistryPrefix:  "orbitops",
+		MigrateOnBoot:        true,
 	}, app.Dependencies{
 		RuntimeSource:     adapter,
 		RecoveryPublisher: adapter,

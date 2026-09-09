@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // 队列运输可以重复，但只有成功取得数据库业务执行权才产生 BuildAttempt。
@@ -131,11 +133,44 @@ func TestBuildQueueDeliversAcceptedBuild(t *testing.T) {
 			if current.AttemptCount != 1 || len(current.Attempts) != 1 {
 				t.Fatalf("attempts after queue delivery = %#v", current.Attempts)
 			}
+			if err := service.Ready(ctx); err != nil {
+				t.Fatalf("build queue readiness = %v", err)
+			}
+			registry := prometheus.NewPedanticRegistry()
+			registry.MustRegister(service)
+			families, err := registry.Gather()
+			if err != nil {
+				t.Fatalf("gather build queue metrics: %v", err)
+			}
+			metrics := metricFamilyValues(families)
+			if metrics["orbitops_build_running"] != 1 ||
+				metrics["orbitops_build_dispatch_received_total"] < 1 ||
+				metrics["orbitops_build_dispatch_reservations"] < 1 {
+				t.Fatalf("build queue metrics = %#v", metrics)
+			}
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("build queue did not deliver accepted build")
+}
+
+// metricFamilyValues 将本测试使用的无标签单值指标展开为便于断言的映射。
+func metricFamilyValues(families []*dto.MetricFamily) map[string]float64 {
+	values := make(map[string]float64, len(families))
+	for _, family := range families {
+		if len(family.Metric) != 1 {
+			continue
+		}
+		metric := family.Metric[0]
+		switch family.GetType() {
+		case dto.MetricType_COUNTER:
+			values[family.GetName()] = metric.GetCounter().GetValue()
+		case dto.MetricType_GAUGE:
+			values[family.GetName()] = metric.GetGauge().GetValue()
+		}
+	}
+	return values
 }
 
 type buildClaimExecutor struct{ operations *buildoperation.Module }

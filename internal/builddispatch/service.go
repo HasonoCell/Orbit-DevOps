@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
@@ -42,15 +43,24 @@ type Config struct {
 }
 
 type Service struct {
-	config     Config
-	operations *buildoperation.Module
-	executor   Executor
-	connection *redisclient.Client
-	client     *asynq.Client
-	redis      asynq.RedisClientOpt
-	workersMu  sync.Mutex
-	workers    sync.WaitGroup
-	closing    bool
+	config          Config
+	operations      *buildoperation.Module
+	executor        Executor
+	connection      *redisclient.Client
+	client          *asynq.Client
+	redis           asynq.RedisClientOpt
+	started         atomic.Bool
+	running         atomic.Bool
+	lastPublish     atomic.Int64
+	lastRepair      atomic.Int64
+	sendErrors      atomic.Uint64
+	received        atomic.Uint64
+	ignored         atomic.Uint64
+	invalid         atomic.Uint64
+	executionErrors atomic.Uint64
+	workersMu       sync.Mutex
+	workers         sync.WaitGroup
+	closing         bool
 }
 
 func New(config Config, operations *buildoperation.Module, executor Executor) (*Service, error) {
@@ -104,6 +114,9 @@ func (s *Service) PublishOnce(ctx context.Context) error {
 	for err := range errorsByItem {
 		result = errors.Join(result, err)
 	}
+	if result == nil {
+		s.lastPublish.Store(time.Now().UnixNano())
+	}
 	return result
 }
 
@@ -119,6 +132,7 @@ func (s *Service) publish(ctx context.Context, item buildoperation.Dispatch) err
 	code := ""
 	if sendErr != nil {
 		code = "queue_unavailable"
+		s.sendErrors.Add(1)
 	} else if s.config.AfterEnqueue != nil {
 		s.config.AfterEnqueue(item)
 	}
@@ -133,6 +147,9 @@ func (s *Service) publish(ctx context.Context, item buildoperation.Dispatch) err
 
 // Run 同时运行投递、消费和过期 Lease 修复；进程退出不等于用户取消 Build。
 func (s *Service) Run(ctx context.Context) error {
+	if !s.started.CompareAndSwap(false, true) {
+		return errors.New("build dispatch service already started")
+	}
 	defer s.Close()
 	workerContext, cancelWorkers := context.WithCancel(context.Background())
 	defer cancelWorkers()
@@ -148,6 +165,7 @@ func (s *Service) Run(ctx context.Context) error {
 	if err := server.Start(asynq.HandlerFunc(s.handle)); err != nil {
 		return errors.New("build_queue_start_failed")
 	}
+	s.running.Store(true)
 	var loops sync.WaitGroup
 	loops.Add(2)
 	go func() { defer loops.Done(); s.loop(ctx, s.config.PollInterval, s.PublishOnce) }()
@@ -155,10 +173,14 @@ func (s *Service) Run(ctx context.Context) error {
 		defer loops.Done()
 		s.loop(ctx, s.config.RepairInterval, func(cycle context.Context) error {
 			_, err := s.operations.RepairDispatches(cycle, 100)
+			if err == nil {
+				s.lastRepair.Store(time.Now().UnixNano())
+			}
 			return err
 		})
 	}()
 	<-ctx.Done()
+	s.running.Store(false)
 	server.Stop()
 	loops.Wait()
 	server.Shutdown()
@@ -202,6 +224,7 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	defer s.workers.Done()
 	defer func() {
 		if recover() != nil {
+			s.executionErrors.Add(1)
 			result = errors.New("build_dispatch_handler_interrupted")
 		}
 	}()
@@ -210,10 +233,17 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	decoder.DisallowUnknownFields()
 	if task.Type() != TaskType || len(task.Payload()) > 1024 || decoder.Decode(&ref) != nil || decoder.Decode(new(any)) != io.EOF ||
 		ref.ProtocolVersion != 1 || ref.Sequence <= 0 || ref.BuildOperationID == uuid.Nil || ref.DispatchID == uuid.Nil {
+		s.invalid.Add(1)
 		return asynq.SkipRetry
 	}
-	if _, err := s.executor.RunDispatch(ctx, ref); err != nil {
+	s.received.Add(1)
+	outcome, err := s.executor.RunDispatch(ctx, ref)
+	if err != nil {
+		s.executionErrors.Add(1)
 		return errors.New("build_dispatch_execution_interrupted")
+	}
+	if outcome == buildoperation.ClaimOutcomeIgnored {
+		s.ignored.Add(1)
 	}
 	return nil
 }

@@ -20,6 +20,9 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -57,8 +60,9 @@ func run(logger *slog.Logger) error {
 	adapter, err := buildkube.NewVerifiedLocalAdapter(ctx, config.KubeconfigPath, config.KubernetesContext, buildkube.Config{
 		Namespace: config.Namespace, FieldManager: config.FieldManager, GitImage: config.GitImage,
 		BuildkitImage: config.BuildkitImage, RegistrySecretName: config.RegistrySecretName,
-		RegistryInsecure: config.RegistryInsecure,
-		ActiveDeadline:   config.BuildOperationTimeout, TTL: config.JobTTL, CPU: config.CPU,
+		RegistryInsecure: config.RegistryInsecure, DockerHubMirror: config.DockerHubMirror,
+		DockerHubMirrorInsecure: config.DockerHubMirrorInsecure,
+		ActiveDeadline:          config.BuildOperationTimeout, TTL: config.JobTTL, CPU: config.CPU,
 		Memory: config.Memory, PollInterval: config.PollInterval,
 	})
 	if err != nil {
@@ -84,6 +88,10 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	mux := http.NewServeMux()
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}), queue)
+	mux.Handle("/readyz", queue.ReadinessHandler())
+	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", func(response http.ResponseWriter, request *http.Request) {
 		checkContext, cancel := context.WithTimeout(request.Context(), time.Second)
 		defer cancel()

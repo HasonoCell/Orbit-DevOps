@@ -21,6 +21,8 @@ import (
 var (
 	ErrDeploymentTargetNotFound = errors.New("deployment target not found")
 	ErrInvalidImageReference    = errors.New("image reference must contain an OCI digest")
+	ErrImageArtifactNotFound    = errors.New("image artifact not found")
+	ErrImageArtifactMismatch    = errors.New("image artifact does not match release target or image reference")
 	ErrReleaseNotFound          = errors.New("release not found")
 	ErrInvalidCursor            = errors.New("invalid release history cursor")
 )
@@ -64,6 +66,7 @@ type Release struct {
 	ID                  uuid.UUID      `db:"id"`
 	DeploymentTargetID  uuid.UUID      `db:"deployment_target_id"`
 	ImageReference      string         `db:"image_reference"`
+	ImageArtifactID     *uuid.UUID     `db:"image_artifact_id"`
 	TargetSnapshot      TargetSnapshot `db:"target_snapshot"`
 	RollbackOfReleaseID *uuid.UUID     `db:"rollback_of_release_id"`
 	CreatedBy           string         `db:"created_by"`
@@ -78,6 +81,7 @@ type Acceptance struct {
 type CreateReleaseCommand struct {
 	DeploymentTargetID uuid.UUID
 	ImageReference     string
+	ImageArtifactID    *uuid.UUID
 	ActorID            string
 	IdempotencyKey     string
 	TraceParent        string
@@ -119,11 +123,13 @@ func (m *Module) CreateRelease(
 	}
 
 	requestHash, err := idempotency.Fingerprint(struct {
-		DeploymentTargetID uuid.UUID `json:"deploymentTargetId"`
-		ImageReference     string    `json:"imageReference"`
+		DeploymentTargetID uuid.UUID  `json:"deploymentTargetId"`
+		ImageReference     string     `json:"imageReference"`
+		ImageArtifactID    *uuid.UUID `json:"imageArtifactId,omitempty"`
 	}{
 		DeploymentTargetID: command.DeploymentTargetID,
 		ImageReference:     command.ImageReference,
+		ImageArtifactID:    command.ImageArtifactID,
 	})
 	if err != nil {
 		return Acceptance{}, fmt.Errorf("fingerprint create release: %w", err)
@@ -164,12 +170,34 @@ func (m *Module) CreateRelease(
 	); err != nil {
 		return Acceptance{}, err
 	}
+	if command.ImageArtifactID != nil {
+		var artifact struct {
+			ProjectID      uuid.UUID `db:"project_id"`
+			ApplicationID  uuid.UUID `db:"application_id"`
+			ImageReference string    `db:"image_reference"`
+		}
+		if err := tx.GetContext(ctx, &artifact, `SELECT project_id, application_id, image_reference
+		 FROM image_artifacts WHERE id = $1`, *command.ImageArtifactID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return Acceptance{}, ErrImageArtifactNotFound
+			}
+			return Acceptance{}, fmt.Errorf("load release image artifact: %w", err)
+		}
+		// 跨 Project/Application 的制品对当前调用者等价于不存在，避免泄露其他应用的制品标识。
+		if artifact.ProjectID != target.ProjectID || artifact.ApplicationID != target.ApplicationID {
+			return Acceptance{}, ErrImageArtifactNotFound
+		}
+		if artifact.ImageReference != command.ImageReference {
+			return Acceptance{}, ErrImageArtifactMismatch
+		}
+	}
 
 	createdAt := time.Now().UTC()
 	release := Release{
 		ID:                 uuid.New(),
 		DeploymentTargetID: command.DeploymentTargetID,
 		ImageReference:     command.ImageReference,
+		ImageArtifactID:    command.ImageArtifactID,
 		TargetSnapshot: TargetSnapshot{
 			ProjectID:     target.ProjectID,
 			ApplicationID: target.ApplicationID,
@@ -204,12 +232,13 @@ func (m *Module) CreateRelease(
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO releases
-		 (id, deployment_target_id, image_reference, target_snapshot,
+		 (id, deployment_target_id, image_reference, image_artifact_id, target_snapshot,
 		  rollback_of_release_id, created_by, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		release.ID,
 		release.DeploymentTargetID,
 		release.ImageReference,
+		release.ImageArtifactID,
 		release.TargetSnapshot,
 		release.RollbackOfReleaseID,
 		release.CreatedBy,
@@ -341,5 +370,5 @@ func validateImageReference(imageReference string) error {
 }
 
 const releaseSelect = `SELECT id, deployment_target_id, image_reference, target_snapshot,
-       rollback_of_release_id, created_by, created_at
+       image_artifact_id, rollback_of_release_id, created_by, created_at
  FROM releases`

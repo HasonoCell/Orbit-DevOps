@@ -83,7 +83,7 @@ func (m *Module) ListHistory(ctx context.Context, query ListHistoryQuery) (Histo
 
 	rows := make([]historyRow, 0, query.Limit+1)
 	const selection = `SELECT r.id, r.deployment_target_id, r.image_reference,
-	       r.target_snapshot, r.rollback_of_release_id, r.created_by, r.created_at,
+	       r.image_artifact_id, r.target_snapshot, r.rollback_of_release_id, r.created_by, r.created_at,
 	       o.id AS operation_id, o.status AS operation_status,
 	       o.attempt_count AS operation_attempt_count,
 	       o.error_code AS operation_error_code,

@@ -85,6 +85,7 @@ type releaseDocument struct {
 	ID                  string                `json:"id"`
 	DeploymentTargetID  string                `json:"deploymentTargetId"`
 	ImageReference      string                `json:"imageReference"`
+	ImageArtifactID     *string               `json:"imageArtifactId"`
 	TargetSnapshot      releaseTargetSnapshot `json:"targetSnapshot"`
 	RollbackOfReleaseID *string               `json:"rollbackOfReleaseId"`
 	CreatedBy           string                `json:"createdBy"`

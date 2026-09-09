@@ -115,7 +115,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 游标分页查询应用构建历史 */
+        get: operations["listBuildHistory"];
         put?: never;
         /** 从不可变 Git Commit 创建源码构建 */
         post: operations["createBuild"];
@@ -236,6 +237,23 @@ export interface paths {
         };
         /** 查询有界且已脱敏的构建日志摘录 */
         get: operations["getBuildAttemptLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-artifacts/{imageArtifactId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询不可变镜像制品及其 Build 来源 */
+        get: operations["getImageArtifact"];
         put?: never;
         post?: never;
         delete?: never;
@@ -623,10 +641,37 @@ export interface components {
         BuildAcceptance: {
             build: components["schemas"]["Build"];
             buildOperation: components["schemas"]["BuildOperation"];
+            imageArtifact?: components["schemas"]["ImageArtifact"];
+        };
+        BuildHistoryPage: {
+            items: components["schemas"]["BuildAcceptance"][];
+            nextCursor?: string;
+        };
+        ImageArtifact: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            buildId: string;
+            /** Format: uuid */
+            projectId: string;
+            /** Format: uuid */
+            applicationId: string;
+            repository: string;
+            digest: string;
+            imageReference: string;
+            platform: string;
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
         };
         CreateReleaseRequest: {
             /** @description 包含 sha256 Digest 的不可变 OCI 镜像引用。 */
             imageReference: string;
+            /**
+             * Format: uuid
+             * @description 可选的 OrbitOps ImageArtifact；服务端会核验其项目、应用和镜像引用。
+             */
+            imageArtifactId?: string;
         };
         ReleaseTargetSnapshot: {
             /** Format: uuid */
@@ -646,6 +691,8 @@ export interface components {
             /** Format: uuid */
             deploymentTargetId: string;
             imageReference: string;
+            /** Format: uuid */
+            imageArtifactId?: string;
             targetSnapshot: components["schemas"]["ReleaseTargetSnapshot"];
             /** Format: uuid */
             rollbackOfReleaseId?: string;
@@ -1367,6 +1414,58 @@ export interface operations {
             };
         };
     };
+    listBuildHistory: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                applicationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 按创建时间和标识倒序排列的构建历史 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildHistoryPage"];
+                };
+            };
+            /** @description 分页游标无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Application 不存在或当前操作者不是项目成员 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     createBuild: {
         parameters: {
             query?: never;
@@ -1799,6 +1898,46 @@ export interface operations {
                 };
             };
             /** @description BuildAttempt 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getImageArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                imageArtifactId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ImageArtifact 详情 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageArtifact"];
+                };
+            };
+            /** @description ImageArtifact 不存在或当前操作者不是项目成员 */
             404: {
                 headers: {
                     [name: string]: unknown;

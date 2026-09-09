@@ -32,17 +32,19 @@ const (
 var pinnedImagePattern = regexp.MustCompile(`@sha256:[a-f0-9]{64}$`)
 
 type Config struct {
-	Namespace          string
-	FieldManager       string
-	GitImage           string
-	BuildkitImage      string
-	RegistrySecretName string
-	RegistryInsecure   bool
-	ActiveDeadline     time.Duration
-	TTL                time.Duration
-	CPU                string
-	Memory             string
-	PollInterval       time.Duration
+	Namespace               string
+	FieldManager            string
+	GitImage                string
+	BuildkitImage           string
+	RegistrySecretName      string
+	RegistryInsecure        bool
+	DockerHubMirror         string
+	DockerHubMirrorInsecure bool
+	ActiveDeadline          time.Duration
+	TTL                     time.Duration
+	CPU                     string
+	Memory                  string
+	PollInterval            time.Duration
 }
 
 type Adapter struct {
@@ -119,6 +121,8 @@ func (a *Adapter) RenderJob(execution buildworker.BuildExecution) *batchv1.Job {
 			{Name: "DESTINATION_REPOSITORY", Value: execution.DestinationRepository},
 			{Name: "REGISTRY_HOST", Value: strings.SplitN(execution.DestinationRepository, "/", 2)[0]},
 			{Name: "REGISTRY_INSECURE", Value: boolString(a.config.RegistryInsecure)},
+			{Name: "DOCKERHUB_MIRROR", Value: strings.TrimSpace(a.config.DockerHubMirror)},
+			{Name: "DOCKERHUB_MIRROR_INSECURE", Value: boolString(a.config.DockerHubMirrorInsecure)},
 		},
 		SecurityContext: &corev1.SecurityContext{RunAsUser: &runAsUser, RunAsGroup: &runAsGroup,
 			RunAsNonRoot: &runAsNonRoot, Privileged: &privileged, AllowPrivilegeEscalation: &allowEscalation,
@@ -191,6 +195,13 @@ const buildScript = `set -eu
 if [ "${REGISTRY_INSECURE}" = "true" ]; then
   mkdir -p "${HOME}/.config/buildkit"
   printf '[registry."%s"]\n  http = true\n  insecure = true\n' "${REGISTRY_HOST}" > "${HOME}/.config/buildkit/buildkitd.toml"
+fi
+if [ -n "${DOCKERHUB_MIRROR}" ]; then
+  mkdir -p "${HOME}/.config/buildkit"
+  printf '[registry."docker.io"]\n  mirrors = ["%s"]\n' "${DOCKERHUB_MIRROR}" >> "${HOME}/.config/buildkit/buildkitd.toml"
+  if [ "${DOCKERHUB_MIRROR_INSECURE}" = "true" ] && { [ "${DOCKERHUB_MIRROR}" != "${REGISTRY_HOST}" ] || [ "${REGISTRY_INSECURE}" != "true" ]; }; then
+    printf '[registry."%s"]\n  http = true\n  insecure = true\n' "${DOCKERHUB_MIRROR}" >> "${HOME}/.config/buildkit/buildkitd.toml"
+  fi
 fi
 metadata="$(mktemp)"
 build_log="$(mktemp)"

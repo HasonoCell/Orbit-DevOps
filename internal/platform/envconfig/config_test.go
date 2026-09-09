@@ -96,7 +96,8 @@ func TestReleaseWorkerDoesNotReadLegacyEnvironmentNames(t *testing.T) {
 
 func TestBuildWorkerDefaultsUseIndependentQueueAndPinnedImages(t *testing.T) {
 	for _, name := range []string{"ORBITOPS_BUILD_QUEUE_NAME", "ORBITOPS_BUILD_GIT_IMAGE", "ORBITOPS_BUILDKIT_IMAGE",
-		"ORBITOPS_BUILD_OPERATION_TIMEOUT", "ORBITOPS_BUILD_QUEUE_TASK_TIMEOUT", "ORBITOPS_BUILD_NAMESPACE"} {
+		"ORBITOPS_BUILD_OPERATION_TIMEOUT", "ORBITOPS_BUILD_QUEUE_TASK_TIMEOUT", "ORBITOPS_BUILD_NAMESPACE",
+		"ORBITOPS_BUILD_DOCKERHUB_MIRROR", "ORBITOPS_BUILD_DOCKERHUB_MIRROR_INSECURE"} {
 		t.Setenv(name, "")
 	}
 	config, err := envconfig.LoadBuildWorker()

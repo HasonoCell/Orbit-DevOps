@@ -64,6 +64,7 @@ func (m *Module) Rollback(ctx context.Context, command RollbackCommand) (Accepta
 		ID:                  uuid.New(),
 		DeploymentTargetID:  source.DeploymentTargetID,
 		ImageReference:      source.ImageReference,
+		ImageArtifactID:     source.ImageArtifactID,
 		TargetSnapshot:      source.TargetSnapshot,
 		RollbackOfReleaseID: &rollbackOf,
 		CreatedBy:           command.ActorID,
@@ -89,12 +90,13 @@ func (m *Module) Rollback(ctx context.Context, command RollbackCommand) (Accepta
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO releases
-		 (id, deployment_target_id, image_reference, target_snapshot,
+		 (id, deployment_target_id, image_reference, image_artifact_id, target_snapshot,
 		  rollback_of_release_id, created_by, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		release.ID,
 		release.DeploymentTargetID,
 		release.ImageReference,
+		release.ImageArtifactID,
 		release.TargetSnapshot,
 		release.RollbackOfReleaseID,
 		release.CreatedBy,
