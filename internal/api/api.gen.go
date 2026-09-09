@@ -40,6 +40,54 @@ func (e AuditRecordActorKind) Valid() bool {
 	}
 }
 
+// Defines values for BuildAttemptRetryDisposition.
+const (
+	BuildAttemptRetryDispositionNonRetryable   BuildAttemptRetryDisposition = "non_retryable"
+	BuildAttemptRetryDispositionRetryable      BuildAttemptRetryDisposition = "retryable"
+	BuildAttemptRetryDispositionUnknownOutcome BuildAttemptRetryDisposition = "unknown_outcome"
+)
+
+// Valid indicates whether the value is a known member of the BuildAttemptRetryDisposition enum.
+func (e BuildAttemptRetryDisposition) Valid() bool {
+	switch e {
+	case BuildAttemptRetryDispositionNonRetryable:
+		return true
+	case BuildAttemptRetryDispositionRetryable:
+		return true
+	case BuildAttemptRetryDispositionUnknownOutcome:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BuildAttemptStatus.
+const (
+	BuildAttemptStatusCanceled       BuildAttemptStatus = "canceled"
+	BuildAttemptStatusFailed         BuildAttemptStatus = "failed"
+	BuildAttemptStatusOutcomeUnknown BuildAttemptStatus = "outcome_unknown"
+	BuildAttemptStatusRunning        BuildAttemptStatus = "running"
+	BuildAttemptStatusSucceeded      BuildAttemptStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the BuildAttemptStatus enum.
+func (e BuildAttemptStatus) Valid() bool {
+	switch e {
+	case BuildAttemptStatusCanceled:
+		return true
+	case BuildAttemptStatusFailed:
+		return true
+	case BuildAttemptStatusOutcomeUnknown:
+		return true
+	case BuildAttemptStatusRunning:
+		return true
+	case BuildAttemptStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BuildOperationRetryDisposition.
 const (
 	BuildOperationRetryDispositionNonRetryable   BuildOperationRetryDisposition = "non_retryable"
@@ -518,9 +566,34 @@ type BuildAcceptance struct {
 	BuildOperation BuildOperation `json:"buildOperation"`
 }
 
+// BuildAttempt defines model for BuildAttempt.
+type BuildAttempt struct {
+	ErrorCode              *string                       `json:"errorCode,omitempty"`
+	ErrorSummary           *string                       `json:"errorSummary,omitempty"`
+	ExecutorName           *string                       `json:"executorName,omitempty"`
+	ExecutorUid            *string                       `json:"executorUid,omitempty"`
+	FinishedAt             *time.Time                    `json:"finishedAt,omitempty"`
+	Id                     openapi_types.UUID            `json:"id"`
+	LogExcerpt             string                        `json:"logExcerpt"`
+	LogTruncated           bool                          `json:"logTruncated"`
+	Number                 int                           `json:"number"`
+	RecoveredFromAttemptId *openapi_types.UUID           `json:"recoveredFromAttemptId,omitempty"`
+	RetryDisposition       *BuildAttemptRetryDisposition `json:"retryDisposition,omitempty"`
+	StartedAt              time.Time                     `json:"startedAt"`
+	Status                 BuildAttemptStatus            `json:"status"`
+	WorkerId               string                        `json:"workerId"`
+}
+
+// BuildAttemptRetryDisposition defines model for BuildAttempt.RetryDisposition.
+type BuildAttemptRetryDisposition string
+
+// BuildAttemptStatus defines model for BuildAttempt.Status.
+type BuildAttemptStatus string
+
 // BuildOperation defines model for BuildOperation.
 type BuildOperation struct {
 	AttemptCount        int                             `json:"attemptCount"`
+	Attempts            []BuildAttempt                  `json:"attempts"`
 	AutomaticRetryCount int                             `json:"automaticRetryCount"`
 	AvailableAt         time.Time                       `json:"availableAt"`
 	BuildId             openapi_types.UUID              `json:"buildId"`
@@ -722,6 +795,11 @@ type Error struct {
 type EventObservation struct {
 	Items    []DiagnosticEvent   `json:"items"`
 	Metadata ObservationMetadata `json:"metadata"`
+}
+
+// ForceFailBuildOperationRequest defines model for ForceFailBuildOperationRequest.
+type ForceFailBuildOperationRequest struct {
+	Reason string `json:"reason"`
 }
 
 // ForceFailReleaseOperationRequest defines model for ForceFailReleaseOperationRequest.
@@ -943,6 +1021,9 @@ type WorkloadObservation struct {
 	Service    *DiagnosticService    `json:"service,omitempty"`
 }
 
+// BuildOperationId defines model for BuildOperationId.
+type BuildOperationId = openapi_types.UUID
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -954,6 +1035,30 @@ type CreateBuildParams struct {
 
 // CreateDeploymentTargetParams defines parameters for CreateDeploymentTarget.
 type CreateDeploymentTargetParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CancelBuildOperationParams defines parameters for CancelBuildOperation.
+type CancelBuildOperationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ForceFailBuildOperationParams defines parameters for ForceFailBuildOperation.
+type ForceFailBuildOperationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ReconcileBuildOperationParams defines parameters for ReconcileBuildOperation.
+type ReconcileBuildOperationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// RetryBuildOperationParams defines parameters for RetryBuildOperation.
+type RetryBuildOperationParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
@@ -1050,6 +1155,9 @@ type CreateBuildJSONRequestBody = CreateBuildRequest
 // CreateDeploymentTargetJSONRequestBody defines body for CreateDeploymentTarget for application/json ContentType.
 type CreateDeploymentTargetJSONRequestBody = CreateDeploymentTargetRequest
 
+// ForceFailBuildOperationJSONRequestBody defines body for ForceFailBuildOperation for application/json ContentType.
+type ForceFailBuildOperationJSONRequestBody = ForceFailBuildOperationRequest
+
 // UpdateDeploymentTargetJSONRequestBody defines body for UpdateDeploymentTarget for application/json ContentType.
 type UpdateDeploymentTargetJSONRequestBody = UpdateDeploymentTargetRequest
 
@@ -1082,6 +1190,21 @@ type ServerInterface interface {
 	// CreateDeploymentTarget 创建部署目标
 	// (POST /api/v1/applications/{applicationId}/deployment-targets)
 	CreateDeploymentTarget(c *gin.Context, applicationId openapi_types.UUID, params CreateDeploymentTargetParams)
+	// GetBuildOperation 查询构建操作和全部执行尝试
+	// (GET /api/v1/build-operations/{buildOperationId})
+	GetBuildOperation(c *gin.Context, buildOperationId BuildOperationId)
+	// CancelBuildOperation 取消排队或运行中的构建操作
+	// (POST /api/v1/build-operations/{buildOperationId}/cancel)
+	CancelBuildOperation(c *gin.Context, buildOperationId BuildOperationId, params CancelBuildOperationParams)
+	// ForceFailBuildOperation 人工结束结果未知的构建操作
+	// (POST /api/v1/build-operations/{buildOperationId}/force-fail)
+	ForceFailBuildOperation(c *gin.Context, buildOperationId BuildOperationId, params ForceFailBuildOperationParams)
+	// ReconcileBuildOperation 重新观察结果未知的构建执行
+	// (POST /api/v1/build-operations/{buildOperationId}/reconcile)
+	ReconcileBuildOperation(c *gin.Context, buildOperationId BuildOperationId, params ReconcileBuildOperationParams)
+	// RetryBuildOperation 重试确定失败的构建操作
+	// (POST /api/v1/build-operations/{buildOperationId}/retry)
+	RetryBuildOperation(c *gin.Context, buildOperationId BuildOperationId, params RetryBuildOperationParams)
 	// GetBuild 查询不可变构建输入和当前构建操作
 	// (GET /api/v1/builds/{buildId})
 	GetBuild(c *gin.Context, buildId openapi_types.UUID)
@@ -1283,6 +1406,239 @@ func (siw *ServerInterfaceWrapper) CreateDeploymentTarget(c *gin.Context) {
 	}
 
 	siw.Handler.CreateDeploymentTarget(c, applicationId, params)
+}
+
+// GetBuildOperation operation middleware
+func (siw *ServerInterfaceWrapper) GetBuildOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "buildOperationId" -------------
+	var buildOperationId BuildOperationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "buildOperationId", c.Param("buildOperationId"), &buildOperationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter buildOperationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetBuildOperation(c, buildOperationId)
+}
+
+// CancelBuildOperation operation middleware
+func (siw *ServerInterfaceWrapper) CancelBuildOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "buildOperationId" -------------
+	var buildOperationId BuildOperationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "buildOperationId", c.Param("buildOperationId"), &buildOperationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter buildOperationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelBuildOperationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelBuildOperation(c, buildOperationId, params)
+}
+
+// ForceFailBuildOperation operation middleware
+func (siw *ServerInterfaceWrapper) ForceFailBuildOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "buildOperationId" -------------
+	var buildOperationId BuildOperationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "buildOperationId", c.Param("buildOperationId"), &buildOperationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter buildOperationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ForceFailBuildOperationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ForceFailBuildOperation(c, buildOperationId, params)
+}
+
+// ReconcileBuildOperation operation middleware
+func (siw *ServerInterfaceWrapper) ReconcileBuildOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "buildOperationId" -------------
+	var buildOperationId BuildOperationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "buildOperationId", c.Param("buildOperationId"), &buildOperationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter buildOperationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReconcileBuildOperationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ReconcileBuildOperation(c, buildOperationId, params)
+}
+
+// RetryBuildOperation operation middleware
+func (siw *ServerInterfaceWrapper) RetryBuildOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "buildOperationId" -------------
+	var buildOperationId BuildOperationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "buildOperationId", c.Param("buildOperationId"), &buildOperationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter buildOperationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RetryBuildOperationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RetryBuildOperation(c, buildOperationId, params)
 }
 
 // GetBuild operation middleware
@@ -2234,6 +2590,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/v1/applications/:applicationId", wrapper.GetApplication)
 	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/builds", wrapper.CreateBuild)
 	router.GET(options.BaseURL+"/api/v1/builds/:buildId", wrapper.GetBuild)
+	router.GET(options.BaseURL+"/api/v1/build-operations/:buildOperationId", wrapper.GetBuildOperation)
+	router.POST(options.BaseURL+"/api/v1/build-operations/:buildOperationId/retry", wrapper.RetryBuildOperation)
+	router.POST(options.BaseURL+"/api/v1/build-operations/:buildOperationId/cancel", wrapper.CancelBuildOperation)
+	router.POST(options.BaseURL+"/api/v1/build-operations/:buildOperationId/reconcile", wrapper.ReconcileBuildOperation)
+	router.POST(options.BaseURL+"/api/v1/build-operations/:buildOperationId/force-fail", wrapper.ForceFailBuildOperation)
 	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/deployment-targets", wrapper.CreateDeploymentTarget)
 	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.GetDeploymentTarget)
 	router.PUT(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.UpdateDeploymentTarget)
@@ -2472,6 +2833,388 @@ type CreateDeploymentTargetdefaultJSONResponse struct {
 }
 
 func (response CreateDeploymentTargetdefaultJSONResponse) VisitCreateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBuildOperationRequestObject struct {
+	BuildOperationId BuildOperationId `json:"buildOperationId"`
+}
+
+type GetBuildOperationResponseObject interface {
+	VisitGetBuildOperationResponse(w http.ResponseWriter) error
+}
+
+type GetBuildOperation200JSONResponse BuildOperation
+
+func (response GetBuildOperation200JSONResponse) VisitGetBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBuildOperation404JSONResponse Error
+
+func (response GetBuildOperation404JSONResponse) VisitGetBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBuildOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetBuildOperationdefaultJSONResponse) VisitGetBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBuildOperationRequestObject struct {
+	BuildOperationId BuildOperationId `json:"buildOperationId"`
+	Params           CancelBuildOperationParams
+}
+
+type CancelBuildOperationResponseObject interface {
+	VisitCancelBuildOperationResponse(w http.ResponseWriter) error
+}
+
+type CancelBuildOperation200JSONResponse BuildOperation
+
+func (response CancelBuildOperation200JSONResponse) VisitCancelBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBuildOperation403JSONResponse Error
+
+func (response CancelBuildOperation403JSONResponse) VisitCancelBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBuildOperation404JSONResponse Error
+
+func (response CancelBuildOperation404JSONResponse) VisitCancelBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBuildOperation409JSONResponse Error
+
+func (response CancelBuildOperation409JSONResponse) VisitCancelBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBuildOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CancelBuildOperationdefaultJSONResponse) VisitCancelBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ForceFailBuildOperationRequestObject struct {
+	BuildOperationId BuildOperationId `json:"buildOperationId"`
+	Params           ForceFailBuildOperationParams
+	Body             *ForceFailBuildOperationJSONRequestBody
+}
+
+type ForceFailBuildOperationResponseObject interface {
+	VisitForceFailBuildOperationResponse(w http.ResponseWriter) error
+}
+
+type ForceFailBuildOperation200JSONResponse BuildOperation
+
+func (response ForceFailBuildOperation200JSONResponse) VisitForceFailBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ForceFailBuildOperation403JSONResponse Error
+
+func (response ForceFailBuildOperation403JSONResponse) VisitForceFailBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ForceFailBuildOperation404JSONResponse Error
+
+func (response ForceFailBuildOperation404JSONResponse) VisitForceFailBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ForceFailBuildOperation409JSONResponse Error
+
+func (response ForceFailBuildOperation409JSONResponse) VisitForceFailBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ForceFailBuildOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ForceFailBuildOperationdefaultJSONResponse) VisitForceFailBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileBuildOperationRequestObject struct {
+	BuildOperationId BuildOperationId `json:"buildOperationId"`
+	Params           ReconcileBuildOperationParams
+}
+
+type ReconcileBuildOperationResponseObject interface {
+	VisitReconcileBuildOperationResponse(w http.ResponseWriter) error
+}
+
+type ReconcileBuildOperation200JSONResponse BuildOperation
+
+func (response ReconcileBuildOperation200JSONResponse) VisitReconcileBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileBuildOperation403JSONResponse Error
+
+func (response ReconcileBuildOperation403JSONResponse) VisitReconcileBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileBuildOperation404JSONResponse Error
+
+func (response ReconcileBuildOperation404JSONResponse) VisitReconcileBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileBuildOperation409JSONResponse Error
+
+func (response ReconcileBuildOperation409JSONResponse) VisitReconcileBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileBuildOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ReconcileBuildOperationdefaultJSONResponse) VisitReconcileBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryBuildOperationRequestObject struct {
+	BuildOperationId BuildOperationId `json:"buildOperationId"`
+	Params           RetryBuildOperationParams
+}
+
+type RetryBuildOperationResponseObject interface {
+	VisitRetryBuildOperationResponse(w http.ResponseWriter) error
+}
+
+type RetryBuildOperation200JSONResponse BuildOperation
+
+func (response RetryBuildOperation200JSONResponse) VisitRetryBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryBuildOperation403JSONResponse Error
+
+func (response RetryBuildOperation403JSONResponse) VisitRetryBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryBuildOperation404JSONResponse Error
+
+func (response RetryBuildOperation404JSONResponse) VisitRetryBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryBuildOperation409JSONResponse Error
+
+func (response RetryBuildOperation409JSONResponse) VisitRetryBuildOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryBuildOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RetryBuildOperationdefaultJSONResponse) VisitRetryBuildOperationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4049,6 +4792,21 @@ type StrictServerInterface interface {
 	// CreateDeploymentTarget 创建部署目标
 	// (POST /api/v1/applications/{applicationId}/deployment-targets)
 	CreateDeploymentTarget(ctx context.Context, request CreateDeploymentTargetRequestObject) (CreateDeploymentTargetResponseObject, error)
+	// GetBuildOperation 查询构建操作和全部执行尝试
+	// (GET /api/v1/build-operations/{buildOperationId})
+	GetBuildOperation(ctx context.Context, request GetBuildOperationRequestObject) (GetBuildOperationResponseObject, error)
+	// CancelBuildOperation 取消排队或运行中的构建操作
+	// (POST /api/v1/build-operations/{buildOperationId}/cancel)
+	CancelBuildOperation(ctx context.Context, request CancelBuildOperationRequestObject) (CancelBuildOperationResponseObject, error)
+	// ForceFailBuildOperation 人工结束结果未知的构建操作
+	// (POST /api/v1/build-operations/{buildOperationId}/force-fail)
+	ForceFailBuildOperation(ctx context.Context, request ForceFailBuildOperationRequestObject) (ForceFailBuildOperationResponseObject, error)
+	// ReconcileBuildOperation 重新观察结果未知的构建执行
+	// (POST /api/v1/build-operations/{buildOperationId}/reconcile)
+	ReconcileBuildOperation(ctx context.Context, request ReconcileBuildOperationRequestObject) (ReconcileBuildOperationResponseObject, error)
+	// RetryBuildOperation 重试确定失败的构建操作
+	// (POST /api/v1/build-operations/{buildOperationId}/retry)
+	RetryBuildOperation(ctx context.Context, request RetryBuildOperationRequestObject) (RetryBuildOperationResponseObject, error)
 	// GetBuild 查询不可变构建输入和当前构建操作
 	// (GET /api/v1/builds/{buildId})
 	GetBuild(ctx context.Context, request GetBuildRequestObject) (GetBuildResponseObject, error)
@@ -4258,6 +5016,147 @@ func (sh *strictHandler) CreateDeploymentTarget(ctx *gin.Context, applicationId 
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(CreateDeploymentTargetResponseObject); ok {
 		if err := validResponse.VisitCreateDeploymentTargetResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetBuildOperation operation middleware
+func (sh *strictHandler) GetBuildOperation(ctx *gin.Context, buildOperationId BuildOperationId) {
+	var request GetBuildOperationRequestObject
+
+	request.BuildOperationId = buildOperationId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetBuildOperation(ctx, request.(GetBuildOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetBuildOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetBuildOperationResponseObject); ok {
+		if err := validResponse.VisitGetBuildOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelBuildOperation operation middleware
+func (sh *strictHandler) CancelBuildOperation(ctx *gin.Context, buildOperationId BuildOperationId, params CancelBuildOperationParams) {
+	var request CancelBuildOperationRequestObject
+
+	request.BuildOperationId = buildOperationId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelBuildOperation(ctx, request.(CancelBuildOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelBuildOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CancelBuildOperationResponseObject); ok {
+		if err := validResponse.VisitCancelBuildOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ForceFailBuildOperation operation middleware
+func (sh *strictHandler) ForceFailBuildOperation(ctx *gin.Context, buildOperationId BuildOperationId, params ForceFailBuildOperationParams) {
+	var request ForceFailBuildOperationRequestObject
+
+	request.BuildOperationId = buildOperationId
+	request.Params = params
+
+	var body ForceFailBuildOperationJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ForceFailBuildOperation(ctx, request.(ForceFailBuildOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ForceFailBuildOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ForceFailBuildOperationResponseObject); ok {
+		if err := validResponse.VisitForceFailBuildOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReconcileBuildOperation operation middleware
+func (sh *strictHandler) ReconcileBuildOperation(ctx *gin.Context, buildOperationId BuildOperationId, params ReconcileBuildOperationParams) {
+	var request ReconcileBuildOperationRequestObject
+
+	request.BuildOperationId = buildOperationId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ReconcileBuildOperation(ctx, request.(ReconcileBuildOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReconcileBuildOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ReconcileBuildOperationResponseObject); ok {
+		if err := validResponse.VisitReconcileBuildOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryBuildOperation operation middleware
+func (sh *strictHandler) RetryBuildOperation(ctx *gin.Context, buildOperationId BuildOperationId, params RetryBuildOperationParams) {
+	var request RetryBuildOperationRequestObject
+
+	request.BuildOperationId = buildOperationId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryBuildOperation(ctx, request.(RetryBuildOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryBuildOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(RetryBuildOperationResponseObject); ok {
+		if err := validResponse.VisitRetryBuildOperationResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -4880,95 +5779,100 @@ func (sh *strictHandler) GetReleaseRuntimeLogs(ctx *gin.Context, releaseId opena
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"jf0zAAD//w==",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

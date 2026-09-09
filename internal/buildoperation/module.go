@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -90,12 +91,62 @@ type CreatePendingCommand struct {
 }
 
 type Module struct {
-	db  *sqlx.DB
-	now func() time.Time
+	db                      *sqlx.DB
+	authorizer              Authorizer
+	now                     func() time.Time
+	maximumAutomaticRetries int
+	retryDelay              func(int) time.Duration
 }
 
-func New(db *sqlx.DB) *Module {
-	return &Module{db: db, now: func() time.Time { return time.Now().UTC() }}
+// Authorizer 把 BuildOperation 用户命令的权限检查保持在状态事务内。
+type Authorizer interface {
+	RequireInTransaction(context.Context, *sqlx.Tx, uuid.UUID, string, projectauth.Permission) error
+}
+
+// Option 配置所有 Build Worker 必须保持一致的重试策略或测试时钟。
+type Option func(*Module)
+
+// WithAuthorizer 启用面向用户的取消、重试和人工收束命令。
+func WithAuthorizer(authorizer Authorizer) Option {
+	return func(module *Module) { module.authorizer = authorizer }
+}
+
+// WithClock 只为确定性测试替换 UTC 时钟。
+func WithClock(now func() time.Time) Option {
+	return func(module *Module) {
+		if now != nil {
+			module.now = now
+		}
+	}
+}
+
+// WithAutomaticRetryPolicy 配置可恢复基础设施失败的业务重试预算与退避。
+func WithAutomaticRetryPolicy(maximum int, delay func(int) time.Duration) Option {
+	return func(module *Module) {
+		if maximum >= 0 {
+			module.maximumAutomaticRetries = maximum
+		}
+		if delay != nil {
+			module.retryDelay = delay
+		}
+	}
+}
+
+func New(db *sqlx.DB, options ...Option) *Module {
+	module := &Module{
+		db: db, now: func() time.Time { return time.Now().UTC() }, maximumAutomaticRetries: 2,
+		retryDelay: func(retryNumber int) time.Duration {
+			delay := time.Second
+			for current := 1; current < retryNumber && delay < 30*time.Second; current++ {
+				delay *= 2
+			}
+			return min(delay, 30*time.Second)
+		},
+	}
+	for _, option := range options {
+		option(module)
+	}
+	return module
 }
 
 // CreatePending 与 Build 受理共用事务，并在该事务中建立第一代可靠调度意图。

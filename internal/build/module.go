@@ -165,12 +165,9 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Acceptance,
 
 // Get 返回一个 Build 及其当前 Operation；权限从冻结的 Project 归属判断。
 func (m *Module) Get(ctx context.Context, id uuid.UUID, actorID string) (Acceptance, error) {
-	var record Record
-	if err := m.db.GetContext(ctx, &record, buildSelect+` WHERE id = $1`, id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Acceptance{}, ErrNotFound
-		}
-		return Acceptance{}, fmt.Errorf("get build: %w", err)
+	record, err := m.GetForExecution(ctx, id)
+	if err != nil {
+		return Acceptance{}, err
 	}
 	if err := m.authorizer.Require(ctx, record.ProjectID, actorID, projectauth.PermissionRead); err != nil {
 		return Acceptance{}, err
@@ -180,6 +177,19 @@ func (m *Module) Get(ctx context.Context, id uuid.UUID, actorID string) (Accepta
 		return Acceptance{}, fmt.Errorf("get build operation: %w", err)
 	}
 	return Acceptance{Build: record, BuildOperation: operation}, nil
+}
+
+// GetForExecution 只供已经通过 BuildDispatch 取得业务 Lease 的 Worker 读取冻结输入。
+// 它不接受用户身份，也不得从 HTTP Adapter 直接调用。
+func (m *Module) GetForExecution(ctx context.Context, id uuid.UUID) (Record, error) {
+	var record Record
+	if err := m.db.GetContext(ctx, &record, buildSelect+` WHERE id = $1`, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Record{}, ErrNotFound
+		}
+		return Record{}, fmt.Errorf("get build for execution: %w", err)
+	}
+	return record, nil
 }
 
 func (m *Module) normalize(command CreateCommand, projectID uuid.UUID) (normalizedInput, error) {

@@ -75,6 +75,22 @@ func buildAcceptanceResponse(acceptance builddomain.Acceptance) api.BuildAccepta
 }
 
 func buildOperationResponse(operation buildoperation.Record) api.BuildOperation {
+	attempts := make([]api.BuildAttempt, 0, len(operation.Attempts))
+	for _, attempt := range operation.Attempts {
+		item := api.BuildAttempt{
+			Id: attempt.ID, Number: attempt.Number, WorkerId: attempt.WorkerID,
+			Status: api.BuildAttemptStatus(attempt.Status), RecoveredFromAttemptId: attempt.RecoveredFromAttemptID,
+			ExecutorName: attempt.ExecutorName, ExecutorUid: attempt.ExecutorUID,
+			ErrorCode: attempt.ErrorCode, ErrorSummary: attempt.ErrorSummary,
+			LogExcerpt: attempt.LogExcerpt, LogTruncated: attempt.LogTruncated,
+			StartedAt: attempt.StartedAt, FinishedAt: attempt.FinishedAt,
+		}
+		if attempt.RetryDisposition != nil {
+			value := api.BuildAttemptRetryDisposition(*attempt.RetryDisposition)
+			item.RetryDisposition = &value
+		}
+		attempts = append(attempts, item)
+	}
 	response := api.BuildOperation{
 		Id: operation.ID, BuildId: operation.BuildID, CreatedBy: operation.CreatedBy,
 		IdempotencyKey: operation.IdempotencyKey, Status: api.BuildOperationStatus(operation.Status),
@@ -83,6 +99,7 @@ func buildOperationResponse(operation buildoperation.Record) api.BuildOperation 
 		ErrorSummary: operation.ErrorSummary, QueuedAt: operation.QueuedAt,
 		AvailableAt: operation.AvailableAt, CreatedAt: operation.CreatedAt,
 		UpdatedAt: operation.UpdatedAt, StartedAt: operation.StartedAt, FinishedAt: operation.FinishedAt,
+		Attempts: attempts,
 	}
 	if operation.RetryDisposition != nil {
 		value := api.BuildOperationRetryDisposition(*operation.RetryDisposition)

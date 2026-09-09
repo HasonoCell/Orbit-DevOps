@@ -107,7 +107,7 @@ func NewWithDependencies(
 		Namespace:  config.LocalNamespace,
 	}, authorizer)
 	releaseOperationModule := releaseoperation.New(db, releaseoperation.WithAuthorizer(authorizer))
-	buildOperationModule := buildoperation.New(db)
+	buildOperationModule := buildoperation.New(db, buildoperation.WithAuthorizer(authorizer))
 	buildModule := build.New(db, build.Config{
 		AllowedGitHosts: config.BuildAllowedGitHosts,
 		Platform:        config.BuildPlatform,
@@ -142,6 +142,7 @@ func NewWithDependencies(
 		projectModule,
 		catalogModule,
 		buildModule,
+		buildOperationModule,
 		deliveryModule,
 		diagnosticModule,
 		releaseOperationModule,

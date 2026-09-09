@@ -432,6 +432,189 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/build-operations/{buildOperationId}:
+    get:
+      operationId: getBuildOperation
+      summary: 查询构建操作和全部执行尝试
+      parameters:
+        - $ref: "#/components/parameters/BuildOperationId"
+      responses:
+        "200":
+          description: BuildOperation 详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildOperation"
+        "404":
+          description: 构建操作不存在或当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/build-operations/{buildOperationId}/retry:
+    post:
+      operationId: retryBuildOperation
+      summary: 重试确定失败的构建操作
+      parameters:
+        - $ref: "#/components/parameters/BuildOperationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 构建操作已重新排队
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildOperation"
+        "403":
+          description: 当前项目角色不能重试构建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 构建操作不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 状态或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/build-operations/{buildOperationId}/cancel:
+    post:
+      operationId: cancelBuildOperation
+      summary: 取消排队或运行中的构建操作
+      parameters:
+        - $ref: "#/components/parameters/BuildOperationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 取消请求已持久化
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildOperation"
+        "403":
+          description: 当前项目角色不能取消构建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 构建操作不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 状态或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/build-operations/{buildOperationId}/reconcile:
+    post:
+      operationId: reconcileBuildOperation
+      summary: 重新观察结果未知的构建执行
+      parameters:
+        - $ref: "#/components/parameters/BuildOperationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 只读恢复任务已重新排队
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildOperation"
+        "403":
+          description: 当前项目角色不能重新核验构建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 构建操作不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 状态或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/build-operations/{buildOperationId}/force-fail:
+    post:
+      operationId: forceFailBuildOperation
+      summary: 人工结束结果未知的构建操作
+      parameters:
+        - $ref: "#/components/parameters/BuildOperationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForceFailBuildOperationRequest"
+      responses:
+        "200":
+          description: 构建操作已人工结束
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildOperation"
+        "403":
+          description: 只有项目 owner 可以人工结束
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: 构建操作不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 状态或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/applications/{applicationId}/deployment-targets:
     post:
       operationId: createDeploymentTarget
@@ -1049,6 +1232,13 @@ paths:
                 $ref: "#/components/schemas/Error"
 components:
   parameters:
+    BuildOperationId:
+      name: buildOperationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -1358,6 +1548,7 @@ components:
         - availableAt
         - createdAt
         - updatedAt
+        - attempts
       properties:
         id:
           type: string
@@ -1415,6 +1606,75 @@ components:
         finishedAt:
           type: string
           format: date-time
+        attempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuildAttempt"
+    BuildAttempt:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - number
+        - workerId
+        - status
+        - logExcerpt
+        - logTruncated
+        - startedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: integer
+          minimum: 1
+        workerId:
+          type: string
+        status:
+          type: string
+          enum:
+            - running
+            - succeeded
+            - failed
+            - canceled
+            - outcome_unknown
+        recoveredFromAttemptId:
+          type: string
+          format: uuid
+        executorName:
+          type: string
+        executorUid:
+          type: string
+        errorCode:
+          type: string
+        errorSummary:
+          type: string
+        retryDisposition:
+          type: string
+          enum:
+            - retryable
+            - non_retryable
+            - unknown_outcome
+        logExcerpt:
+          type: string
+        logTruncated:
+          type: boolean
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+    ForceFailBuildOperationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
     BuildAcceptance:
       type: object
       additionalProperties: false
