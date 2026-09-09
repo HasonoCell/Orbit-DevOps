@@ -26,11 +26,15 @@ func (e *testEnvironment) serverForActor(t *testing.T, actorID string) *httptest
 	t.Helper()
 
 	runtime, err := app.NewWithDependencies(context.Background(), app.Config{
-		DatabaseURL:     e.databaseURL,
-		LocalActorID:    actorID,
-		LocalClusterRef: "kind-orbitops-s1",
-		LocalNamespace:  "orbitops-s1",
-		MigrateOnBoot:   false,
+		DatabaseURL:          e.databaseURL,
+		LocalActorID:         actorID,
+		LocalClusterRef:      "kind-orbitops-s1",
+		LocalNamespace:       "orbitops-s1",
+		BuildAllowedGitHosts: []string{"github.com"},
+		BuildPlatform:        "linux/amd64",
+		BuildRegistryHost:    "registry.example",
+		BuildRegistryPrefix:  "orbitops",
+		MigrateOnBoot:        false,
 	}, e.dependencies)
 	if err != nil {
 		t.Fatalf("start OrbitOps for actor %q: %v", actorID, err)
@@ -216,11 +220,15 @@ func newTestEnvironmentWithDependencies(
 	}
 
 	runtime, err := app.NewWithDependencies(ctx, app.Config{
-		DatabaseURL:     databaseURL,
-		LocalActorID:    "local-developer",
-		LocalClusterRef: "kind-orbitops-s1",
-		LocalNamespace:  "orbitops-s1",
-		MigrateOnBoot:   true,
+		DatabaseURL:          databaseURL,
+		LocalActorID:         "local-developer",
+		LocalClusterRef:      "kind-orbitops-s1",
+		LocalNamespace:       "orbitops-s1",
+		BuildAllowedGitHosts: []string{"github.com"},
+		BuildPlatform:        "linux/amd64",
+		BuildRegistryHost:    "registry.example",
+		BuildRegistryPrefix:  "orbitops",
+		MigrateOnBoot:        true,
 	}, dependencies)
 	if err != nil {
 		t.Fatalf("start OrbitOps: %v", err)

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/api"
+	"github.com/HasonoCell/OrbitOps/internal/build"
+	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
 	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
@@ -30,11 +32,15 @@ import (
 )
 
 type Config struct {
-	DatabaseURL     string
-	LocalActorID    string
-	LocalClusterRef string
-	LocalNamespace  string
-	MigrateOnBoot   bool
+	DatabaseURL          string
+	LocalActorID         string
+	LocalClusterRef      string
+	LocalNamespace       string
+	BuildAllowedGitHosts []string
+	BuildPlatform        string
+	BuildRegistryHost    string
+	BuildRegistryPrefix  string
+	MigrateOnBoot        bool
 }
 
 type Runtime struct {
@@ -101,6 +107,13 @@ func NewWithDependencies(
 		Namespace:  config.LocalNamespace,
 	}, authorizer)
 	releaseOperationModule := releaseoperation.New(db, releaseoperation.WithAuthorizer(authorizer))
+	buildOperationModule := buildoperation.New(db)
+	buildModule := build.New(db, build.Config{
+		AllowedGitHosts: config.BuildAllowedGitHosts,
+		Platform:        config.BuildPlatform,
+		RegistryHost:    config.BuildRegistryHost,
+		RegistryPrefix:  config.BuildRegistryPrefix,
+	}, buildOperationModule, authorizer)
 	deliveryModule := delivery.New(db, releaseOperationModule, authorizer)
 	diagnosticModule := diagnostics.New(db, authorizer, dependencies.RuntimeSource)
 	logger := dependencies.Logger
@@ -128,6 +141,7 @@ func NewWithDependencies(
 	server := httpapi.NewServer(
 		projectModule,
 		catalogModule,
+		buildModule,
 		deliveryModule,
 		diagnosticModule,
 		releaseOperationModule,

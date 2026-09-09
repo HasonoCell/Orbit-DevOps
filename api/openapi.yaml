@@ -347,6 +347,91 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/applications/{applicationId}/builds:
+    post:
+      operationId: createBuild
+      summary: 从不可变 Git Commit 创建源码构建
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBuildRequest"
+      responses:
+        "201":
+          description: Build、BuildOperation 与持久化调度意图已原子创建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildAcceptance"
+        "400":
+          description: Git URL、Commit 或构建路径无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: 当前项目角色不能创建构建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Application 不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 幂等键已经用于不同请求
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/builds/{buildId}:
+    get:
+      operationId: getBuild
+      summary: 查询不可变构建输入和当前构建操作
+      parameters:
+        - name: buildId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Build 与 BuildOperation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildAcceptance"
+        "404":
+          description: Build 不存在或当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/applications/{applicationId}/deployment-targets:
     post:
       operationId: createDeploymentTarget
@@ -1188,6 +1273,159 @@ components:
         updatedAt:
           type: string
           format: date-time
+    CreateBuildRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - repositoryUrl
+        - sourceCommit
+      properties:
+        repositoryUrl:
+          type: string
+          format: uri
+          minLength: 12
+          maxLength: 2048
+          description: 不含凭据且 Host 位于服务端允许列表的 HTTPS Git Clone URL。
+        sourceCommit:
+          type: string
+          pattern: "^[a-fA-F0-9]{40}([a-fA-F0-9]{24})?$"
+          description: 完整 Git Commit SHA；Branch 与 Tag 不作为不可变构建输入。
+        dockerfilePath:
+          type: string
+          default: Dockerfile
+          minLength: 1
+          maxLength: 512
+        contextPath:
+          type: string
+          default: .
+          minLength: 1
+          maxLength: 512
+    Build:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - projectId
+        - applicationId
+        - repositoryUrl
+        - sourceCommit
+        - dockerfilePath
+        - contextPath
+        - platform
+        - destinationRepository
+        - createdBy
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        repositoryUrl:
+          type: string
+        sourceCommit:
+          type: string
+        dockerfilePath:
+          type: string
+        contextPath:
+          type: string
+        platform:
+          type: string
+        destinationRepository:
+          type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    BuildOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - buildId
+        - createdBy
+        - idempotencyKey
+        - status
+        - attemptCount
+        - automaticRetryCount
+        - recoveryRequired
+        - queuedAt
+        - availableAt
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        buildId:
+          type: string
+          format: uuid
+        createdBy:
+          type: string
+        idempotencyKey:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - cancel_requested
+            - attention_required
+            - succeeded
+            - failed
+            - canceled
+        attemptCount:
+          type: integer
+          minimum: 0
+        automaticRetryCount:
+          type: integer
+          minimum: 0
+        recoveryRequired:
+          type: boolean
+        errorCode:
+          type: string
+        errorSummary:
+          type: string
+        retryDisposition:
+          type: string
+          enum:
+            - retryable
+            - non_retryable
+            - unknown_outcome
+        queuedAt:
+          type: string
+          format: date-time
+        availableAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+    BuildAcceptance:
+      type: object
+      additionalProperties: false
+      required:
+        - build
+        - buildOperation
+      properties:
+        build:
+          $ref: "#/components/schemas/Build"
+        buildOperation:
+          $ref: "#/components/schemas/BuildOperation"
     CreateReleaseRequest:
       type: object
       additionalProperties: false

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/HasonoCell/OrbitOps/internal/api"
+	"github.com/HasonoCell/OrbitOps/internal/build"
 	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
@@ -20,6 +21,7 @@ import (
 type Server struct {
 	projects          *project.Module
 	catalog           *catalog.Module
+	builds            *build.Module
 	delivery          *delivery.Module
 	diagnostics       *diagnostics.Module
 	releaseOperations *releaseoperation.Module
@@ -73,6 +75,7 @@ func (s *Server) GetProject(
 func NewServer(
 	projects *project.Module,
 	catalogModule *catalog.Module,
+	buildModule *build.Module,
 	deliveryModule *delivery.Module,
 	diagnosticModule *diagnostics.Module,
 	releaseOperationModule *releaseoperation.Module,
@@ -84,6 +87,7 @@ func NewServer(
 	return &Server{
 		projects:          projects,
 		catalog:           catalogModule,
+		builds:            buildModule,
 		delivery:          deliveryModule,
 		diagnostics:       diagnosticModule,
 		releaseOperations: releaseOperationModule,

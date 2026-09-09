@@ -63,11 +63,15 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	runtime, err := app.NewWithDependencies(ctx, app.Config{
-		DatabaseURL:     config.DatabaseURL,
-		LocalActorID:    config.ActorID,
-		LocalClusterRef: config.Kubernetes.ClusterRef,
-		LocalNamespace:  config.Kubernetes.Namespace,
-		MigrateOnBoot:   config.MigrateOnBoot,
+		DatabaseURL:          config.DatabaseURL,
+		LocalActorID:         config.ActorID,
+		LocalClusterRef:      config.Kubernetes.ClusterRef,
+		LocalNamespace:       config.Kubernetes.Namespace,
+		BuildAllowedGitHosts: config.SourceBuild.AllowedGitHosts,
+		BuildPlatform:        config.SourceBuild.Platform,
+		BuildRegistryHost:    config.SourceBuild.RegistryHost,
+		BuildRegistryPrefix:  config.SourceBuild.RegistryPrefix,
+		MigrateOnBoot:        config.MigrateOnBoot,
 	}, app.Dependencies{
 		RuntimeSource:     adapter,
 		RecoveryPublisher: adapter,

@@ -40,6 +40,60 @@ func (e AuditRecordActorKind) Valid() bool {
 	}
 }
 
+// Defines values for BuildOperationRetryDisposition.
+const (
+	BuildOperationRetryDispositionNonRetryable   BuildOperationRetryDisposition = "non_retryable"
+	BuildOperationRetryDispositionRetryable      BuildOperationRetryDisposition = "retryable"
+	BuildOperationRetryDispositionUnknownOutcome BuildOperationRetryDisposition = "unknown_outcome"
+)
+
+// Valid indicates whether the value is a known member of the BuildOperationRetryDisposition enum.
+func (e BuildOperationRetryDisposition) Valid() bool {
+	switch e {
+	case BuildOperationRetryDispositionNonRetryable:
+		return true
+	case BuildOperationRetryDispositionRetryable:
+		return true
+	case BuildOperationRetryDispositionUnknownOutcome:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BuildOperationStatus.
+const (
+	BuildOperationStatusAttentionRequired BuildOperationStatus = "attention_required"
+	BuildOperationStatusCancelRequested   BuildOperationStatus = "cancel_requested"
+	BuildOperationStatusCanceled          BuildOperationStatus = "canceled"
+	BuildOperationStatusFailed            BuildOperationStatus = "failed"
+	BuildOperationStatusPending           BuildOperationStatus = "pending"
+	BuildOperationStatusRunning           BuildOperationStatus = "running"
+	BuildOperationStatusSucceeded         BuildOperationStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the BuildOperationStatus enum.
+func (e BuildOperationStatus) Valid() bool {
+	switch e {
+	case BuildOperationStatusAttentionRequired:
+		return true
+	case BuildOperationStatusCancelRequested:
+		return true
+	case BuildOperationStatusCanceled:
+		return true
+	case BuildOperationStatusFailed:
+		return true
+	case BuildOperationStatusPending:
+		return true
+	case BuildOperationStatusRunning:
+		return true
+	case BuildOperationStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateDeploymentTargetRequestStage.
 const (
 	CreateDeploymentTargetRequestStageDevelopment CreateDeploymentTargetRequestStage = "development"
@@ -363,19 +417,19 @@ func (e ReleaseTargetSnapshotStage) Valid() bool {
 
 // Defines values for RetryDisposition.
 const (
-	NonRetryable   RetryDisposition = "non_retryable"
-	Retryable      RetryDisposition = "retryable"
-	UnknownOutcome RetryDisposition = "unknown_outcome"
+	RetryDispositionNonRetryable   RetryDisposition = "non_retryable"
+	RetryDispositionRetryable      RetryDisposition = "retryable"
+	RetryDispositionUnknownOutcome RetryDisposition = "unknown_outcome"
 )
 
 // Valid indicates whether the value is a known member of the RetryDisposition enum.
 func (e RetryDisposition) Valid() bool {
 	switch e {
-	case NonRetryable:
+	case RetryDispositionNonRetryable:
 		return true
-	case Retryable:
+	case RetryDispositionRetryable:
 		return true
-	case UnknownOutcome:
+	case RetryDispositionUnknownOutcome:
 		return true
 	default:
 		return false
@@ -443,10 +497,70 @@ type AuditRecord struct {
 // AuditRecordActorKind defines model for AuditRecord.ActorKind.
 type AuditRecordActorKind string
 
+// Build defines model for Build.
+type Build struct {
+	ApplicationId         openapi_types.UUID `json:"applicationId"`
+	ContextPath           string             `json:"contextPath"`
+	CreatedAt             time.Time          `json:"createdAt"`
+	CreatedBy             string             `json:"createdBy"`
+	DestinationRepository string             `json:"destinationRepository"`
+	DockerfilePath        string             `json:"dockerfilePath"`
+	Id                    openapi_types.UUID `json:"id"`
+	Platform              string             `json:"platform"`
+	ProjectId             openapi_types.UUID `json:"projectId"`
+	RepositoryUrl         string             `json:"repositoryUrl"`
+	SourceCommit          string             `json:"sourceCommit"`
+}
+
+// BuildAcceptance defines model for BuildAcceptance.
+type BuildAcceptance struct {
+	Build          Build          `json:"build"`
+	BuildOperation BuildOperation `json:"buildOperation"`
+}
+
+// BuildOperation defines model for BuildOperation.
+type BuildOperation struct {
+	AttemptCount        int                             `json:"attemptCount"`
+	AutomaticRetryCount int                             `json:"automaticRetryCount"`
+	AvailableAt         time.Time                       `json:"availableAt"`
+	BuildId             openapi_types.UUID              `json:"buildId"`
+	CreatedAt           time.Time                       `json:"createdAt"`
+	CreatedBy           string                          `json:"createdBy"`
+	ErrorCode           *string                         `json:"errorCode,omitempty"`
+	ErrorSummary        *string                         `json:"errorSummary,omitempty"`
+	FinishedAt          *time.Time                      `json:"finishedAt,omitempty"`
+	Id                  openapi_types.UUID              `json:"id"`
+	IdempotencyKey      string                          `json:"idempotencyKey"`
+	QueuedAt            time.Time                       `json:"queuedAt"`
+	RecoveryRequired    bool                            `json:"recoveryRequired"`
+	RetryDisposition    *BuildOperationRetryDisposition `json:"retryDisposition,omitempty"`
+	StartedAt           *time.Time                      `json:"startedAt,omitempty"`
+	Status              BuildOperationStatus            `json:"status"`
+	UpdatedAt           time.Time                       `json:"updatedAt"`
+}
+
+// BuildOperationRetryDisposition defines model for BuildOperation.RetryDisposition.
+type BuildOperationRetryDisposition string
+
+// BuildOperationStatus defines model for BuildOperation.Status.
+type BuildOperationStatus string
+
 // CreateApplicationRequest defines model for CreateApplicationRequest.
 type CreateApplicationRequest struct {
 	Name string `json:"name"`
 	Slug string `json:"slug"`
+}
+
+// CreateBuildRequest defines model for CreateBuildRequest.
+type CreateBuildRequest struct {
+	ContextPath    *string `json:"contextPath,omitempty"`
+	DockerfilePath *string `json:"dockerfilePath,omitempty"`
+
+	// RepositoryUrl 不含凭据且 Host 位于服务端允许列表的 HTTPS Git Clone URL。
+	RepositoryUrl string `json:"repositoryUrl"`
+
+	// SourceCommit 完整 Git Commit SHA；Branch 与 Tag 不作为不可变构建输入。
+	SourceCommit string `json:"sourceCommit"`
 }
 
 // CreateDeploymentTargetRequest defines model for CreateDeploymentTargetRequest.
@@ -832,6 +946,12 @@ type WorkloadObservation struct {
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
+// CreateBuildParams defines parameters for CreateBuild.
+type CreateBuildParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // CreateDeploymentTargetParams defines parameters for CreateDeploymentTarget.
 type CreateDeploymentTargetParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
@@ -924,6 +1044,9 @@ type GetReleaseRuntimeLogsParams struct {
 	Previous  *bool  `form:"previous,omitempty" json:"previous,omitempty"`
 }
 
+// CreateBuildJSONRequestBody defines body for CreateBuild for application/json ContentType.
+type CreateBuildJSONRequestBody = CreateBuildRequest
+
 // CreateDeploymentTargetJSONRequestBody defines body for CreateDeploymentTarget for application/json ContentType.
 type CreateDeploymentTargetJSONRequestBody = CreateDeploymentTargetRequest
 
@@ -953,9 +1076,15 @@ type ServerInterface interface {
 	// GetApplication 查询应用
 	// (GET /api/v1/applications/{applicationId})
 	GetApplication(c *gin.Context, applicationId openapi_types.UUID)
+	// CreateBuild 从不可变 Git Commit 创建源码构建
+	// (POST /api/v1/applications/{applicationId}/builds)
+	CreateBuild(c *gin.Context, applicationId openapi_types.UUID, params CreateBuildParams)
 	// CreateDeploymentTarget 创建部署目标
 	// (POST /api/v1/applications/{applicationId}/deployment-targets)
 	CreateDeploymentTarget(c *gin.Context, applicationId openapi_types.UUID, params CreateDeploymentTargetParams)
+	// GetBuild 查询不可变构建输入和当前构建操作
+	// (GET /api/v1/builds/{buildId})
+	GetBuild(c *gin.Context, buildId openapi_types.UUID)
 	// GetDeploymentTarget 查询部署目标
 	// (GET /api/v1/deployment-targets/{deploymentTargetId})
 	GetDeploymentTarget(c *gin.Context, deploymentTargetId openapi_types.UUID)
@@ -1052,6 +1181,58 @@ func (siw *ServerInterfaceWrapper) GetApplication(c *gin.Context) {
 	siw.Handler.GetApplication(c, applicationId)
 }
 
+// CreateBuild operation middleware
+func (siw *ServerInterfaceWrapper) CreateBuild(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "applicationId" -------------
+	var applicationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "applicationId", c.Param("applicationId"), &applicationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter applicationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateBuildParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateBuild(c, applicationId, params)
+}
+
 // CreateDeploymentTarget operation middleware
 func (siw *ServerInterfaceWrapper) CreateDeploymentTarget(c *gin.Context) {
 
@@ -1102,6 +1283,31 @@ func (siw *ServerInterfaceWrapper) CreateDeploymentTarget(c *gin.Context) {
 	}
 
 	siw.Handler.CreateDeploymentTarget(c, applicationId, params)
+}
+
+// GetBuild operation middleware
+func (siw *ServerInterfaceWrapper) GetBuild(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "buildId" -------------
+	var buildId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "buildId", c.Param("buildId"), &buildId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter buildId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetBuild(c, buildId)
 }
 
 // GetDeploymentTarget operation middleware
@@ -2026,6 +2232,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/api/v1/projects/:projectId/members/:actorId", wrapper.UpdateProjectMember)
 	router.POST(options.BaseURL+"/api/v1/projects/:projectId/applications", wrapper.CreateApplication)
 	router.GET(options.BaseURL+"/api/v1/applications/:applicationId", wrapper.GetApplication)
+	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/builds", wrapper.CreateBuild)
+	router.GET(options.BaseURL+"/api/v1/builds/:buildId", wrapper.GetBuild)
 	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/deployment-targets", wrapper.CreateDeploymentTarget)
 	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.GetDeploymentTarget)
 	router.PUT(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.UpdateDeploymentTarget)
@@ -2084,6 +2292,103 @@ type GetApplicationdefaultJSONResponse struct {
 }
 
 func (response GetApplicationdefaultJSONResponse) VisitGetApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBuildRequestObject struct {
+	ApplicationId openapi_types.UUID `json:"applicationId"`
+	Params        CreateBuildParams
+	Body          *CreateBuildJSONRequestBody
+}
+
+type CreateBuildResponseObject interface {
+	VisitCreateBuildResponse(w http.ResponseWriter) error
+}
+
+type CreateBuild201JSONResponse BuildAcceptance
+
+func (response CreateBuild201JSONResponse) VisitCreateBuildResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBuild400JSONResponse Error
+
+func (response CreateBuild400JSONResponse) VisitCreateBuildResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBuild403JSONResponse Error
+
+func (response CreateBuild403JSONResponse) VisitCreateBuildResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBuild404JSONResponse Error
+
+func (response CreateBuild404JSONResponse) VisitCreateBuildResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBuild409JSONResponse Error
+
+func (response CreateBuild409JSONResponse) VisitCreateBuildResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBuilddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateBuilddefaultJSONResponse) VisitCreateBuildResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -2167,6 +2472,59 @@ type CreateDeploymentTargetdefaultJSONResponse struct {
 }
 
 func (response CreateDeploymentTargetdefaultJSONResponse) VisitCreateDeploymentTargetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBuildRequestObject struct {
+	BuildId openapi_types.UUID `json:"buildId"`
+}
+
+type GetBuildResponseObject interface {
+	VisitGetBuildResponse(w http.ResponseWriter) error
+}
+
+type GetBuild200JSONResponse BuildAcceptance
+
+func (response GetBuild200JSONResponse) VisitGetBuildResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBuild404JSONResponse Error
+
+func (response GetBuild404JSONResponse) VisitGetBuildResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBuilddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetBuilddefaultJSONResponse) VisitGetBuildResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3685,9 +4043,15 @@ type StrictServerInterface interface {
 	// GetApplication 查询应用
 	// (GET /api/v1/applications/{applicationId})
 	GetApplication(ctx context.Context, request GetApplicationRequestObject) (GetApplicationResponseObject, error)
+	// CreateBuild 从不可变 Git Commit 创建源码构建
+	// (POST /api/v1/applications/{applicationId}/builds)
+	CreateBuild(ctx context.Context, request CreateBuildRequestObject) (CreateBuildResponseObject, error)
 	// CreateDeploymentTarget 创建部署目标
 	// (POST /api/v1/applications/{applicationId}/deployment-targets)
 	CreateDeploymentTarget(ctx context.Context, request CreateDeploymentTargetRequestObject) (CreateDeploymentTargetResponseObject, error)
+	// GetBuild 查询不可变构建输入和当前构建操作
+	// (GET /api/v1/builds/{buildId})
+	GetBuild(ctx context.Context, request GetBuildRequestObject) (GetBuildResponseObject, error)
 	// GetDeploymentTarget 查询部署目标
 	// (GET /api/v1/deployment-targets/{deploymentTargetId})
 	GetDeploymentTarget(ctx context.Context, request GetDeploymentTargetRequestObject) (GetDeploymentTargetResponseObject, error)
@@ -3833,6 +4197,40 @@ func (sh *strictHandler) GetApplication(ctx *gin.Context, applicationId openapi_
 	}
 }
 
+// CreateBuild operation middleware
+func (sh *strictHandler) CreateBuild(ctx *gin.Context, applicationId openapi_types.UUID, params CreateBuildParams) {
+	var request CreateBuildRequestObject
+
+	request.ApplicationId = applicationId
+	request.Params = params
+
+	var body CreateBuildJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateBuild(ctx, request.(CreateBuildRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateBuild")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateBuildResponseObject); ok {
+		if err := validResponse.VisitCreateBuildResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateDeploymentTarget operation middleware
 func (sh *strictHandler) CreateDeploymentTarget(ctx *gin.Context, applicationId openapi_types.UUID, params CreateDeploymentTargetParams) {
 	var request CreateDeploymentTargetRequestObject
@@ -3860,6 +4258,32 @@ func (sh *strictHandler) CreateDeploymentTarget(ctx *gin.Context, applicationId 
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(CreateDeploymentTargetResponseObject); ok {
 		if err := validResponse.VisitCreateDeploymentTargetResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetBuild operation middleware
+func (sh *strictHandler) GetBuild(ctx *gin.Context, buildId openapi_types.UUID) {
+	var request GetBuildRequestObject
+
+	request.BuildId = buildId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetBuild(ctx, request.(GetBuildRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetBuild")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetBuildResponseObject); ok {
+		if err := validResponse.VisitGetBuildResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -4456,85 +4880,95 @@ func (sh *strictHandler) GetReleaseRuntimeLogs(ctx *gin.Context, releaseId opena
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"jf0zAAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

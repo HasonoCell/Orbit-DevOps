@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/client-go/tools/clientcmd"
@@ -27,6 +28,15 @@ type API struct {
 	ActorID       string
 	MigrateOnBoot bool
 	Kubernetes    Kubernetes
+	SourceBuild   SourceBuild
+}
+
+// SourceBuild 是 API 用来冻结构建目标的受控配置；用户请求不能覆盖这些边界。
+type SourceBuild struct {
+	AllowedGitHosts []string
+	Platform        string
+	RegistryHost    string
+	RegistryPrefix  string
 }
 
 type ReleaseWorker struct {
@@ -110,6 +120,12 @@ func LoadAPI() (API, error) {
 		ActorID:       value("ORBITOPS_ACTOR_ID", "local-developer"),
 		MigrateOnBoot: migrateOnBoot,
 		Kubernetes:    kubernetes,
+		SourceBuild: SourceBuild{
+			AllowedGitHosts: commaSeparated("ORBITOPS_BUILD_GIT_ALLOWED_HOSTS", []string{"github.com", "gitea.com"}),
+			Platform:        value("ORBITOPS_BUILD_PLATFORM", "linux/amd64"),
+			RegistryHost:    value("ORBITOPS_BUILD_REGISTRY_HOST", "127.0.0.1:5001"),
+			RegistryPrefix:  value("ORBITOPS_BUILD_REGISTRY_PREFIX", "orbitops"),
+		},
 	}, nil
 }
 
@@ -184,6 +200,20 @@ func value(name string, fallback string) string {
 		return configured
 	}
 	return fallback
+}
+
+func commaSeparated(name string, fallback []string) []string {
+	configured := os.Getenv(name)
+	if configured == "" {
+		return append([]string(nil), fallback...)
+	}
+	items := make([]string, 0)
+	for _, item := range strings.Split(configured, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 func duration(name string, fallback time.Duration) (time.Duration, error) {

@@ -108,6 +108,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/applications/{applicationId}/builds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 从不可变 Git Commit 创建源码构建 */
+        post: operations["createBuild"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/builds/{buildId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询不可变构建输入和当前构建操作 */
+        get: operations["getBuild"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/applications/{applicationId}/deployment-targets": {
         parameters: {
             query?: never;
@@ -394,6 +428,69 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        CreateBuildRequest: {
+            /**
+             * Format: uri
+             * @description 不含凭据且 Host 位于服务端允许列表的 HTTPS Git Clone URL。
+             */
+            repositoryUrl: string;
+            /** @description 完整 Git Commit SHA；Branch 与 Tag 不作为不可变构建输入。 */
+            sourceCommit: string;
+            /** @default Dockerfile */
+            dockerfilePath: string;
+            /** @default . */
+            contextPath: string;
+        };
+        Build: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            projectId: string;
+            /** Format: uuid */
+            applicationId: string;
+            repositoryUrl: string;
+            sourceCommit: string;
+            dockerfilePath: string;
+            contextPath: string;
+            platform: string;
+            destinationRepository: string;
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        BuildOperation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            buildId: string;
+            createdBy: string;
+            idempotencyKey: string;
+            /** @enum {string} */
+            status: "pending" | "running" | "cancel_requested" | "attention_required" | "succeeded" | "failed" | "canceled";
+            attemptCount: number;
+            automaticRetryCount: number;
+            recoveryRequired: boolean;
+            errorCode?: string;
+            errorSummary?: string;
+            /** @enum {string} */
+            retryDisposition?: "retryable" | "non_retryable" | "unknown_outcome";
+            /** Format: date-time */
+            queuedAt: string;
+            /** Format: date-time */
+            availableAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            finishedAt?: string;
+        };
+        BuildAcceptance: {
+            build: components["schemas"]["Build"];
+            buildOperation: components["schemas"]["BuildOperation"];
         };
         CreateReleaseRequest: {
             /** @description 包含 sha256 Digest 的不可变 OCI 镜像引用。 */
@@ -1118,6 +1215,120 @@ export interface operations {
                 };
             };
             /** @description 应用不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createBuild: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前操作者与写操作范围内的幂等标识。 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                applicationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBuildRequest"];
+            };
+        };
+        responses: {
+            /** @description Build、BuildOperation 与持久化调度意图已原子创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildAcceptance"];
+                };
+            };
+            /** @description Git URL、Commit 或构建路径无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 当前项目角色不能创建构建 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Application 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 幂等键已经用于不同请求 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getBuild: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buildId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Build 与 BuildOperation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildAcceptance"];
+                };
+            };
+            /** @description Build 不存在或当前操作者不是项目成员 */
             404: {
                 headers: {
                     [name: string]: unknown;
