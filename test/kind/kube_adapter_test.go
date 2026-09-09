@@ -10,7 +10,7 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -96,7 +96,7 @@ func TestKindDeliveryScenarios(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 		err := adapter.Publish(ctx, request)
-		var failure *worker.FailureError
+		var failure *releaseworker.FailureError
 		if !errors.As(err, &failure) {
 			t.Fatalf("publish error = %v, want structured failure", err)
 		}
@@ -158,7 +158,7 @@ func TestKindDeliveryScenarios(t *testing.T) {
 		}
 
 		err := adapter.Publish(context.Background(), request)
-		var failure *worker.FailureError
+		var failure *releaseworker.FailureError
 		if !errors.As(err, &failure) || failure.Code() != "ownership_conflict" {
 			t.Fatalf("publish error = %v, want ownership_conflict", err)
 		}
@@ -272,8 +272,8 @@ func newKindAdapter(t *testing.T) (*kube.Adapter, kubernetes.Interface) {
 	return adapter, client
 }
 
-func kindPublishRequest(image string) worker.PublishRequest {
-	return worker.PublishRequest{
+func kindPublishRequest(image string) releaseworker.PublishRequest {
+	return releaseworker.PublishRequest{
 		ReleaseOperationID: uuid.New(),
 		ReleaseAttemptID:   uuid.New(),
 		ReleaseID:          uuid.New(),

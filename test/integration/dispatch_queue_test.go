@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 )
 
@@ -20,12 +20,12 @@ func TestQueueDeliversAcceptedRelease(t *testing.T) {
 	accepted := createRelease(t, environment, "asynq-release")
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := releaseoperation.New(db)
-	runner, err := worker.New(worker.Config{WorkerID: "queue-test", LeaseDuration: time.Second, ReleaseOperationTimeout: time.Second},
+	runner, err := releaseworker.New(releaseworker.Config{WorkerID: "queue-test", LeaseDuration: time.Second, ReleaseOperationTimeout: time.Second},
 		operations, delivery.New(db, operations, projectauth.New(db)), &recordingPublisher{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := dispatch.New(dispatch.Config{RedisAddress: address, PollInterval: 20 * time.Millisecond, RepairInterval: 50 * time.Millisecond, ConsumptionGrace: time.Second, TaskTimeout: 3 * time.Second, ShutdownTimeout: time.Second, Concurrency: 2}, operations, runner)
+	service, err := releasedispatch.New(releasedispatch.Config{RedisAddress: address, PollInterval: 20 * time.Millisecond, RepairInterval: 50 * time.Millisecond, ConsumptionGrace: time.Second, TaskTimeout: 3 * time.Second, ShutdownTimeout: time.Second, Concurrency: 2}, operations, runner)
 	if err != nil {
 		t.Fatal(err)
 	}

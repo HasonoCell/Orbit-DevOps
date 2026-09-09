@@ -10,10 +10,10 @@ import (
 
 	"errors"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -26,7 +26,7 @@ func TestQueueWaitsForDatabaseRecovery(t *testing.T) {
 	_, address := testsupport.StartRedis(t)
 	accepted := createRelease(t, environment, "database-offline")
 	var calls atomic.Int32
-	service, operations := newQueueWithPublisher(t, environment, address, publisherFunc(func(context.Context, worker.PublishRequest) error { calls.Add(1); return nil }))
+	service, operations := newQueueWithPublisher(t, environment, address, publisherFunc(func(context.Context, releaseworker.PublishRequest) error { calls.Add(1); return nil }))
 	if err := service.PublishOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestQueueWaitsForDatabaseRecovery(t *testing.T) {
 	}
 	nanFound := false
 	for _, metric := range metrics {
-		if metric.GetName() == "orbitops_dispatch_pending" {
+		if metric.GetName() == "orbitops_release_dispatch_pending" {
 			nanFound = math.IsNaN(metric.Metric[0].Gauge.GetValue())
 		}
 	}
@@ -65,14 +65,14 @@ func TestQueueArchivedInfrastructureFailuresRemainRecoverable(t *testing.T) {
 	db := openTestDatabase(t, environment.databaseURL)
 	var offset atomic.Int64
 	operations := releaseoperation.New(db, releaseoperation.WithClock(func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }))
-	runner, err := worker.New(worker.Config{WorkerID: "archive-recovery", LeaseDuration: time.Second, ReleaseOperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db)), publisherFunc(func(context.Context, worker.PublishRequest) error { return nil }))
+	runner, err := releaseworker.New(releaseworker.Config{WorkerID: "archive-recovery", LeaseDuration: time.Second, ReleaseOperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db)), publisherFunc(func(context.Context, releaseworker.PublishRequest) error { return nil }))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var available atomic.Bool
 	config := queueConfig(address)
 	config.ConsumptionGrace = time.Hour
-	service, err := dispatch.New(config, operations, executorFunc(func(ctx context.Context, ref releaseoperation.DispatchRef) (releaseoperation.ClaimOutcome, error) {
+	service, err := releasedispatch.New(config, operations, executorFunc(func(ctx context.Context, ref releaseoperation.DispatchRef) (releaseoperation.ClaimOutcome, error) {
 		if !available.Load() {
 			return "", errors.New("injected infrastructure unavailable")
 		}
@@ -163,15 +163,15 @@ func TestQueueDatabaseOutageStopsActiveExecutionBeforeLeaseExpiry(t *testing.T) 
 
 type cancelAwareRecoveryPublisher struct{ entered, stopped chan struct{} }
 
-func (p *cancelAwareRecoveryPublisher) Publish(ctx context.Context, _ worker.PublishRequest) error {
+func (p *cancelAwareRecoveryPublisher) Publish(ctx context.Context, _ releaseworker.PublishRequest) error {
 	close(p.entered)
 	<-ctx.Done()
 	close(p.stopped)
 	return ctx.Err()
 }
-func (p *cancelAwareRecoveryPublisher) InspectRecovery(context.Context, worker.PublishRequest) (worker.RecoveryObservation, error) {
-	return worker.RecoveryObservation{Action: worker.RecoverySucceeded}, nil
+func (p *cancelAwareRecoveryPublisher) InspectRecovery(context.Context, releaseworker.PublishRequest) (releaseworker.RecoveryObservation, error) {
+	return releaseworker.RecoveryObservation{Action: releaseworker.RecoverySucceeded}, nil
 }
-func (p *cancelAwareRecoveryPublisher) ObserveRecovery(context.Context, worker.PublishRequest) error {
+func (p *cancelAwareRecoveryPublisher) ObserveRecovery(context.Context, releaseworker.PublishRequest) error {
 	return nil
 }

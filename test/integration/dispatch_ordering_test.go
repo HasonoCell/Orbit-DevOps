@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/dispatch"
+	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -24,9 +24,9 @@ func TestQueueFIFOAndAttentionReleaseAcrossWorkers(t *testing.T) {
 	second := createReleaseForTarget(t, environment, target.ID, "blocked-tail")
 	otherTarget := createDeploymentTargetWithSuffix(t, environment, "independent")
 	other := createReleaseForTarget(t, environment, otherTarget.ID, "independent")
-	publisher := publisherFunc(func(_ context.Context, request worker.PublishRequest) error {
+	publisher := publisherFunc(func(_ context.Context, request releaseworker.PublishRequest) error {
 		if request.ReleaseOperationID.String() == first.ReleaseOperation.ID {
-			return worker.NewUnknownOutcome("delivery_outcome_unknown", "需要人工确认", false)
+			return releaseworker.NewUnknownOutcome("delivery_outcome_unknown", "需要人工确认", false)
 		}
 		return nil
 	})
@@ -41,7 +41,7 @@ func TestQueueFIFOAndAttentionReleaseAcrossWorkers(t *testing.T) {
 	defer client.Close()
 	payload, _ := json.Marshal(tail)
 	for n := 0; n < 12; n++ {
-		if _, err := client.Enqueue(asynq.NewTask(dispatch.TaskType, payload), asynq.Queue("orbitops-release")); err != nil {
+		if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue("orbitops-release")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -87,7 +87,7 @@ func TestQueueCancellationAndLostCancellation(t *testing.T) {
 			container, address := testsupport.StartRedis(t)
 			accepted := createRelease(t, environment, "cancel-"+mode)
 			entered := make(chan struct{}, 1)
-			service, operations := newQueueWithPublisher(t, environment, address, publisherFunc(func(ctx context.Context, _ worker.PublishRequest) error {
+			service, operations := newQueueWithPublisher(t, environment, address, publisherFunc(func(ctx context.Context, _ releaseworker.PublishRequest) error {
 				entered <- struct{}{}
 				<-ctx.Done()
 				return ctx.Err()
@@ -129,7 +129,7 @@ func TestQueueCancellationAndLostCancellation(t *testing.T) {
 				client := asynq.NewClient(asynq.RedisClientOpt{Addr: address})
 				defer client.Close()
 				payload, _ := json.Marshal(items[0].DispatchRef)
-				if _, err := client.Enqueue(asynq.NewTask(dispatch.TaskType, payload), asynq.Queue("orbitops-release")); err != nil {
+				if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue("orbitops-release")); err != nil {
 					t.Fatal(err)
 				}
 				startQueueTest(t, service)

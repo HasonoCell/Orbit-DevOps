@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -65,9 +65,9 @@ func New(client kubernetes.Interface, config Config) (*Adapter, error) {
 	return &Adapter{client: client, config: config}, nil
 }
 
-func (a *Adapter) Publish(ctx context.Context, request worker.PublishRequest) error {
+func (a *Adapter) Publish(ctx context.Context, request releaseworker.PublishRequest) error {
 	if request.ClusterRef != a.config.ClusterRef || request.Namespace != a.config.Namespace {
-		return worker.NewFailure(
+		return releaseworker.NewFailure(
 			"target_boundary_violation",
 			"release target does not match the configured local Kubernetes boundary",
 		)
@@ -135,11 +135,11 @@ func (a *Adapter) Publish(ctx context.Context, request worker.PublishRequest) er
 // InspectRecovery 只读取稳定资源与归属标签，在恢复 Attempt 的任何写入之前给出决策事实。
 func (a *Adapter) InspectRecovery(
 	ctx context.Context,
-	request worker.PublishRequest,
-) (worker.RecoveryObservation, error) {
+	request releaseworker.PublishRequest,
+) (releaseworker.RecoveryObservation, error) {
 	if request.ClusterRef != a.config.ClusterRef || request.Namespace != a.config.Namespace {
-		return worker.RecoveryObservation{
-			Action:       worker.RecoveryAttention,
+		return releaseworker.RecoveryObservation{
+			Action:       releaseworker.RecoveryAttention,
 			ErrorCode:    "target_boundary_violation",
 			ErrorSummary: "release target does not match the configured local Kubernetes boundary",
 		}, nil
@@ -151,7 +151,7 @@ func (a *Adapter) InspectRecovery(
 		metav1.GetOptions{},
 	)
 	if err != nil && !apierrors.IsNotFound(err) {
-		return worker.RecoveryObservation{}, a.unknownReadFailure("inspect recovery Deployment", err)
+		return releaseworker.RecoveryObservation{}, a.unknownReadFailure("inspect recovery Deployment", err)
 	}
 	if apierrors.IsNotFound(err) {
 		deployment = nil
@@ -162,13 +162,13 @@ func (a *Adapter) InspectRecovery(
 		metav1.GetOptions{},
 	)
 	if err != nil && !apierrors.IsNotFound(err) {
-		return worker.RecoveryObservation{}, a.unknownReadFailure("inspect recovery Service", err)
+		return releaseworker.RecoveryObservation{}, a.unknownReadFailure("inspect recovery Service", err)
 	}
 	if apierrors.IsNotFound(err) {
 		service = nil
 	}
 	if deployment == nil && service == nil {
-		return worker.RecoveryObservation{Action: worker.RecoveryApply}, nil
+		return releaseworker.RecoveryObservation{Action: releaseworker.RecoveryApply}, nil
 	}
 
 	wantOwnership := ownershipLabels(request)
@@ -177,8 +177,8 @@ func (a *Adapter) InspectRecovery(
 		"Service":    labelsOfService(service),
 	} {
 		if labels != nil && !hasOwnership(labels, wantOwnership) {
-			return worker.RecoveryObservation{
-				Action:       worker.RecoveryAttention,
+			return releaseworker.RecoveryObservation{
+				Action:       releaseworker.RecoveryAttention,
 				ErrorCode:    "ownership_conflict",
 				ErrorSummary: fmt.Sprintf("%s %q exists without matching OrbitOps ownership", kind, name),
 			}, nil
@@ -194,37 +194,37 @@ func (a *Adapter) InspectRecovery(
 	}
 	if releaseLabels[0] == "" ||
 		(len(releaseLabels) == 2 && releaseLabels[0] != releaseLabels[1]) {
-		return worker.RecoveryObservation{
-			Action:       worker.RecoveryAttention,
+		return releaseworker.RecoveryObservation{
+			Action:       releaseworker.RecoveryAttention,
 			ErrorCode:    "release_identity_conflict",
 			ErrorSummary: "Kubernetes resources do not expose one consistent OrbitOps release identifier",
 		}, nil
 	}
 	observedReleaseID, err := uuid.Parse(releaseLabels[0])
 	if err != nil {
-		return worker.RecoveryObservation{
-			Action:       worker.RecoveryAttention,
+		return releaseworker.RecoveryObservation{
+			Action:       releaseworker.RecoveryAttention,
 			ErrorCode:    "release_identity_invalid",
 			ErrorSummary: "Kubernetes resources expose an invalid OrbitOps release identifier",
 		}, nil
 	}
 	if observedReleaseID != request.ReleaseID {
-		return worker.RecoveryObservation{
-			Action:            worker.RecoveryReleaseObserved,
+		return releaseworker.RecoveryObservation{
+			Action:            releaseworker.RecoveryReleaseObserved,
 			ObservedReleaseID: &observedReleaseID,
 		}, nil
 	}
 	if deployment == nil || service == nil {
-		return worker.RecoveryObservation{Action: worker.RecoveryApply}, nil
+		return releaseworker.RecoveryObservation{Action: releaseworker.RecoveryApply}, nil
 	}
 	if rolloutReady(deployment, int32(request.Replicas)) {
-		return worker.RecoveryObservation{Action: worker.RecoverySucceeded}, nil
+		return releaseworker.RecoveryObservation{Action: releaseworker.RecoverySucceeded}, nil
 	}
-	return worker.RecoveryObservation{Action: worker.RecoveryObserve}, nil
+	return releaseworker.RecoveryObservation{Action: releaseworker.RecoveryObserve}, nil
 }
 
 // ObserveRecovery 延续已属于目标 Release 的 Rollout 观察，不再次执行 Apply。
-func (a *Adapter) ObserveRecovery(ctx context.Context, request worker.PublishRequest) error {
+func (a *Adapter) ObserveRecovery(ctx context.Context, request releaseworker.PublishRequest) error {
 	return a.waitForRollout(
 		ctx,
 		request.Namespace,
@@ -304,7 +304,7 @@ func (a *Adapter) waitForRollout(
 
 		select {
 		case <-ctx.Done():
-			return worker.NewUnknownOutcome(
+			return releaseworker.NewUnknownOutcome(
 				"rollout_observation_interrupted",
 				"delivery stopped before the Kubernetes rollout outcome was observed",
 				true,
@@ -318,7 +318,7 @@ func ResourceName(targetID uuid.UUID) string {
 	return "orbitops-" + strings.ReplaceAll(targetID.String(), "-", "")
 }
 
-func ownershipLabels(request worker.PublishRequest) map[string]string {
+func ownershipLabels(request releaseworker.PublishRequest) map[string]string {
 	return map[string]string{
 		ManagedByLabel:     ManagedByValue,
 		ProjectIDLabel:     request.ProjectID.String(),
@@ -357,13 +357,13 @@ func deploymentFailure(deployment *appsv1.Deployment) error {
 		if condition.Type == appsv1.DeploymentProgressing &&
 			condition.Status == corev1.ConditionFalse &&
 			condition.Reason == "ProgressDeadlineExceeded" {
-			return worker.NewFailure(
+			return releaseworker.NewFailure(
 				"rollout_progress_deadline",
 				"Deployment exceeded its Kubernetes progress deadline",
 			)
 		}
 		if condition.Type == appsv1.DeploymentReplicaFailure && condition.Status == corev1.ConditionTrue {
-			return worker.NewFailure(
+			return releaseworker.NewFailure(
 				"replica_creation_failed",
 				"Kubernetes could not create the desired workload replicas",
 			)
@@ -381,12 +381,12 @@ func podFailure(pods []corev1.Pod) error {
 			}
 			switch waiting.Reason {
 			case "ErrImagePull", "ImagePullBackOff", "InvalidImageName":
-				return worker.NewFailure(
+				return releaseworker.NewFailure(
 					"image_pull_failed",
 					"Kubernetes could not pull the immutable release image",
 				)
 			case "CreateContainerConfigError", "CreateContainerError":
-				return worker.NewFailure(
+				return releaseworker.NewFailure(
 					"container_start_failed",
 					"Kubernetes could not create the release container",
 				)
@@ -397,7 +397,7 @@ func podFailure(pods []corev1.Pod) error {
 }
 
 func ownershipFailure(kind string, name string) error {
-	return worker.NewFailure(
+	return releaseworker.NewFailure(
 		"ownership_conflict",
 		fmt.Sprintf("%s %q exists without matching OrbitOps ownership", kind, name),
 	)
@@ -405,12 +405,12 @@ func ownershipFailure(kind string, name string) error {
 
 func applyFailure(kind string, err error) error {
 	if apierrors.IsConflict(err) {
-		return worker.NewFailure(
+		return releaseworker.NewFailure(
 			"apply_conflict",
 			fmt.Sprintf("Server-Side Apply reported a field ownership conflict for %s", kind),
 		)
 	}
-	return worker.NewUnknownOutcome(
+	return releaseworker.NewUnknownOutcome(
 		"kubernetes_apply_failed",
 		fmt.Sprintf("Kubernetes rejected the desired %s: %s", kind, apierrors.ReasonForError(err)),
 		true,
@@ -419,7 +419,7 @@ func applyFailure(kind string, err error) error {
 
 func (a *Adapter) observeFailure(action string, err error) error {
 	a.recordReadFailure()
-	return worker.NewUnknownOutcome(
+	return releaseworker.NewUnknownOutcome(
 		"kubernetes_unavailable",
 		fmt.Sprintf("%s failed: %s", action, apierrors.ReasonForError(err)),
 		true,
@@ -428,7 +428,7 @@ func (a *Adapter) observeFailure(action string, err error) error {
 
 func (a *Adapter) preflightFailure(action string, err error) error {
 	a.recordReadFailure()
-	return worker.NewRetryableFailure(
+	return releaseworker.NewRetryableFailure(
 		"kubernetes_unavailable",
 		fmt.Sprintf("%s failed: %s", action, apierrors.ReasonForError(err)),
 	)

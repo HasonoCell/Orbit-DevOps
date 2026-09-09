@@ -10,7 +10,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 )
 
 // RetryReleaseOperation 将普通失败重新放到目标队尾；未知结果只有经 owner 只读确认后才能重试。
@@ -272,12 +272,12 @@ func (s *Server) retryAuthorizationError(err error) (api.RetryReleaseOperationRe
 func (s *Server) retryIsSafe(
 	ctx context.Context,
 	record releaseoperation.Record,
-	observation worker.RecoveryObservation,
+	observation releaseworker.RecoveryObservation,
 ) (bool, error) {
 	switch observation.Action {
-	case worker.RecoveryApply:
+	case releaseworker.RecoveryApply:
 		return true, nil
-	case worker.RecoveryReleaseObserved:
+	case releaseworker.RecoveryReleaseObserved:
 		if observation.ObservedReleaseID == nil {
 			return false, nil
 		}
@@ -295,23 +295,23 @@ func (s *Server) retryIsSafe(
 func (s *Server) resolveObservation(
 	ctx context.Context,
 	record releaseoperation.Record,
-	observation worker.RecoveryObservation,
+	observation releaseworker.RecoveryObservation,
 	evidence *releaseoperation.ReconcileEvidence,
 ) error {
 	switch observation.Action {
-	case worker.RecoverySucceeded:
+	case releaseworker.RecoverySucceeded:
 		evidence.Resolution = releaseoperation.ReconcileSucceeded
 		evidence.ErrorCode = "release_ready"
 		evidence.ErrorSummary = "Kubernetes resources are ready for this release"
-	case worker.RecoveryApply:
+	case releaseworker.RecoveryApply:
 		evidence.Resolution = releaseoperation.ReconcileFailed
 		evidence.ErrorCode = "release_not_applied"
 		evidence.ErrorSummary = "Kubernetes resources do not show a completed application of this release"
-	case worker.RecoveryObserve:
+	case releaseworker.RecoveryObserve:
 		evidence.Resolution = releaseoperation.ReconcileUnclear
 		evidence.ErrorCode = "release_still_progressing"
 		evidence.ErrorSummary = "Kubernetes resources still show this release progressing"
-	case worker.RecoveryReleaseObserved:
+	case releaseworker.RecoveryReleaseObserved:
 		if observation.ObservedReleaseID == nil {
 			evidence.Resolution = releaseoperation.ReconcileUnclear
 			evidence.ErrorCode = "recovery_state_invalid"
@@ -335,7 +335,7 @@ func (s *Server) resolveObservation(
 			evidence.ErrorCode = "unexpected_release_observed"
 			evidence.ErrorSummary = "Kubernetes resources reference a release outside this target history"
 		}
-	case worker.RecoveryAttention:
+	case releaseworker.RecoveryAttention:
 		evidence.Resolution = releaseoperation.ReconcileUnclear
 		evidence.ErrorCode = observation.ErrorCode
 		evidence.ErrorSummary = observation.ErrorSummary
@@ -353,8 +353,8 @@ func (s *Server) resolveObservation(
 	return nil
 }
 
-func publishRequest(record releaseoperation.Record, release delivery.Release) worker.PublishRequest {
-	return worker.PublishRequest{
+func publishRequest(record releaseoperation.Record, release delivery.Release) releaseworker.PublishRequest {
+	return releaseworker.PublishRequest{
 		ReleaseOperationID: record.ID,
 		ReleaseID:          release.ID,
 		ProjectID:          release.TargetSnapshot.ProjectID,

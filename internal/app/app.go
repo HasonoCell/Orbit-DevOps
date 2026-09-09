@@ -18,8 +18,8 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/HasonoCell/OrbitOps/internal/transport/httpapi"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -44,7 +44,7 @@ type Runtime struct {
 
 type Dependencies struct {
 	RuntimeSource     diagnostics.RuntimeSource
-	RecoveryPublisher worker.RecoveryPublisher
+	RecoveryPublisher releaseworker.RecoveryPublisher
 	Logger            *slog.Logger
 	Metrics           *observability.Metrics
 	Tracer            trace.Tracer
@@ -111,7 +111,7 @@ func NewWithDependencies(
 	if metrics == nil {
 		metrics = observability.NewMetrics(releaseOperationModule.CountPending)
 	} else {
-		metrics.RegisterPending(releaseOperationModule.CountPending)
+		metrics.RegisterReleaseOperationPending(releaseOperationModule.CountPending)
 	}
 	metrics.RegisterReleaseOperations(releaseOperationModule.ReadMetricsSnapshot)
 	tracer := dependencies.Tracer

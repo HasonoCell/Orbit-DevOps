@@ -14,10 +14,10 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 )
 
-func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
+func TestReleaseWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 	testCases := []struct {
 		name              string
 		publishError      error
@@ -35,7 +35,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 		},
 		{
 			name:              "image pull failure",
-			publishError:      worker.NewFailure("image_pull_failed", "container image could not be pulled"),
+			publishError:      releaseworker.NewFailure("image_pull_failed", "container image could not be pulled"),
 			operationTimeout:  2 * time.Second,
 			wantStatus:        releaseoperation.StatusFailed,
 			wantAttemptStatus: releaseoperation.AttemptFailed,
@@ -63,7 +63,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 				waitForTimeout: testCase.waitForTimeout,
 			}
 			metrics := observability.NewMetrics(operations.CountPending)
-			runner, err := worker.New(worker.Config{
+			runner, err := releaseworker.New(releaseworker.Config{
 				WorkerID:                "worker-terminal-test",
 				LeaseDuration:           3 * time.Second,
 				ReleaseOperationTimeout: testCase.operationTimeout,
@@ -172,7 +172,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 			if category == "" {
 				category = "none"
 			}
-			wantMetric := `orbitops_operation_terminal_total{category="` + category +
+			wantMetric := `orbitops_release_operation_terminal_total{category="` + category +
 				`",status="` + string(testCase.wantStatus) + `"} 1`
 			if !strings.Contains(string(metricPayload), wantMetric) {
 				t.Errorf("worker metrics do not contain %q", wantMetric)
@@ -181,7 +181,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 	}
 }
 
-func TestWorkerRenewsLeaseDuringDelivery(t *testing.T) {
+func TestReleaseWorkerRenewsLeaseDuringDelivery(t *testing.T) {
 	environment := newTestEnvironment(t)
 	acceptance := createRelease(t, environment, "worker-heartbeat")
 	db := openTestDatabase(t, environment.databaseURL)
@@ -191,7 +191,7 @@ func TestWorkerRenewsLeaseDuringDelivery(t *testing.T) {
 		started: make(chan struct{}),
 		release: make(chan struct{}),
 	}
-	primary, err := worker.New(worker.Config{
+	primary, err := releaseworker.New(releaseworker.Config{
 		WorkerID:                "worker-heartbeat-primary",
 		LeaseDuration:           300 * time.Millisecond,
 		ReleaseOperationTimeout: 2 * time.Second,
@@ -217,7 +217,7 @@ func TestWorkerRenewsLeaseDuringDelivery(t *testing.T) {
 	time.Sleep(450 * time.Millisecond)
 
 	competingPublisher := &recordingPublisher{}
-	competing, err := worker.New(worker.Config{
+	competing, err := releaseworker.New(releaseworker.Config{
 		WorkerID:                "worker-heartbeat-competing",
 		LeaseDuration:           time.Second,
 		ReleaseOperationTimeout: time.Second,
@@ -258,12 +258,12 @@ func TestWorkerRenewsLeaseDuringDelivery(t *testing.T) {
 }
 
 type recordingPublisher struct {
-	requests       []worker.PublishRequest
+	requests       []releaseworker.PublishRequest
 	err            error
 	waitForTimeout bool
 }
 
-func (p *recordingPublisher) Publish(ctx context.Context, request worker.PublishRequest) error {
+func (p *recordingPublisher) Publish(ctx context.Context, request releaseworker.PublishRequest) error {
 	p.requests = append(p.requests, request)
 	if p.waitForTimeout {
 		<-ctx.Done()
@@ -277,7 +277,7 @@ type blockingPublisher struct {
 	release chan struct{}
 }
 
-func (p *blockingPublisher) Publish(ctx context.Context, _ worker.PublishRequest) error {
+func (p *blockingPublisher) Publish(ctx context.Context, _ releaseworker.PublishRequest) error {
 	close(p.started)
 	select {
 	case <-p.release:

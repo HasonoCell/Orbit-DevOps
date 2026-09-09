@@ -1,3 +1,5 @@
+// Package releaseoperation 管理发布工作的状态、执行历史、业务租约与持久化调度意图。
+// PostgreSQL 中保留的通用物理表名只属于本模块的兼容实现细节。
 package releaseoperation
 
 import (

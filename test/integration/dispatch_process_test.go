@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/HasonoCell/OrbitOps/internal/dispatch"
+	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/hibiken/asynq"
 )
@@ -17,14 +17,14 @@ import (
 func TestQueueRecoversAcrossProcessInterruptions(t *testing.T) {
 	for _, scenario := range []struct {
 		mode             string
-		action           worker.RecoveryAction
+		action           releaseworker.RecoveryAction
 		attempts         int
 		publish, observe int
 	}{
-		{"after_enqueue", worker.RecoverySucceeded, 1, 1, 0},
-		{"before_publish", worker.RecoveryApply, 2, 1, 0},
-		{"before_commit", worker.RecoverySucceeded, 2, 0, 0},
-		{"during_rollout", worker.RecoveryObserve, 2, 0, 1},
+		{"after_enqueue", releaseworker.RecoverySucceeded, 1, 1, 0},
+		{"before_publish", releaseworker.RecoveryApply, 2, 1, 0},
+		{"before_commit", releaseworker.RecoverySucceeded, 2, 0, 0},
+		{"during_rollout", releaseworker.RecoveryObserve, 2, 0, 1},
 	} {
 		t.Run(scenario.mode, func(t *testing.T) {
 			environment := newTestEnvironment(t)
@@ -41,11 +41,11 @@ func TestQueueRecoversAcrossProcessInterruptions(t *testing.T) {
 				payload, _ := json.Marshal(ref)
 				client := asynq.NewClient(asynq.RedisClientOpt{Addr: address})
 				defer client.Close()
-				if _, err := client.Enqueue(asynq.NewTask(dispatch.TaskType, payload), asynq.Queue("orbitops-release")); err != nil {
+				if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue("orbitops-release")); err != nil {
 					t.Fatal(err)
 				}
 			}
-			publisher := &recoveryRecordingPublisher{observation: worker.RecoveryObservation{Action: scenario.action}}
+			publisher := &recoveryRecordingPublisher{observation: releaseworker.RecoveryObservation{Action: scenario.action}}
 			service, operations := newQueueWithPublisher(t, environment, address, publisher)
 			stop := startQueueTest(t, service)
 			current := awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusSucceeded)

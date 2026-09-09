@@ -10,7 +10,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -18,7 +18,7 @@ import (
 func TestRecoveryUsesKubernetesEvidenceBeforePublishing(t *testing.T) {
 	testCases := []struct {
 		name             string
-		observation      worker.RecoveryObservation
+		observation      releaseworker.RecoveryObservation
 		inspectError     error
 		wantStatus       releaseoperation.ReleaseOperationStatus
 		wantErrorCode    string
@@ -27,19 +27,19 @@ func TestRecoveryUsesKubernetesEvidenceBeforePublishing(t *testing.T) {
 	}{
 		{
 			name:        "target release is already ready",
-			observation: worker.RecoveryObservation{Action: worker.RecoverySucceeded},
+			observation: releaseworker.RecoveryObservation{Action: releaseworker.RecoverySucceeded},
 			wantStatus:  releaseoperation.StatusSucceeded,
 		},
 		{
 			name:             "resources are absent and safe to apply",
-			observation:      worker.RecoveryObservation{Action: worker.RecoveryApply},
+			observation:      releaseworker.RecoveryObservation{Action: releaseworker.RecoveryApply},
 			wantStatus:       releaseoperation.StatusSucceeded,
 			wantPublishCalls: 1,
 		},
 		{
 			name: "ownership conflict requires attention",
-			observation: worker.RecoveryObservation{
-				Action:       worker.RecoveryAttention,
+			observation: releaseworker.RecoveryObservation{
+				Action:       releaseworker.RecoveryAttention,
 				ErrorCode:    "ownership_conflict",
 				ErrorSummary: "resource is not owned by this deployment target",
 			},
@@ -48,7 +48,7 @@ func TestRecoveryUsesKubernetesEvidenceBeforePublishing(t *testing.T) {
 		},
 		{
 			name: "temporary Kubernetes outage preserves recovery mode",
-			inspectError: worker.NewUnknownOutcome(
+			inspectError: releaseworker.NewUnknownOutcome(
 				"kubernetes_unavailable",
 				"Kubernetes API is temporarily unavailable",
 				true,
@@ -127,8 +127,8 @@ func TestRecoveryCanReplaceKnownPreviousReleaseButRejectsUnknownRelease(t *testi
 	now = now.Add(2 * time.Second)
 	previousID := mustReleaseOperationID(t, previous.Release.ID)
 	publisher := &recoveryRecordingPublisher{
-		observation: worker.RecoveryObservation{
-			Action:            worker.RecoveryReleaseObserved,
+		observation: releaseworker.RecoveryObservation{
+			Action:            releaseworker.RecoveryReleaseObserved,
 			ObservedReleaseID: &previousID,
 		},
 	}
@@ -149,8 +149,8 @@ func TestRecoveryCanReplaceKnownPreviousReleaseButRejectsUnknownRelease(t *testi
 	unknownLease := claimReleaseOperation(t, operations, "worker-unknown-lost")
 	now = now.Add(2 * time.Second)
 	unknownID := uuid.New()
-	publisher.observation = worker.RecoveryObservation{
-		Action:            worker.RecoveryReleaseObserved,
+	publisher.observation = releaseworker.RecoveryObservation{
+		Action:            releaseworker.RecoveryReleaseObserved,
 		ObservedReleaseID: &unknownID,
 	}
 	publisher.publishCalls = 0
@@ -199,7 +199,7 @@ func TestRecoveryWithoutInspectionNeverPublishesBlindly(t *testing.T) {
 
 func TestManualReconciliationUsesReadOnlyEvidence(t *testing.T) {
 	publisher := &recoveryRecordingPublisher{
-		observation: worker.RecoveryObservation{Action: worker.RecoverySucceeded},
+		observation: releaseworker.RecoveryObservation{Action: releaseworker.RecoverySucceeded},
 	}
 	environment := newTestEnvironmentWithDependencies(t, app.Dependencies{
 		RecoveryPublisher: publisher,
@@ -248,8 +248,8 @@ func TestManualReconciliationUsesReadOnlyEvidence(t *testing.T) {
 }
 
 func TestDeveloperCanReconcileButOnlyOwnerCanForceFail(t *testing.T) {
-	publisher := &recoveryRecordingPublisher{observation: worker.RecoveryObservation{
-		Action:       worker.RecoveryAttention,
+	publisher := &recoveryRecordingPublisher{observation: releaseworker.RecoveryObservation{
+		Action:       releaseworker.RecoveryAttention,
 		ErrorCode:    "ownership_conflict",
 		ErrorSummary: "resource ownership remains ambiguous",
 	}}
@@ -330,16 +330,16 @@ func TestDeveloperCanReconcileButOnlyOwnerCanForceFail(t *testing.T) {
 func TestAttentionRetryRequiresSafeExternalEvidence(t *testing.T) {
 	testCases := []struct {
 		name       string
-		action     worker.RecoveryAction
+		action     releaseworker.RecoveryAction
 		wantStatus int
 		wantState  releaseoperation.ReleaseOperationStatus
 	}{
-		{name: "absent resources are safe", action: worker.RecoveryApply, wantStatus: http.StatusOK, wantState: releaseoperation.StatusPending},
-		{name: "ambiguous resources remain blocked", action: worker.RecoveryAttention, wantStatus: http.StatusConflict, wantState: releaseoperation.StatusAttentionRequired},
+		{name: "absent resources are safe", action: releaseworker.RecoveryApply, wantStatus: http.StatusOK, wantState: releaseoperation.StatusPending},
+		{name: "ambiguous resources remain blocked", action: releaseworker.RecoveryAttention, wantStatus: http.StatusConflict, wantState: releaseoperation.StatusAttentionRequired},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			publisher := &recoveryRecordingPublisher{observation: worker.RecoveryObservation{
+			publisher := &recoveryRecordingPublisher{observation: releaseworker.RecoveryObservation{
 				Action:       testCase.action,
 				ErrorCode:    "ambiguous_state",
 				ErrorSummary: "external state is not safe to overwrite",
@@ -392,7 +392,7 @@ func TestAttentionRetryRequiresSafeExternalEvidence(t *testing.T) {
 }
 
 type recoveryRecordingPublisher struct {
-	observation  worker.RecoveryObservation
+	observation  releaseworker.RecoveryObservation
 	inspectError error
 	inspectCalls int
 	publishCalls int
@@ -401,7 +401,7 @@ type recoveryRecordingPublisher struct {
 
 func (p *recoveryRecordingPublisher) Publish(
 	_ context.Context,
-	_ worker.PublishRequest,
+	_ releaseworker.PublishRequest,
 ) error {
 	p.publishCalls++
 	return nil
@@ -409,15 +409,15 @@ func (p *recoveryRecordingPublisher) Publish(
 
 func (p *recoveryRecordingPublisher) InspectRecovery(
 	_ context.Context,
-	_ worker.PublishRequest,
-) (worker.RecoveryObservation, error) {
+	_ releaseworker.PublishRequest,
+) (releaseworker.RecoveryObservation, error) {
 	p.inspectCalls++
 	return p.observation, p.inspectError
 }
 
 func (p *recoveryRecordingPublisher) ObserveRecovery(
 	_ context.Context,
-	_ worker.PublishRequest,
+	_ releaseworker.PublishRequest,
 ) error {
 	p.observeCalls++
 	return nil
@@ -427,11 +427,11 @@ func newRecoveryRunner(
 	t *testing.T,
 	operations *releaseoperation.Module,
 	db *sqlx.DB,
-	publisher worker.Publisher,
-) *worker.Runner {
+	publisher releaseworker.Publisher,
+) *releaseworker.Runner {
 	t.Helper()
 	releases := delivery.New(db, operations, projectauth.New(db))
-	runner, err := worker.New(worker.Config{
+	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID: "worker-recovery", LeaseDuration: time.Second, ReleaseOperationTimeout: time.Second,
 	}, operations, releases, publisher)
 	if err != nil {

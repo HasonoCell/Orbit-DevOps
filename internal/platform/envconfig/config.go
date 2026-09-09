@@ -29,7 +29,7 @@ type API struct {
 	Kubernetes    Kubernetes
 }
 
-type Worker struct {
+type ReleaseWorker struct {
 	Address                 string
 	DatabaseURL             string
 	WorkerID                string
@@ -39,11 +39,11 @@ type Worker struct {
 	MaximumAutomaticRetries int
 	RetryBaseDelay          time.Duration
 	Kubernetes              Kubernetes
-	Queue                   Queue
+	ReleaseQueue            ReleaseQueue
 }
 
-// Queue 只配置消息运输；业务租约、重试预算仍由 Worker 与 ReleaseOperation 管理。
-type Queue struct {
+// ReleaseQueue 只配置消息运输；业务租约、重试预算仍由 ReleaseWorker 与 ReleaseOperation 管理。
+type ReleaseQueue struct {
 	RedisAddress     string
 	RedisUsername    string
 	RedisPassword    string
@@ -56,41 +56,41 @@ type Queue struct {
 	ShutdownTimeout  time.Duration
 }
 
-// loadQueue 固定运输并发和时间边界；读取密钥但不校验连接，API 因此不依赖 Redis。
-func loadQueue(operationTimeout time.Duration) (Queue, error) {
-	config := Queue{RedisAddress: value("ORBITOPS_REDIS_ADDRESS", "127.0.0.1:6379"),
+// loadReleaseQueue 固定运输并发和时间边界；读取密钥但不校验连接，API 因此不依赖 Redis。
+func loadReleaseQueue(releaseOperationTimeout time.Duration) (ReleaseQueue, error) {
+	config := ReleaseQueue{RedisAddress: value("ORBITOPS_REDIS_ADDRESS", "127.0.0.1:6379"),
 		RedisUsername: os.Getenv("ORBITOPS_REDIS_USERNAME"), RedisPassword: os.Getenv("ORBITOPS_REDIS_PASSWORD"),
-		Name: value("ORBITOPS_QUEUE_NAME", "orbitops-release")}
+		Name: value("ORBITOPS_RELEASE_QUEUE_NAME", "orbitops-release")}
 	var err error
 	config.RedisDB, err = nonNegativeInteger("ORBITOPS_REDIS_DB", 0)
 	if err != nil {
-		return Queue{}, err
+		return ReleaseQueue{}, err
 	}
-	config.Concurrency, err = nonNegativeInteger("ORBITOPS_QUEUE_CONCURRENCY", 4)
+	config.Concurrency, err = nonNegativeInteger("ORBITOPS_RELEASE_QUEUE_CONCURRENCY", 4)
 	if err != nil {
-		return Queue{}, err
+		return ReleaseQueue{}, err
 	}
 	if config.Concurrency < 1 || config.Concurrency > 100 {
-		return Queue{}, errors.New("ORBITOPS_QUEUE_CONCURRENCY must be between 1 and 100")
+		return ReleaseQueue{}, errors.New("ORBITOPS_RELEASE_QUEUE_CONCURRENCY must be between 1 and 100")
 	}
 	for _, item := range []struct {
 		name     string
 		fallback time.Duration
 		target   *time.Duration
 	}{
-		{"ORBITOPS_QUEUE_REPAIR_INTERVAL", 5 * time.Second, &config.RepairInterval},
-		{"ORBITOPS_QUEUE_CONSUMPTION_GRACE", 30 * time.Second, &config.ConsumptionGrace},
-		{"ORBITOPS_QUEUE_TASK_TIMEOUT", operationTimeout + 30*time.Second, &config.TaskTimeout},
-		{"ORBITOPS_QUEUE_SHUTDOWN_TIMEOUT", 15 * time.Second, &config.ShutdownTimeout},
+		{"ORBITOPS_RELEASE_QUEUE_REPAIR_INTERVAL", 5 * time.Second, &config.RepairInterval},
+		{"ORBITOPS_RELEASE_QUEUE_CONSUMPTION_GRACE", 30 * time.Second, &config.ConsumptionGrace},
+		{"ORBITOPS_RELEASE_QUEUE_TASK_TIMEOUT", releaseOperationTimeout + 30*time.Second, &config.TaskTimeout},
+		{"ORBITOPS_RELEASE_QUEUE_SHUTDOWN_TIMEOUT", 15 * time.Second, &config.ShutdownTimeout},
 	} {
 		*item.target, err = duration(item.name, item.fallback)
 		if err != nil {
-			return Queue{}, err
+			return ReleaseQueue{}, err
 		}
 	}
 	// 外层超时必须给输入读取和结果提交留余量，不能抢先截断业务超时。
-	if config.TaskTimeout < operationTimeout+30*time.Second {
-		return Queue{}, errors.New("ORBITOPS_QUEUE_TASK_TIMEOUT must exceed operation timeout by at least 30s")
+	if config.TaskTimeout < releaseOperationTimeout+30*time.Second {
+		return ReleaseQueue{}, errors.New("ORBITOPS_RELEASE_QUEUE_TASK_TIMEOUT must exceed release operation timeout by at least 30s")
 	}
 	return config, nil
 }
@@ -113,54 +113,54 @@ func LoadAPI() (API, error) {
 	}, nil
 }
 
-// LoadWorker 分开加载业务租约与运输参数，拒绝会提前截断业务执行的队列超时。
-func LoadWorker() (Worker, error) {
+// LoadReleaseWorker 分开加载业务租约与运输参数，拒绝会提前截断业务执行的队列超时。
+func LoadReleaseWorker() (ReleaseWorker, error) {
 	kubernetes, err := loadKubernetes()
 	if err != nil {
-		return Worker{}, err
+		return ReleaseWorker{}, err
 	}
-	pollInterval, err := duration("ORBITOPS_WORKER_POLL_INTERVAL", 500*time.Millisecond)
+	pollInterval, err := duration("ORBITOPS_RELEASE_WORKER_POLL_INTERVAL", 500*time.Millisecond)
 	if err != nil {
-		return Worker{}, err
+		return ReleaseWorker{}, err
 	}
-	leaseDuration, err := duration("ORBITOPS_WORKER_LEASE_DURATION", 10*time.Second)
+	leaseDuration, err := duration("ORBITOPS_RELEASE_WORKER_LEASE_DURATION", 10*time.Second)
 	if err != nil {
-		return Worker{}, err
+		return ReleaseWorker{}, err
 	}
-	operationTimeout, err := duration("ORBITOPS_OPERATION_TIMEOUT", 2*time.Minute)
+	releaseOperationTimeout, err := duration("ORBITOPS_RELEASE_OPERATION_TIMEOUT", 2*time.Minute)
 	if err != nil {
-		return Worker{}, err
+		return ReleaseWorker{}, err
 	}
-	queue, err := loadQueue(operationTimeout)
+	queue, err := loadReleaseQueue(releaseOperationTimeout)
 	if err != nil {
-		return Worker{}, err
+		return ReleaseWorker{}, err
 	}
 	maximumAutomaticRetries, err := nonNegativeInteger(
-		"ORBITOPS_MAX_AUTOMATIC_RETRIES",
+		"ORBITOPS_RELEASE_MAX_AUTOMATIC_RETRIES",
 		2,
 	)
 	if err != nil {
-		return Worker{}, err
+		return ReleaseWorker{}, err
 	}
-	retryBaseDelay, err := duration("ORBITOPS_RETRY_BASE_DELAY", time.Second)
+	retryBaseDelay, err := duration("ORBITOPS_RELEASE_RETRY_BASE_DELAY", time.Second)
 	if err != nil {
-		return Worker{}, err
+		return ReleaseWorker{}, err
 	}
 	hostname, err := os.Hostname()
 	if err != nil {
-		return Worker{}, fmt.Errorf("read hostname: %w", err)
+		return ReleaseWorker{}, fmt.Errorf("read hostname: %w", err)
 	}
-	return Worker{
-		Address:                 value("ORBITOPS_WORKER_ADDRESS", "127.0.0.1:9091"),
+	return ReleaseWorker{
+		Address:                 value("ORBITOPS_RELEASE_WORKER_ADDRESS", "127.0.0.1:9091"),
 		DatabaseURL:             value("ORBITOPS_DATABASE_URL", defaultDatabaseURL),
-		WorkerID:                value("ORBITOPS_WORKER_ID", hostname),
+		WorkerID:                value("ORBITOPS_RELEASE_WORKER_ID", hostname),
 		PollInterval:            pollInterval,
 		LeaseDuration:           leaseDuration,
-		ReleaseOperationTimeout: operationTimeout,
+		ReleaseOperationTimeout: releaseOperationTimeout,
 		MaximumAutomaticRetries: maximumAutomaticRetries,
 		RetryBaseDelay:          retryBaseDelay,
 		Kubernetes:              kubernetes,
-		Queue:                   queue,
+		ReleaseQueue:            queue,
 	}, nil
 }
 

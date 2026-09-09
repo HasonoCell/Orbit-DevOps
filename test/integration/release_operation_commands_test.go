@@ -10,7 +10,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -149,7 +149,7 @@ func TestWorkerAcknowledgesRunningReleaseOperationCancellation(t *testing.T) {
 	operations := releaseoperation.New(db)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	publisher := &blockingPublisher{started: make(chan struct{}), release: make(chan struct{})}
-	runner, err := worker.New(worker.Config{
+	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID: "worker-cancel", LeaseDuration: 150 * time.Millisecond,
 		ReleaseOperationTimeout: 3 * time.Second,
 	}, operations, releases, publisher)

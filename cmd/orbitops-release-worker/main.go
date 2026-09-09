@@ -11,14 +11,14 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/OrbitOps/internal/platform/process"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 )
@@ -26,13 +26,13 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger); err != nil {
-		logger.Error("OrbitOps Worker 退出", "error", err)
+		logger.Error("OrbitOps Release Worker 退出", "error", err)
 		os.Exit(1)
 	}
 }
 
 func run(logger *slog.Logger) error {
-	config, err := envconfig.LoadWorker()
+	config, err := envconfig.LoadReleaseWorker()
 	if err != nil {
 		return err
 	}
@@ -48,13 +48,13 @@ func run(logger *slog.Logger) error {
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			logger.Error("关闭 Worker 数据库连接失败", "error", err)
+			logger.Error("关闭 Release Worker 数据库连接失败", "error", err)
 		}
 	}()
 	if err := db.PingContext(ctx); err != nil {
 		return err
 	}
-	operations := releaseoperation.New(
+	releaseOperations := releaseoperation.New(
 		db,
 		releaseoperation.WithAutomaticRetryPolicy(
 			config.MaximumAutomaticRetries,
@@ -71,9 +71,9 @@ func run(logger *slog.Logger) error {
 			},
 		),
 	)
-	releases := delivery.New(db, operations, projectauth.New(db))
-	metrics := observability.NewMetrics(operations.CountPending)
-	metrics.RegisterReleaseOperations(operations.ReadMetricsSnapshot)
+	releases := delivery.New(db, releaseOperations, projectauth.New(db))
+	metrics := observability.NewMetrics(releaseOperations.CountPending)
+	metrics.RegisterReleaseOperations(releaseOperations.ReadMetricsSnapshot)
 	tracing := observability.NewTracing(logger)
 	defer func() {
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -97,27 +97,27 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	runner, err := worker.New(worker.Config{
+	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID:                config.WorkerID,
 		LeaseDuration:           config.LeaseDuration,
 		ReleaseOperationTimeout: config.ReleaseOperationTimeout,
 		Logger:                  logger,
 		Recorder:                metrics,
-		Tracer:                  tracing.Provider.Tracer("orbitops-worker"),
+		Tracer:                  tracing.Provider.Tracer("orbitops-release-worker"),
 		Propagator:              tracing.Propagator,
-	}, operations, releases, adapter)
+	}, releaseOperations, releases, adapter)
 	if err != nil {
 		return err
 	}
 
 	// 正常入口只消费指定投递意图；Redis 故障不回退到全局数据库领取。
-	queue, err := dispatch.New(dispatch.Config{
-		RedisAddress: config.Queue.RedisAddress, RedisUsername: config.Queue.RedisUsername,
-		RedisPassword: config.Queue.RedisPassword, RedisDB: config.Queue.RedisDB,
-		Queue: config.Queue.Name, Concurrency: config.Queue.Concurrency, PollInterval: config.PollInterval,
-		RepairInterval: config.Queue.RepairInterval, ConsumptionGrace: config.Queue.ConsumptionGrace,
-		TaskTimeout: config.Queue.TaskTimeout, ShutdownTimeout: config.Queue.ShutdownTimeout, Logger: logger,
-	}, operations, runner)
+	queue, err := releasedispatch.New(releasedispatch.Config{
+		RedisAddress: config.ReleaseQueue.RedisAddress, RedisUsername: config.ReleaseQueue.RedisUsername,
+		RedisPassword: config.ReleaseQueue.RedisPassword, RedisDB: config.ReleaseQueue.RedisDB,
+		Queue: config.ReleaseQueue.Name, Concurrency: config.ReleaseQueue.Concurrency, PollInterval: config.PollInterval,
+		RepairInterval: config.ReleaseQueue.RepairInterval, ConsumptionGrace: config.ReleaseQueue.ConsumptionGrace,
+		TaskTimeout: config.ReleaseQueue.TaskTimeout, ShutdownTimeout: config.ReleaseQueue.ShutdownTimeout, Logger: logger,
+	}, releaseOperations, runner)
 	if err != nil {
 		return err
 	}

@@ -1,5 +1,5 @@
-// Package dispatch 将持久化执行意图接入 Asynq；不拥有发布状态机或 Kubernetes 权限。
-package dispatch
+// Package releasedispatch 将持久化 ReleaseDispatch 接入 Asynq；不拥有发布状态机或 Kubernetes 权限。
+package releasedispatch
 
 import (
 	"bytes"
@@ -46,37 +46,37 @@ type Config struct {
 
 // Service 在同一 Worker 中管理投递、消费、补偿与退出；每个实例只能运行一次。
 type Service struct {
-	config          Config
-	operations      *releaseoperation.Module
-	executor        Executor
-	client          *asynq.Client
-	connection      *redisclient.Client
-	redis           asynq.RedisClientOpt
-	started         atomic.Bool
-	running         atomic.Bool
-	lastPublish     atomic.Int64
-	lastRepair      atomic.Int64
-	sendErrors      atomic.Uint64
-	received        atomic.Uint64
-	ignored         atomic.Uint64
-	invalid         atomic.Uint64
-	executionErrors atomic.Uint64
-	workersMu       sync.Mutex
-	closing         bool
-	workers         sync.WaitGroup
+	config            Config
+	releaseOperations *releaseoperation.Module
+	executor          Executor
+	client            *asynq.Client
+	connection        *redisclient.Client
+	redis             asynq.RedisClientOpt
+	started           atomic.Bool
+	running           atomic.Bool
+	lastPublish       atomic.Int64
+	lastRepair        atomic.Int64
+	sendErrors        atomic.Uint64
+	received          atomic.Uint64
+	ignored           atomic.Uint64
+	invalid           atomic.Uint64
+	executionErrors   atomic.Uint64
+	workersMu         sync.Mutex
+	closing           bool
+	workers           sync.WaitGroup
 }
 
 // New 校验运行参数；创建对象不会领取或执行任务。
-func New(config Config, operations *releaseoperation.Module, executor Executor) (*Service, error) {
-	if config.RedisAddress == "" || operations == nil || executor == nil || config.Concurrency < 1 || config.Concurrency > 100 ||
+func New(config Config, releaseOperations *releaseoperation.Module, executor Executor) (*Service, error) {
+	if config.RedisAddress == "" || releaseOperations == nil || executor == nil || config.Concurrency < 1 || config.Concurrency > 100 ||
 		config.PollInterval <= 0 || config.RepairInterval <= 0 || config.ConsumptionGrace <= 0 || config.TaskTimeout <= 0 || config.ShutdownTimeout <= 0 || config.RedisDB < 0 {
-		return nil, errors.New("invalid dispatch configuration")
+		return nil, errors.New("invalid release dispatch configuration")
 	}
 	if config.Queue == "" {
 		config.Queue = "orbitops-release"
 	}
 	if strings.TrimSpace(config.Queue) == "" {
-		return nil, errors.New("invalid dispatch queue name")
+		return nil, errors.New("invalid release dispatch queue name")
 	}
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -87,7 +87,7 @@ func New(config Config, operations *releaseoperation.Module, executor Executor) 
 		DB: config.RedisDB, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second}
 	connection := redisclient.NewClient(&redisclient.Options{Addr: config.RedisAddress, Username: config.RedisUsername, Password: config.RedisPassword,
 		DB: config.RedisDB, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second, ContextTimeoutEnabled: true, MaxRetries: -1})
-	return &Service{config: config, operations: operations, executor: executor, redis: redis, connection: connection, client: asynq.NewClientFromRedisClient(connection)}, nil
+	return &Service{config: config, releaseOperations: releaseOperations, executor: executor, redis: redis, connection: connection, client: asynq.NewClientFromRedisClient(connection)}, nil
 }
 
 // Close 释放投递连接；Run 自动调用，单独执行 PublishOnce 的调用方需在结束后调用。
@@ -96,7 +96,7 @@ func (s *Service) Close() error { return s.connection.Close() }
 // PublishOnce 先取得短期投递 token，再在事务外入队；确认失败不会抹去原意图。
 func (s *Service) PublishOnce(ctx context.Context) error {
 	// 每条外部请求最多一秒；批次按并发上限控制，避免 token 在排队发送期间失效。
-	items, err := s.operations.ReserveDispatches(ctx, min(s.config.Concurrency, 100), 10*time.Second)
+	items, err := s.releaseOperations.ReserveDispatches(ctx, min(s.config.Concurrency, 100), 10*time.Second)
 	if err != nil {
 		return errors.New("dispatch_store_unavailable")
 	}
@@ -121,7 +121,7 @@ func (s *Service) PublishOnce(ctx context.Context) error {
 // publish 每条发送有独立截止时间；批次有界并发，不让排队网络等待耗尽投递租约。
 func (s *Service) publish(ctx context.Context, item releaseoperation.Dispatch) error {
 	if item.ReservationCount >= 5 {
-		s.config.Logger.WarnContext(ctx, "发布意图持续未消费，正在退避补发", "operation_id", item.ReleaseOperationID, "dispatch_id", item.DispatchID, "sequence", item.Sequence, "reservation_count", item.ReservationCount)
+		s.config.Logger.WarnContext(ctx, "发布意图持续未消费，正在退避补发", "release_operation_id", item.ReleaseOperationID, "release_dispatch_id", item.DispatchID, "sequence", item.Sequence, "reservation_count", item.ReservationCount)
 	}
 	payload, err := json.Marshal(item.DispatchRef)
 	if err != nil {
@@ -136,12 +136,12 @@ func (s *Service) publish(ctx context.Context, item releaseoperation.Dispatch) e
 		code = "queue_unavailable"
 		s.sendErrors.Add(1)
 	} else {
-		s.config.Logger.InfoContext(ctx, "发布意图已入队", "operation_id", item.ReleaseOperationID, "dispatch_id", item.DispatchID, "sequence", item.Sequence, "task_id", info.ID)
+		s.config.Logger.InfoContext(ctx, "发布意图已入队", "release_operation_id", item.ReleaseOperationID, "release_dispatch_id", item.DispatchID, "sequence", item.Sequence, "task_id", info.ID)
 		if s.config.AfterEnqueue != nil {
 			s.config.AfterEnqueue(item)
 		}
 	}
-	if err := s.operations.ConfirmDispatch(ctx, item, code, s.config.ConsumptionGrace); err != nil {
+	if err := s.releaseOperations.ConfirmDispatch(ctx, item, code, s.config.ConsumptionGrace); err != nil {
 		return errors.New("dispatch_confirmation_unavailable")
 	}
 	if code != "" {
@@ -153,7 +153,7 @@ func (s *Service) publish(ctx context.Context, item releaseoperation.Dispatch) e
 // Run 启动真实消费者及两个有界维护循环。进程退出不等于用户取消发布。
 func (s *Service) Run(ctx context.Context) error {
 	if !s.started.CompareAndSwap(false, true) {
-		return errors.New("dispatch service already started")
+		return errors.New("release dispatch service already started")
 	}
 	defer s.Close()
 	workerContext, cancelWorkers := context.WithCancel(context.Background())
@@ -177,7 +177,7 @@ func (s *Service) Run(ctx context.Context) error {
 	go func() {
 		defer loops.Done()
 		s.loop(ctx, s.config.RepairInterval, func(ctx context.Context) error {
-			_, err := s.operations.RepairDispatches(ctx, 100)
+			_, err := s.releaseOperations.RepairDispatches(ctx, 100)
 			if err == nil {
 				s.lastRepair.Store(time.Now().UnixNano())
 			}
@@ -252,7 +252,7 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	if _, err := uuid.Parse(taskID); err != nil {
 		taskID = "invalid"
 	}
-	s.config.Logger.InfoContext(ctx, "消费发布意图", "operation_id", ref.ReleaseOperationID, "dispatch_id", ref.DispatchID, "sequence", ref.Sequence, "task_id", taskID)
+	s.config.Logger.InfoContext(ctx, "消费发布意图", "release_operation_id", ref.ReleaseOperationID, "release_dispatch_id", ref.DispatchID, "sequence", ref.Sequence, "task_id", taskID)
 	outcome, err := s.executor.RunDispatch(ctx, ref)
 	if err != nil {
 		s.executionErrors.Add(1)
@@ -261,7 +261,7 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	if outcome == releaseoperation.ClaimOutcomeIgnored {
 		s.ignored.Add(1)
 	}
-	s.config.Logger.InfoContext(ctx, "发布意图已处理", "operation_id", ref.ReleaseOperationID, "dispatch_id", ref.DispatchID, "sequence", ref.Sequence, "claim_outcome", outcome)
+	s.config.Logger.InfoContext(ctx, "发布意图已处理", "release_operation_id", ref.ReleaseOperationID, "release_dispatch_id", ref.DispatchID, "sequence", ref.Sequence, "claim_outcome", outcome)
 	return nil
 }
 

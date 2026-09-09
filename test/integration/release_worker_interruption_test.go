@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -25,11 +25,11 @@ const (
 	workerInterruptionMarkerEnv = "ORBITOPS_TEST_WORKER_INTERRUPTION_MARKER"
 )
 
-func TestWorkerRecoversAcrossRealProcessInterruptions(t *testing.T) {
+func TestReleaseWorkerRecoversAcrossRealProcessInterruptions(t *testing.T) {
 	testCases := []struct {
 		name             string
 		mode             string
-		recoveryAction   worker.RecoveryAction
+		recoveryAction   releaseworker.RecoveryAction
 		wantMarker       bool
 		wantPublishCalls int
 		wantObserveCalls int
@@ -37,19 +37,19 @@ func TestWorkerRecoversAcrossRealProcessInterruptions(t *testing.T) {
 		{
 			name:             "before Apply",
 			mode:             "before_publish",
-			recoveryAction:   worker.RecoveryApply,
+			recoveryAction:   releaseworker.RecoveryApply,
 			wantPublishCalls: 1,
 		},
 		{
 			name:           "after Apply before database commit",
 			mode:           "before_commit",
-			recoveryAction: worker.RecoverySucceeded,
+			recoveryAction: releaseworker.RecoverySucceeded,
 			wantMarker:     true,
 		},
 		{
 			name:             "during Rollout observation",
 			mode:             "during_rollout",
-			recoveryAction:   worker.RecoveryObserve,
+			recoveryAction:   releaseworker.RecoveryObserve,
 			wantMarker:       true,
 			wantObserveCalls: 1,
 		},
@@ -75,7 +75,7 @@ func TestWorkerRecoversAcrossRealProcessInterruptions(t *testing.T) {
 			db := openTestDatabase(t, environment.databaseURL)
 			operations := releaseoperation.New(db)
 			publisher := &recoveryRecordingPublisher{
-				observation: worker.RecoveryObservation{Action: testCase.recoveryAction},
+				observation: releaseworker.RecoveryObservation{Action: testCase.recoveryAction},
 			}
 			runner := newRecoveryRunner(t, operations, db, publisher)
 			processed, err := runner.RunOnce(context.Background())
@@ -116,8 +116,8 @@ func TestWorkerRecoversAcrossRealProcessInterruptions(t *testing.T) {
 	}
 }
 
-// TestWorkerInterruptionHelper 在独立测试进程中运行真实 Runner；父进程用退出或 SIGKILL 制造崩溃窗口。
-func TestWorkerInterruptionHelper(t *testing.T) {
+// TestReleaseWorkerInterruptionHelper 在独立测试进程中运行真实 Runner；父进程用退出或 SIGKILL 制造崩溃窗口。
+func TestReleaseWorkerInterruptionHelper(t *testing.T) {
 	mode := os.Getenv(workerInterruptionModeEnv)
 	if mode == "" {
 		return
@@ -133,13 +133,13 @@ func TestWorkerInterruptionHelper(t *testing.T) {
 	operations := releaseoperation.New(db)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	publisher := processInterruptionPublisher{mode: mode, marker: marker}
-	runner, err := worker.New(worker.Config{
+	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID:                "worker-interruption-child",
 		LeaseDuration:           200 * time.Millisecond,
 		ReleaseOperationTimeout: 30 * time.Second,
-		DeliveryHook: func(checkpoint worker.DeliveryCheckpoint, _ worker.PublishRequest) {
-			if (mode == "before_publish" && checkpoint == worker.DeliveryBeforePublish) ||
-				(mode == "before_commit" && checkpoint == worker.DeliveryBeforeCommit) {
+		DeliveryHook: func(checkpoint releaseworker.DeliveryCheckpoint, _ releaseworker.PublishRequest) {
+			if (mode == "before_publish" && checkpoint == releaseworker.DeliveryBeforePublish) ||
+				(mode == "before_commit" && checkpoint == releaseworker.DeliveryBeforeCommit) {
 				os.Exit(91)
 			}
 		},
@@ -154,7 +154,7 @@ func TestWorkerInterruptionHelper(t *testing.T) {
 				os.Exit(91)
 			}
 		}
-		service, err := dispatch.New(config, operations, runner)
+		service, err := releasedispatch.New(config, operations, runner)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,7 +171,7 @@ func runInterruptedWorkerProcess(t *testing.T, databaseURL string, mode string, 
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestWorkerInterruptionHelper$")
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestReleaseWorkerInterruptionHelper$")
 	command.Env = append(os.Environ(),
 		workerInterruptionModeEnv+"="+mode,
 		workerInterruptionDBEnv+"="+databaseURL,
@@ -220,7 +220,7 @@ type processInterruptionPublisher struct {
 	marker string
 }
 
-func (p processInterruptionPublisher) Publish(ctx context.Context, _ worker.PublishRequest) error {
+func (p processInterruptionPublisher) Publish(ctx context.Context, _ releaseworker.PublishRequest) error {
 	if err := os.WriteFile(p.marker, []byte("applied"), 0o600); err != nil {
 		return fmt.Errorf("write external Apply marker: %w", err)
 	}

@@ -15,7 +15,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -44,7 +44,7 @@ func TestRecoveryInspectionClassifiesStableKubernetesState(t *testing.T) {
 	}
 
 	absent, err := newAdapter().InspectRecovery(context.Background(), request)
-	if err != nil || absent.Action != worker.RecoveryApply {
+	if err != nil || absent.Action != releaseworker.RecoveryApply {
 		t.Fatalf("absent recovery observation = %#v, error = %v", absent, err)
 	}
 
@@ -64,7 +64,7 @@ func TestRecoveryInspectionClassifiesStableKubernetesState(t *testing.T) {
 		context.Background(),
 		request,
 	)
-	if err != nil || ready.Action != worker.RecoverySucceeded {
+	if err != nil || ready.Action != releaseworker.RecoverySucceeded {
 		t.Fatalf("ready recovery observation = %#v, error = %v", ready, err)
 	}
 
@@ -78,7 +78,7 @@ func TestRecoveryInspectionClassifiesStableKubernetesState(t *testing.T) {
 		context.Background(),
 		request,
 	)
-	if err != nil || previous.Action != worker.RecoveryReleaseObserved ||
+	if err != nil || previous.Action != releaseworker.RecoveryReleaseObserved ||
 		previous.ObservedReleaseID == nil || *previous.ObservedReleaseID != previousReleaseID {
 		t.Fatalf("previous recovery observation = %#v, error = %v", previous, err)
 	}
@@ -86,7 +86,7 @@ func TestRecoveryInspectionClassifiesStableKubernetesState(t *testing.T) {
 	foreign := readyDeployment.DeepCopy()
 	foreign.Labels = map[string]string{"owner": "outside-orbitops"}
 	conflict, err := newAdapter(foreign).InspectRecovery(context.Background(), request)
-	if err != nil || conflict.Action != worker.RecoveryAttention ||
+	if err != nil || conflict.Action != releaseworker.RecoveryAttention ||
 		conflict.ErrorCode != "ownership_conflict" {
 		t.Fatalf("conflict recovery observation = %#v, error = %v", conflict, err)
 	}
@@ -114,7 +114,7 @@ func TestPublisherRefusesForeignResourceBeforeApply(t *testing.T) {
 	}
 
 	err = adapter.Publish(context.Background(), request)
-	var failure *worker.FailureError
+	var failure *releaseworker.FailureError
 	if !errors.As(err, &failure) {
 		t.Fatalf("publish error = %v, want structured failure", err)
 	}
@@ -504,8 +504,8 @@ func TestRuntimeLogsRefusesOwnedPodOutsideTheDiagnosticProjection(t *testing.T) 
 	}
 }
 
-func publishRequest() worker.PublishRequest {
-	return worker.PublishRequest{
+func publishRequest() releaseworker.PublishRequest {
+	return releaseworker.PublishRequest{
 		ReleaseOperationID: uuid.New(),
 		ReleaseAttemptID:   uuid.New(),
 		ReleaseID:          uuid.New(),
@@ -521,7 +521,7 @@ func publishRequest() worker.PublishRequest {
 	}
 }
 
-func recoveryLabels(request worker.PublishRequest, releaseID uuid.UUID) map[string]string {
+func recoveryLabels(request releaseworker.PublishRequest, releaseID uuid.UUID) map[string]string {
 	return map[string]string{
 		kube.ManagedByLabel:     kube.ManagedByValue,
 		kube.ProjectIDLabel:     request.ProjectID.String(),

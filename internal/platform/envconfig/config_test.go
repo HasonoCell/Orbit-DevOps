@@ -7,19 +7,19 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
 )
 
-func TestQueueDefaultsReserveBusinessCompletionTime(t *testing.T) {
-	t.Setenv("ORBITOPS_OPERATION_TIMEOUT", "3m")
+func TestReleaseQueueDefaultsReserveBusinessCompletionTime(t *testing.T) {
+	t.Setenv("ORBITOPS_RELEASE_OPERATION_TIMEOUT", "3m")
 	t.Setenv("ORBITOPS_REDIS_ADDRESS", "")
-	t.Setenv("ORBITOPS_QUEUE_TASK_TIMEOUT", "")
-	config, err := envconfig.LoadWorker()
+	t.Setenv("ORBITOPS_RELEASE_QUEUE_TASK_TIMEOUT", "")
+	config, err := envconfig.LoadReleaseWorker()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Queue.RedisAddress != "127.0.0.1:6379" || config.Queue.TaskTimeout < 3*time.Minute+30*time.Second || config.Queue.Concurrency != 4 {
+	if config.ReleaseQueue.RedisAddress != "127.0.0.1:6379" || config.ReleaseQueue.TaskTimeout < 3*time.Minute+30*time.Second || config.ReleaseQueue.Concurrency != 4 {
 		t.Fatalf("queue defaults do not reserve completion time")
 	}
-	t.Setenv("ORBITOPS_QUEUE_TASK_TIMEOUT", "3m")
-	if _, err := envconfig.LoadWorker(); err == nil {
+	t.Setenv("ORBITOPS_RELEASE_QUEUE_TASK_TIMEOUT", "3m")
+	if _, err := envconfig.LoadReleaseWorker(); err == nil {
 		t.Fatal("queue timeout shorter than business envelope accepted")
 	}
 }
@@ -27,12 +27,12 @@ func TestQueueDefaultsReserveBusinessCompletionTime(t *testing.T) {
 func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 	for _, name := range []string{
 		"ORBITOPS_API_ADDRESS",
-		"ORBITOPS_WORKER_ADDRESS",
+		"ORBITOPS_RELEASE_WORKER_ADDRESS",
 		"ORBITOPS_KUBERNETES_CONTEXT",
 		"ORBITOPS_CLUSTER_REF",
 		"ORBITOPS_NAMESPACE",
-		"ORBITOPS_MAX_AUTOMATIC_RETRIES",
-		"ORBITOPS_RETRY_BASE_DELAY",
+		"ORBITOPS_RELEASE_MAX_AUTOMATIC_RETRIES",
+		"ORBITOPS_RELEASE_RETRY_BASE_DELAY",
 	} {
 		t.Setenv(name, "")
 	}
@@ -41,15 +41,15 @@ func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load API defaults: %v", err)
 	}
-	workerConfig, err := envconfig.LoadWorker()
+	workerConfig, err := envconfig.LoadReleaseWorker()
 	if err != nil {
-		t.Fatalf("load Worker defaults: %v", err)
+		t.Fatalf("load ReleaseWorker defaults: %v", err)
 	}
 	if apiConfig.Address != "127.0.0.1:8080" {
 		t.Errorf("API address = %q, want loopback default", apiConfig.Address)
 	}
 	if workerConfig.Address != "127.0.0.1:9091" {
-		t.Errorf("Worker address = %q, want loopback default", workerConfig.Address)
+		t.Errorf("ReleaseWorker address = %q, want loopback default", workerConfig.Address)
 	}
 	if apiConfig.Kubernetes.Context != "kind-orbitops-s1" ||
 		apiConfig.Kubernetes.ClusterRef != "kind-orbitops-s1" ||
@@ -57,20 +57,38 @@ func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 		t.Errorf("API Kubernetes defaults = %#v, want S1 local boundary", apiConfig.Kubernetes)
 	}
 	if workerConfig.MaximumAutomaticRetries != 2 || workerConfig.RetryBaseDelay.String() != "1s" {
-		t.Errorf("Worker retry defaults = %#v, want 2 retries with 1s base delay", workerConfig)
+		t.Errorf("ReleaseWorker retry defaults = %#v, want 2 retries with 1s base delay", workerConfig)
 	}
 }
 
-func TestWorkerRejectsNegativeAutomaticRetryCount(t *testing.T) {
-	t.Setenv("ORBITOPS_MAX_AUTOMATIC_RETRIES", "-1")
-	if _, err := envconfig.LoadWorker(); err == nil {
+func TestReleaseWorkerRejectsNegativeAutomaticRetryCount(t *testing.T) {
+	t.Setenv("ORBITOPS_RELEASE_MAX_AUTOMATIC_RETRIES", "-1")
+	if _, err := envconfig.LoadReleaseWorker(); err == nil {
 		t.Fatal("negative automatic retry count was accepted")
 	}
 }
 
-func TestWorkerRejectsInvalidDuration(t *testing.T) {
-	t.Setenv("ORBITOPS_WORKER_LEASE_DURATION", "forever")
-	if _, err := envconfig.LoadWorker(); err == nil {
-		t.Fatal("invalid Worker lease duration was accepted")
+func TestReleaseWorkerRejectsInvalidDuration(t *testing.T) {
+	t.Setenv("ORBITOPS_RELEASE_WORKER_LEASE_DURATION", "forever")
+	if _, err := envconfig.LoadReleaseWorker(); err == nil {
+		t.Fatal("invalid ReleaseWorker lease duration was accepted")
+	}
+}
+
+func TestReleaseWorkerDoesNotReadLegacyEnvironmentNames(t *testing.T) {
+	t.Setenv("ORBITOPS_WORKER_ADDRESS", "127.0.0.1:19091")
+	t.Setenv("ORBITOPS_WORKER_ID", "legacy-worker")
+	t.Setenv("ORBITOPS_RELEASE_WORKER_ADDRESS", "")
+	t.Setenv("ORBITOPS_RELEASE_WORKER_ID", "")
+
+	config, err := envconfig.LoadReleaseWorker()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Address != "127.0.0.1:9091" {
+		t.Fatalf("ReleaseWorker address = %q, want the new default", config.Address)
+	}
+	if config.WorkerID == "legacy-worker" {
+		t.Fatal("ReleaseWorker unexpectedly read the legacy worker ID")
 	}
 }

@@ -1,4 +1,4 @@
-.PHONY: bootstrap kind-up db-up db-down api worker web generate check test test-kind
+.PHONY: bootstrap kind-up db-up db-down api release-worker web generate check test test-kind
 
 bootstrap: kind-up db-up
 	corepack pnpm install --frozen-lockfile
@@ -15,8 +15,8 @@ db-down:
 api:
 	go run ./cmd/orbitops-api
 
-worker:
-	go run ./cmd/orbitops-worker
+release-worker:
+	go run ./cmd/orbitops-release-worker
 
 web:
 	corepack pnpm --filter @orbitops/web dev

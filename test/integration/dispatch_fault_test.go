@@ -15,23 +15,23 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func queueConfig(address string) dispatch.Config {
-	return dispatch.Config{RedisAddress: address, Queue: "orbitops-release", PollInterval: 20 * time.Millisecond, RepairInterval: 50 * time.Millisecond,
+func queueConfig(address string) releasedispatch.Config {
+	return releasedispatch.Config{RedisAddress: address, Queue: "orbitops-release", PollInterval: 20 * time.Millisecond, RepairInterval: 50 * time.Millisecond,
 		ConsumptionGrace: 250 * time.Millisecond, TaskTimeout: 10 * time.Second, ShutdownTimeout: time.Second, Concurrency: 4}
 }
 
 // startQueueTest 的清理先等所有执行者退出，再允许数据库/Redis fixture 关闭。
-func startQueueTest(t *testing.T, service *dispatch.Service) func() {
+func startQueueTest(t *testing.T, service *releasedispatch.Service) func() {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -83,15 +83,15 @@ func awaitQueuedStatus(t *testing.T, operations *releaseoperation.Module, id str
 	return result
 }
 
-func newQueueWithPublisher(t *testing.T, environment *testEnvironment, address string, publisher worker.Publisher) (*dispatch.Service, *releaseoperation.Module) {
+func newQueueWithPublisher(t *testing.T, environment *testEnvironment, address string, publisher releaseworker.Publisher) (*releasedispatch.Service, *releaseoperation.Module) {
 	t.Helper()
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := releaseoperation.New(db, releaseoperation.WithAutomaticRetryPolicy(1, func(int) time.Duration { return 200 * time.Millisecond }))
-	runner, err := worker.New(worker.Config{WorkerID: uuid.NewString(), LeaseDuration: 500 * time.Millisecond, ReleaseOperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db)), publisher)
+	runner, err := releaseworker.New(releaseworker.Config{WorkerID: uuid.NewString(), LeaseDuration: 500 * time.Millisecond, ReleaseOperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db)), publisher)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := dispatch.New(queueConfig(address), operations, runner)
+	service, err := releasedispatch.New(queueConfig(address), operations, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,9 +167,9 @@ func TestQueuePreservesBusinessRetryAndRollback(t *testing.T) {
 	environment := newTestEnvironment(t)
 	_, address := testsupport.StartRedis(t)
 	var calls atomic.Int32
-	publisher := publisherFunc(func(context.Context, worker.PublishRequest) error {
+	publisher := publisherFunc(func(context.Context, releaseworker.PublishRequest) error {
 		if calls.Add(1) <= 2 {
-			return worker.NewRetryableFailure("kubernetes_unavailable", "测试瞬时不可用")
+			return releaseworker.NewRetryableFailure("kubernetes_unavailable", "测试瞬时不可用")
 		}
 		return nil
 	})
@@ -208,9 +208,9 @@ func TestQueuePreservesBusinessRetryAndRollback(t *testing.T) {
 	awaitQueuedStatus(t, operations, rolled.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 }
 
-type publisherFunc func(context.Context, worker.PublishRequest) error
+type publisherFunc func(context.Context, releaseworker.PublishRequest) error
 
-func (f publisherFunc) Publish(ctx context.Context, request worker.PublishRequest) error {
+func (f publisherFunc) Publish(ctx context.Context, request releaseworker.PublishRequest) error {
 	return f(ctx, request)
 }
 
@@ -219,7 +219,7 @@ func TestQueueShutdownLeavesRecoverableReleaseOperation(t *testing.T) {
 	environment := newTestEnvironment(t)
 	_, address := testsupport.StartRedis(t)
 	entered := make(chan struct{})
-	service, operations := newQueueWithPublisher(t, environment, address, publisherFunc(func(ctx context.Context, _ worker.PublishRequest) error {
+	service, operations := newQueueWithPublisher(t, environment, address, publisherFunc(func(ctx context.Context, _ releaseworker.PublishRequest) error {
 		close(entered)
 		<-ctx.Done()
 		return ctx.Err()
@@ -236,7 +236,7 @@ func TestQueueShutdownLeavesRecoverableReleaseOperation(t *testing.T) {
 	if err != nil || current.Status != releaseoperation.StatusRunning || current.AttemptCount != 1 {
 		t.Fatalf("shutdown faked cancellation: %+v %v", current, err)
 	}
-	recovering, _ := newQueueWithPublisher(t, environment, address, &recoveryRecordingPublisher{observation: worker.RecoveryObservation{Action: worker.RecoverySucceeded}})
+	recovering, _ := newQueueWithPublisher(t, environment, address, &recoveryRecordingPublisher{observation: releaseworker.RecoveryObservation{Action: releaseworker.RecoverySucceeded}})
 	startQueueTest(t, recovering)
 	current = awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 	if current.AttemptCount != 2 || current.Attempts[0].Status != releaseoperation.AttemptOutcomeUnknown {
@@ -258,7 +258,7 @@ func TestQueueRejectsMalformedMessagesAndRedactsErrors(t *testing.T) {
 	var logs bytes.Buffer
 	config := queueConfig(address)
 	config.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
-	service, err := dispatch.New(config, operations, executorFunc(func(context.Context, releaseoperation.DispatchRef) (releaseoperation.ClaimOutcome, error) {
+	service, err := releasedispatch.New(config, operations, executorFunc(func(context.Context, releaseoperation.DispatchRef) (releaseoperation.ClaimOutcome, error) {
 		return "", errors.New("secret-probe-not-real-credential")
 	}))
 	if err != nil {
@@ -269,11 +269,11 @@ func TestQueueRejectsMalformedMessagesAndRedactsErrors(t *testing.T) {
 	bad := ref
 	bad.ProtocolVersion = 99
 	payload, _ := json.Marshal(bad)
-	if _, err := client.Enqueue(asynq.NewTask(dispatch.TaskType, payload), asynq.Queue(config.Queue), asynq.MaxRetry(0)); err != nil {
+	if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue(config.Queue), asynq.MaxRetry(0)); err != nil {
 		t.Fatal(err)
 	}
 	payload, _ = json.Marshal(ref)
-	if _, err := client.Enqueue(asynq.NewTask(dispatch.TaskType, payload), asynq.Queue(config.Queue), asynq.TaskID("secret-probe-untrusted-task-id"), asynq.MaxRetry(0)); err != nil {
+	if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue(config.Queue), asynq.TaskID("secret-probe-untrusted-task-id"), asynq.MaxRetry(0)); err != nil {
 		t.Fatal(err)
 	}
 	stop := startQueueTest(t, service)

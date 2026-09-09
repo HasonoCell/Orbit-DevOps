@@ -15,7 +15,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -88,12 +88,12 @@ func TestHealthAndMetricsExposeControlPlaneState(t *testing.T) {
 	for _, want := range []string{
 		"orbitops_http_requests_total",
 		"orbitops_http_request_duration_seconds",
-		"orbitops_pending_operations 2",
-		`orbitops_operation_status{status="pending"} 2`,
-		`orbitops_pending_operation_state{availability="available"} 1`,
-		`orbitops_pending_operation_state{availability="delayed"} 1`,
-		`orbitops_operation_events{event="operation.claimed"} 1`,
-		`orbitops_attempt_errors{error_code="temporary_outage"} 1`,
+		"orbitops_pending_release_operations 2",
+		`orbitops_release_operation_status{status="pending"} 2`,
+		`orbitops_pending_release_operation_state{availability="available"} 1`,
+		`orbitops_pending_release_operation_state{availability="delayed"} 1`,
+		`orbitops_release_operation_events{event="operation.claimed"} 1`,
+		`orbitops_release_attempt_errors{error_code="temporary_outage"} 1`,
 		`orbitops_authorization_denials_total{reason="not_member"} 1`,
 		`orbitops_idempotency_conflicts_total{command="project.create"} 1`,
 	} {
@@ -192,7 +192,7 @@ func TestReleaseTraceContinuesIntoWorkerAttempt(t *testing.T) {
 	operations := releaseoperation.New(db)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	publisher := &traceRecordingPublisher{}
-	runner, err := worker.New(worker.Config{
+	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID:                "trace-worker",
 		LeaseDuration:           time.Second,
 		ReleaseOperationTimeout: time.Second,
@@ -222,7 +222,7 @@ type traceRecordingPublisher struct {
 	spanContext trace.SpanContext
 }
 
-func (p *traceRecordingPublisher) Publish(ctx context.Context, _ worker.PublishRequest) error {
+func (p *traceRecordingPublisher) Publish(ctx context.Context, _ releaseworker.PublishRequest) error {
 	p.spanContext = trace.SpanContextFromContext(ctx)
 	p.traceID = p.spanContext.TraceID()
 	return nil

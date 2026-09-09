@@ -13,11 +13,11 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/app"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
-	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/worker"
+	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -348,7 +348,7 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 	})
 	operations := releaseoperation.New(db)
 	releases := delivery.New(db, operations, projectauth.New(db))
-	runner, err := worker.New(worker.Config{
+	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID:                "kind-worker",
 		LeaseDuration:           5 * time.Second,
 		ReleaseOperationTimeout: 45 * time.Second,
@@ -369,7 +369,7 @@ func redisAddress(t *testing.T) string { _, address := testsupport.StartRedis(t)
 // 数据库查询仅选择需要等待的结果，不调用 ClaimNext，也不直接触发 Runner。
 type kindQueueRunner struct {
 	address    string
-	runner     *worker.Runner
+	runner     *releaseworker.Runner
 	operations *releaseoperation.Module
 	db         *sqlx.DB
 }
@@ -384,7 +384,7 @@ func (r *kindQueueRunner) RunOnce(parent context.Context) (bool, error) {
 	if len(ids) == 0 {
 		return false, nil
 	}
-	service, err := dispatch.New(dispatch.Config{RedisAddress: r.address, Concurrency: 4, PollInterval: 50 * time.Millisecond, RepairInterval: 100 * time.Millisecond,
+	service, err := releasedispatch.New(releasedispatch.Config{RedisAddress: r.address, Concurrency: 4, PollInterval: 50 * time.Millisecond, RepairInterval: 100 * time.Millisecond,
 		ConsumptionGrace: time.Second, TaskTimeout: 60 * time.Second, ShutdownTimeout: time.Second}, r.operations, r.runner)
 	if err != nil {
 		return false, err
@@ -608,8 +608,8 @@ func eventuallyReleaseOperationStatus(
 	}
 }
 
-func publishRequest(lease releaseoperation.Lease, release delivery.Release) worker.PublishRequest {
-	return worker.PublishRequest{
+func publishRequest(lease releaseoperation.Lease, release delivery.Release) releaseworker.PublishRequest {
+	return releaseworker.PublishRequest{
 		ReleaseOperationID: lease.ReleaseOperationID,
 		ReleaseAttemptID:   lease.ReleaseAttemptID,
 		ReleaseID:          release.ID,

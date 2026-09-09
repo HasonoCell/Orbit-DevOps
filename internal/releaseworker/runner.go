@@ -1,4 +1,6 @@
-package worker
+// Package releaseworker 执行 ReleaseOperation，并把每次实际执行记录为 ReleaseAttempt。
+// 它只通过 releaseoperation 模块取得业务执行权，不把队列消息视为执行授权。
+package releaseworker
 
 import (
 	"context"
@@ -138,14 +140,14 @@ func (e *FailureError) RetryRecommended() bool {
 }
 
 type Runner struct {
-	config     Config
-	operations *releaseoperation.Module
-	releases   *delivery.Module
-	publisher  Publisher
-	logger     *slog.Logger
-	recorder   ReleaseOperationRecorder
-	tracer     trace.Tracer
-	propagator propagation.TextMapPropagator
+	config            Config
+	releaseOperations *releaseoperation.Module
+	releases          *delivery.Module
+	publisher         Publisher
+	logger            *slog.Logger
+	recorder          ReleaseOperationRecorder
+	tracer            trace.Tracer
+	propagator        propagation.TextMapPropagator
 }
 
 type heartbeatResult struct {
@@ -155,21 +157,21 @@ type heartbeatResult struct {
 
 func New(
 	config Config,
-	operations *releaseoperation.Module,
+	releaseOperations *releaseoperation.Module,
 	releases *delivery.Module,
 	publisher Publisher,
 ) (*Runner, error) {
 	if config.WorkerID == "" {
-		return nil, errors.New("worker ID is required")
+		return nil, errors.New("release worker ID is required")
 	}
 	if config.LeaseDuration <= 0 {
 		return nil, errors.New("lease duration must be positive")
 	}
 	if config.ReleaseOperationTimeout <= 0 {
-		return nil, errors.New("operation timeout must be positive")
+		return nil, errors.New("release operation timeout must be positive")
 	}
-	if operations == nil {
-		return nil, errors.New("operation module is required")
+	if releaseOperations == nil {
+		return nil, errors.New("release operation module is required")
 	}
 	if releases == nil {
 		return nil, errors.New("delivery module is required")
@@ -183,7 +185,7 @@ func New(
 	}
 	tracer := config.Tracer
 	if tracer == nil {
-		tracer = otel.Tracer("github.com/HasonoCell/OrbitOps/internal/worker")
+		tracer = otel.Tracer("github.com/HasonoCell/OrbitOps/internal/releaseworker")
 	}
 	propagator := config.Propagator
 	if propagator == nil {
@@ -194,20 +196,20 @@ func New(
 	}
 
 	return &Runner{
-		config:     config,
-		operations: operations,
-		releases:   releases,
-		publisher:  publisher,
-		logger:     logger,
-		recorder:   config.Recorder,
-		tracer:     tracer,
-		propagator: propagator,
+		config:            config,
+		releaseOperations: releaseOperations,
+		releases:          releases,
+		publisher:         publisher,
+		logger:            logger,
+		recorder:          config.Recorder,
+		tracer:            tracer,
+		propagator:        propagator,
 	}, nil
 }
 
 func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 	claimStartedAt := time.Now()
-	lease, claimed, err := r.operations.ClaimNext(ctx, releaseoperation.ClaimRequest{
+	lease, claimed, err := r.releaseOperations.ClaimNext(ctx, releaseoperation.ClaimRequest{
 		WorkerID:      r.config.WorkerID,
 		LeaseDuration: r.config.LeaseDuration,
 	})
@@ -225,7 +227,7 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 func (r *Runner) RunDispatch(ctx context.Context, ref releaseoperation.DispatchRef) (releaseoperation.ClaimOutcome, error) {
 	started := time.Now()
 	claimContext, cancelClaim := context.WithTimeout(ctx, 5*time.Second)
-	claim, err := r.operations.ClaimDispatch(claimContext, ref, releaseoperation.ClaimRequest{
+	claim, err := r.releaseOperations.ClaimDispatch(claimContext, ref, releaseoperation.ClaimRequest{
 		WorkerID: r.config.WorkerID, LeaseDuration: r.config.LeaseDuration,
 	})
 	cancelClaim()
@@ -256,19 +258,19 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 		"release delivery attempt",
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
-			attribute.String("orbitops.releaseoperation.id", lease.ReleaseOperationID.String()),
-			attribute.String("orbitops.attempt.id", lease.ReleaseAttemptID.String()),
-			attribute.Int("orbitops.attempt.number", lease.ReleaseAttemptNumber),
+			attribute.String("orbitops.release_operation.id", lease.ReleaseOperationID.String()),
+			attribute.String("orbitops.release_attempt.id", lease.ReleaseAttemptID.String()),
+			attribute.Int("orbitops.release_attempt.number", lease.ReleaseAttemptNumber),
 			attribute.String("orbitops.release.id", lease.ReleaseID.String()),
 		),
 	)
 	defer span.End()
 	r.logger.InfoContext(attemptContext, "Worker 已领取发布操作",
-		"operation_id", lease.ReleaseOperationID,
-		"attempt_id", lease.ReleaseAttemptID,
-		"attempt_number", lease.ReleaseAttemptNumber,
+		"release_operation_id", lease.ReleaseOperationID,
+		"release_attempt_id", lease.ReleaseAttemptID,
+		"release_attempt_number", lease.ReleaseAttemptNumber,
 		"release_id", lease.ReleaseID,
-		"worker_id", lease.WorkerID,
+		"release_worker_id", lease.WorkerID,
 		"trace_id", span.SpanContext().TraceID(),
 	)
 
@@ -285,7 +287,7 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 			Summary:     "accepted release could not be loaded for delivery",
 			Disposition: releaseoperation.NonRetryable,
 		}
-		if _, completionErr := r.operations.Fail(attemptContext, lease, failure); completionErr != nil {
+		if _, completionErr := r.releaseOperations.Fail(attemptContext, lease, failure); completionErr != nil {
 			return true, errors.Join(err, completionErr)
 		}
 		r.recordTerminal(releaseoperation.StatusFailed, failure.Code, attemptStartedAt)
@@ -315,8 +317,8 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 		attribute.String("orbitops.deployment_target.id", request.DeploymentTargetID.String()),
 	)
 	r.logger.InfoContext(attemptContext, "Worker 开始发布 Kubernetes 资源",
-		"operation_id", lease.ReleaseOperationID,
-		"attempt_id", lease.ReleaseAttemptID,
+		"release_operation_id", lease.ReleaseOperationID,
+		"release_attempt_id", lease.ReleaseAttemptID,
 		"release_id", release.ID,
 		"deployment_target_id", release.DeploymentTargetID,
 		"namespace", release.TargetSnapshot.Namespace,
@@ -326,7 +328,7 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 	}
 	// 输入读取或进程调度可能消耗旧租约；外部调用前重新验证，避免等待期间失权后才开始 Apply。
 	checkContext, cancelCheck := context.WithTimeout(attemptContext, min(r.config.LeaseDuration/3, 5*time.Second))
-	renewal, err := r.operations.Renew(checkContext, lease, r.config.LeaseDuration)
+	renewal, err := r.releaseOperations.Renew(checkContext, lease, r.config.LeaseDuration)
 	cancelCheck()
 	if err != nil {
 		return true, err
@@ -377,7 +379,7 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 	}
 
 	if publishErr == nil && executionErr == nil {
-		if err := r.operations.Succeed(attemptContext, lease); err != nil {
+		if err := r.releaseOperations.Succeed(attemptContext, lease); err != nil {
 			if errors.Is(err, releaseoperation.ErrLeaseLost) {
 				if cancelErr := r.finishCancellation(
 					attemptContext,
@@ -394,8 +396,8 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 		r.recordTerminal(releaseoperation.StatusSucceeded, "none", attemptStartedAt)
 		r.recordPhase("end_to_end", release.CreatedAt)
 		r.logger.InfoContext(attemptContext, "发布操作成功",
-			"operation_id", lease.ReleaseOperationID,
-			"attempt_id", lease.ReleaseAttemptID,
+			"release_operation_id", lease.ReleaseOperationID,
+			"release_attempt_id", lease.ReleaseAttemptID,
 			"release_id", release.ID,
 			"deployment_target_id", release.DeploymentTargetID,
 		)
@@ -404,7 +406,7 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 
 	failure := classifyFailure(publishErr, executionErr)
 	if failure.Disposition == releaseoperation.UnknownOutcome {
-		failureResult, err := r.operations.HandleUnknownOutcome(
+		failureResult, err := r.releaseOperations.HandleUnknownOutcome(
 			attemptContext,
 			lease,
 			failure,
@@ -430,22 +432,22 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 		span.SetStatus(codes.Error, failure.Code)
 		if failureResult.RetryScheduled {
 			r.logger.WarnContext(attemptContext, "发布结果未知，已安排调和重试",
-				"operation_id", lease.ReleaseOperationID,
-				"attempt_id", lease.ReleaseAttemptID,
+				"release_operation_id", lease.ReleaseOperationID,
+				"release_attempt_id", lease.ReleaseAttemptID,
 				"error_code", failure.Code,
 				"available_at", failureResult.AvailableAt,
 			)
 			return true, nil
 		}
 		r.logger.ErrorContext(attemptContext, "发布结果未知，需要人工处理",
-			"operation_id", lease.ReleaseOperationID,
-			"attempt_id", lease.ReleaseAttemptID,
+			"release_operation_id", lease.ReleaseOperationID,
+			"release_attempt_id", lease.ReleaseAttemptID,
 			"error_code", failure.Code,
 			"error_summary", failure.Summary,
 		)
 		return true, nil
 	}
-	failureResult, err := r.operations.Fail(attemptContext, lease, failure)
+	failureResult, err := r.releaseOperations.Fail(attemptContext, lease, failure)
 	if err != nil {
 		if errors.Is(err, releaseoperation.ErrLeaseLost) {
 			if cancelErr := r.finishCancellation(
@@ -466,8 +468,8 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 	span.SetStatus(codes.Error, failure.Code)
 	if failureResult.RetryScheduled {
 		r.logger.WarnContext(attemptContext, "发布操作失败，已安排自动重试",
-			"operation_id", lease.ReleaseOperationID,
-			"attempt_id", lease.ReleaseAttemptID,
+			"release_operation_id", lease.ReleaseOperationID,
+			"release_attempt_id", lease.ReleaseAttemptID,
 			"release_id", release.ID,
 			"deployment_target_id", release.DeploymentTargetID,
 			"error_code", failure.Code,
@@ -479,8 +481,8 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 	r.recordTerminal(releaseoperation.StatusFailed, failure.Code, attemptStartedAt)
 	r.recordPhase("end_to_end", release.CreatedAt)
 	r.logger.WarnContext(attemptContext, "发布操作失败",
-		"operation_id", lease.ReleaseOperationID,
-		"attempt_id", lease.ReleaseAttemptID,
+		"release_operation_id", lease.ReleaseOperationID,
+		"release_attempt_id", lease.ReleaseAttemptID,
 		"release_id", release.ID,
 		"deployment_target_id", release.DeploymentTargetID,
 		"error_code", failure.Code,
@@ -583,14 +585,14 @@ func (r *Runner) finishCancellation(
 	releaseCreatedAt time.Time,
 	startedAt time.Time,
 ) error {
-	if err := r.operations.ConfirmCanceled(ctx, lease); err != nil {
+	if err := r.releaseOperations.ConfirmCanceled(ctx, lease); err != nil {
 		return err
 	}
 	r.recordTerminal(releaseoperation.StatusCanceled, "none", startedAt)
 	r.recordPhase("end_to_end", releaseCreatedAt)
 	r.logger.InfoContext(ctx, "发布操作已响应取消请求",
-		"operation_id", lease.ReleaseOperationID,
-		"attempt_id", lease.ReleaseAttemptID,
+		"release_operation_id", lease.ReleaseOperationID,
+		"release_attempt_id", lease.ReleaseAttemptID,
 		"release_id", releaseID,
 	)
 	return nil
@@ -611,7 +613,7 @@ func (r *Runner) maintainLease(ctx context.Context, lease releaseoperation.Lease
 		case <-ticker.C:
 			// 续期失联必须在原租约到期前停止外部调用，不能等待队列的长任务截止时间。
 			renewContext, cancelRenew := context.WithTimeout(ctx, interval)
-			renewal, err := r.operations.Renew(renewContext, lease, r.config.LeaseDuration)
+			renewal, err := r.releaseOperations.Renew(renewContext, lease, r.config.LeaseDuration)
 			cancelRenew()
 			if err != nil {
 				return false, fmt.Errorf("renew claimed operation: %w", err)

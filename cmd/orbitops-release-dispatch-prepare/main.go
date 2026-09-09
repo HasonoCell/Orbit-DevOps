@@ -1,4 +1,4 @@
-// orbitops-dispatch-prepare 为已停止全部新旧 API/Worker 的本地数据库执行加法迁移与离线准备。
+// orbitops-release-dispatch-prepare 为已停止全部新旧 API/Release Worker 的本地数据库执行加法迁移与离线准备。
 // 它不连接 Redis 或 Kubernetes，不关闭用户进程，也不自动确认停机前提。
 package main
 

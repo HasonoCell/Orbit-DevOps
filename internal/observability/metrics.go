@@ -14,32 +14,32 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-type PendingCounter func(context.Context) (int, error)
+type ReleaseOperationPendingCounter func(context.Context) (int, error)
 
 // ReleaseOperationSnapshotReader 读取由数据库权威事实重建的 ReleaseOperation 指标快照。
 type ReleaseOperationSnapshotReader func(context.Context) (releaseoperation.MetricsSnapshot, error)
 
 type Metrics struct {
-	registry            *prometheus.Registry
-	httpRequests        *prometheus.CounterVec
-	httpDuration        *prometheus.HistogramVec
-	operationDuration   *prometheus.HistogramVec
-	operationPhase      *prometheus.HistogramVec
-	operationTerminal   *prometheus.CounterVec
-	kubernetesReadFail  prometheus.Counter
-	operationStatus     *prometheus.GaugeVec
-	pendingState        *prometheus.GaugeVec
-	operationEvents     *prometheus.GaugeVec
-	attemptErrors       *prometheus.GaugeVec
-	authorizationDeny   *prometheus.CounterVec
-	idempotencyConflict *prometheus.CounterVec
-	pendingOnce         sync.Once
-	operationOnce       sync.Once
-	refreshMu           sync.Mutex
-	operationSnapshot   ReleaseOperationSnapshotReader
+	registry                     *prometheus.Registry
+	httpRequests                 *prometheus.CounterVec
+	httpDuration                 *prometheus.HistogramVec
+	releaseOperationDuration     *prometheus.HistogramVec
+	releaseOperationPhase        *prometheus.HistogramVec
+	releaseOperationTerminal     *prometheus.CounterVec
+	kubernetesReadFail           prometheus.Counter
+	releaseOperationStatus       *prometheus.GaugeVec
+	pendingReleaseOperationState *prometheus.GaugeVec
+	releaseOperationEvents       *prometheus.GaugeVec
+	releaseAttemptErrors         *prometheus.GaugeVec
+	authorizationDeny            *prometheus.CounterVec
+	idempotencyConflict          *prometheus.CounterVec
+	pendingOnce                  sync.Once
+	releaseOperationOnce         sync.Once
+	refreshMu                    sync.Mutex
+	releaseOperationSnapshot     ReleaseOperationSnapshotReader
 }
 
-func NewMetrics(pending PendingCounter) *Metrics {
+func NewMetrics(pending ReleaseOperationPendingCounter) *Metrics {
 	metrics := &Metrics{
 		registry: prometheus.NewRegistry(),
 		httpRequests: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -53,21 +53,21 @@ func NewMetrics(pending PendingCounter) *Metrics {
 			Help:      "OrbitOps HTTP 请求耗时。",
 			Buckets:   prometheus.DefBuckets,
 		}, []string{"method", "route"}),
-		operationDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		releaseOperationDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "orbitops",
-			Name:      "operation_duration_seconds",
+			Name:      "release_operation_duration_seconds",
 			Help:      "OrbitOps ReleaseOperation 尝试耗时。",
 			Buckets:   prometheus.ExponentialBuckets(0.1, 2, 12),
 		}, []string{"status", "category"}),
-		operationPhase: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		releaseOperationPhase: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "orbitops",
-			Name:      "operation_phase_duration_seconds",
+			Name:      "release_operation_phase_duration_seconds",
 			Help:      "ReleaseOperation 领取、执行、恢复与端到端阶段耗时。",
 			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 18),
 		}, []string{"phase"}),
-		operationTerminal: prometheus.NewCounterVec(prometheus.CounterOpts{
+		releaseOperationTerminal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "orbitops",
-			Name:      "operation_terminal_total",
+			Name:      "release_operation_terminal_total",
 			Help:      "OrbitOps ReleaseOperation 终态分类总数。",
 		}, []string{"status", "category"}),
 		kubernetesReadFail: prometheus.NewCounter(prometheus.CounterOpts{
@@ -75,17 +75,17 @@ func NewMetrics(pending PendingCounter) *Metrics {
 			Name:      "kubernetes_read_failures_total",
 			Help:      "OrbitOps Kubernetes 回读失败总数。",
 		}),
-		operationStatus: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "operation_status", Help: "按状态统计的 ReleaseOperation 当前数量。",
+		releaseOperationStatus: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "orbitops", Name: "release_operation_status", Help: "按状态统计的 ReleaseOperation 当前数量。",
 		}, []string{"status"}),
-		pendingState: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "pending_operation_state", Help: "按可领取性统计的 pending ReleaseOperation 数量。",
+		pendingReleaseOperationState: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "orbitops", Name: "pending_release_operation_state", Help: "按可领取性统计的 pending ReleaseOperation 数量。",
 		}, []string{"availability"}),
-		operationEvents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "operation_events", Help: "PostgreSQL 审计中持久化的 ReleaseOperation 事件累计数量。",
+		releaseOperationEvents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "orbitops", Name: "release_operation_events", Help: "PostgreSQL 审计中持久化的 ReleaseOperation 事件累计数量。",
 		}, []string{"event"}),
-		attemptErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "attempt_errors", Help: "按稳定错误代码统计的 Attempt 累计数量。",
+		releaseAttemptErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "orbitops", Name: "release_attempt_errors", Help: "按稳定错误代码统计的 Attempt 累计数量。",
 		}, []string{"error_code"}),
 		authorizationDeny: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "orbitops", Name: "authorization_denials_total", Help: "按受控原因统计的项目授权拒绝数量。",
@@ -99,18 +99,18 @@ func NewMetrics(pending PendingCounter) *Metrics {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		metrics.httpRequests,
 		metrics.httpDuration,
-		metrics.operationDuration,
-		metrics.operationPhase,
-		metrics.operationTerminal,
+		metrics.releaseOperationDuration,
+		metrics.releaseOperationPhase,
+		metrics.releaseOperationTerminal,
 		metrics.kubernetesReadFail,
-		metrics.operationStatus,
-		metrics.pendingState,
-		metrics.operationEvents,
-		metrics.attemptErrors,
+		metrics.releaseOperationStatus,
+		metrics.pendingReleaseOperationState,
+		metrics.releaseOperationEvents,
+		metrics.releaseAttemptErrors,
 		metrics.authorizationDeny,
 		metrics.idempotencyConflict,
 	)
-	metrics.RegisterPending(pending)
+	metrics.RegisterReleaseOperationPending(pending)
 	return metrics
 }
 
@@ -119,17 +119,17 @@ func (m *Metrics) RegisterReleaseOperations(reader ReleaseOperationSnapshotReade
 	if reader == nil {
 		return
 	}
-	m.operationOnce.Do(func() { m.operationSnapshot = reader })
+	m.releaseOperationOnce.Do(func() { m.releaseOperationSnapshot = reader })
 }
 
-func (m *Metrics) RegisterPending(pending PendingCounter) {
+func (m *Metrics) RegisterReleaseOperationPending(pending ReleaseOperationPendingCounter) {
 	if pending == nil {
 		return
 	}
 	m.pendingOnce.Do(func() {
 		m.registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Namespace: "orbitops",
-			Name:      "pending_operations",
+			Name:      "pending_release_operations",
 			Help:      "当前等待 Worker 领取的 ReleaseOperation 数量。",
 		}, func() float64 {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -162,13 +162,13 @@ func (m *Metrics) RecordHTTPRequest(method string, route string, status int, dur
 }
 
 func (m *Metrics) RecordReleaseOperation(status string, category string, duration time.Duration) {
-	m.operationDuration.WithLabelValues(status, category).Observe(duration.Seconds())
-	m.operationTerminal.WithLabelValues(status, category).Inc()
+	m.releaseOperationDuration.WithLabelValues(status, category).Observe(duration.Seconds())
+	m.releaseOperationTerminal.WithLabelValues(status, category).Inc()
 }
 
 // RecordReleaseOperationPhase 记录固定阶段集合的耗时，调用方不得把动态值作为 phase。
 func (m *Metrics) RecordReleaseOperationPhase(phase string, duration time.Duration) {
-	m.operationPhase.WithLabelValues(phase).Observe(duration.Seconds())
+	m.releaseOperationPhase.WithLabelValues(phase).Observe(duration.Seconds())
 }
 
 func (m *Metrics) RecordKubernetesReadFailure() {
@@ -186,30 +186,30 @@ func (m *Metrics) RecordIdempotencyConflict(commandType string) {
 }
 
 func (m *Metrics) refreshReleaseOperationMetrics(ctx context.Context) {
-	if m.operationSnapshot == nil {
+	if m.releaseOperationSnapshot == nil {
 		return
 	}
 	m.refreshMu.Lock()
 	defer m.refreshMu.Unlock()
 	readContext, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	snapshot, err := m.operationSnapshot(readContext)
+	snapshot, err := m.releaseOperationSnapshot(readContext)
 	if err != nil {
 		return
 	}
-	m.operationStatus.Reset()
+	m.releaseOperationStatus.Reset()
 	for _, count := range snapshot.Statuses {
-		m.operationStatus.WithLabelValues(count.Label).Set(float64(count.Count))
+		m.releaseOperationStatus.WithLabelValues(count.Label).Set(float64(count.Count))
 	}
-	m.pendingState.Reset()
-	m.pendingState.WithLabelValues("available").Set(float64(snapshot.PendingAvailable))
-	m.pendingState.WithLabelValues("delayed").Set(float64(snapshot.PendingDelayed))
-	m.operationEvents.Reset()
+	m.pendingReleaseOperationState.Reset()
+	m.pendingReleaseOperationState.WithLabelValues("available").Set(float64(snapshot.PendingAvailable))
+	m.pendingReleaseOperationState.WithLabelValues("delayed").Set(float64(snapshot.PendingDelayed))
+	m.releaseOperationEvents.Reset()
 	for _, count := range snapshot.Events {
-		m.operationEvents.WithLabelValues(count.Label).Set(float64(count.Count))
+		m.releaseOperationEvents.WithLabelValues(count.Label).Set(float64(count.Count))
 	}
-	m.attemptErrors.Reset()
+	m.releaseAttemptErrors.Reset()
 	for _, count := range snapshot.AttemptErrorCodes {
-		m.attemptErrors.WithLabelValues(count.Label).Set(float64(count.Count))
+		m.releaseAttemptErrors.WithLabelValues(count.Label).Set(float64(count.Count))
 	}
 }
