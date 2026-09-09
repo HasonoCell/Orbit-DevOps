@@ -18,7 +18,6 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/platform/database"
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
 	"github.com/HasonoCell/OrbitOps/internal/transport/httpapi"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/gin-gonic/gin"
@@ -44,8 +43,7 @@ type Runtime struct {
 }
 
 type Dependencies struct {
-	RuntimeObserver   runtimeview.Observer
-	DiagnosticSource  diagnostics.RuntimeSource
+	RuntimeSource     diagnostics.RuntimeSource
 	RecoveryPublisher worker.RecoveryPublisher
 	Logger            *slog.Logger
 	Metrics           *observability.Metrics
@@ -104,7 +102,7 @@ func NewWithDependencies(
 	}, authorizer)
 	operationModule := operation.New(db, operation.WithAuthorizer(authorizer))
 	deliveryModule := delivery.New(db, operationModule, authorizer)
-	diagnosticModule := diagnostics.New(db, authorizer, dependencies.DiagnosticSource)
+	diagnosticModule := diagnostics.New(db, authorizer, dependencies.RuntimeSource)
 	logger := dependencies.Logger
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -127,10 +125,6 @@ func NewWithDependencies(
 			propagation.Baggage{},
 		)
 	}
-	observer := dependencies.RuntimeObserver
-	if observer == nil {
-		observer = runtimeview.UnavailableObserver{}
-	}
 	server := httpapi.NewServer(
 		projectModule,
 		catalogModule,
@@ -138,7 +132,6 @@ func NewWithDependencies(
 		diagnosticModule,
 		operationModule,
 		authorizer,
-		observer,
 		dependencies.RecoveryPublisher,
 		config.LocalActorID,
 		propagator,

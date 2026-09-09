@@ -12,6 +12,7 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/app"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
+	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
@@ -53,15 +54,18 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 			t.Errorf("operation attempts = %#v, want one succeeded attempt", current.Attempts)
 		}
 
-		snapshot := environment.getRuntimeSnapshot(t, acceptance.TargetID)
-		if snapshot.Source != "kubernetes" || snapshot.Freshness != "fresh" {
-			t.Errorf("runtime source/freshness = %q/%q, want kubernetes/fresh", snapshot.Source, snapshot.Freshness)
+		report := environment.getReleaseDiagnostics(t, acceptance.ReleaseID)
+		if report.WorkloadObservation.Metadata.Source != diagnostics.SourceKubernetes ||
+			report.WorkloadObservation.Metadata.Status != string(diagnostics.ObservationComplete) {
+			t.Errorf("runtime observation metadata = %#v, want complete Kubernetes evidence", report.WorkloadObservation.Metadata)
 		}
-		if !snapshot.DeploymentExists || snapshot.ReadyReplicas != 1 {
-			t.Errorf("runtime snapshot = %#v, want Ready deployment", snapshot)
+		deployment := report.WorkloadObservation.Deployment
+		if deployment == nil || deployment.ReadyReplicas != 1 {
+			t.Errorf("runtime deployment = %#v, want Ready deployment", deployment)
 		}
-		if snapshot.ReleaseID == nil || *snapshot.ReleaseID != acceptance.ReleaseID {
-			t.Errorf("runtime releaseId = %v, want %s", snapshot.ReleaseID, acceptance.ReleaseID)
+		if deployment.ReleaseID == nil || *deployment.ReleaseID != acceptance.ReleaseID ||
+			report.RuntimeReleaseRelation != string(diagnostics.RuntimeReleaseMatches) {
+			t.Errorf("runtime release relation = %q, releaseId = %v, want %s", report.RuntimeReleaseRelation, deployment.ReleaseID, acceptance.ReleaseID)
 		}
 	})
 
@@ -90,12 +94,13 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 			t.Errorf("operation attempts = %#v, want one failed attempt", current.Attempts)
 		}
 
-		snapshot := environment.getRuntimeSnapshot(t, acceptance.TargetID)
-		if snapshot.Freshness != "fresh" || !snapshot.DeploymentExists {
-			t.Errorf("failure runtime snapshot = %#v, want fresh Kubernetes state", snapshot)
+		report := environment.getReleaseDiagnostics(t, acceptance.ReleaseID)
+		if report.WorkloadObservation.Metadata.Status != string(diagnostics.ObservationComplete) ||
+			report.WorkloadObservation.Deployment == nil {
+			t.Errorf("failure runtime observation = %#v, want complete Kubernetes evidence", report.WorkloadObservation)
 		}
-		if len(snapshot.Pods) == 0 || snapshot.Pods[0].Reason == "" {
-			t.Errorf("failure pods = %#v, want Kubernetes pull failure", snapshot.Pods)
+		if len(report.WorkloadObservation.Pods) == 0 || report.WorkloadObservation.Pods[0].Reason == "" {
+			t.Errorf("failure pods = %#v, want Kubernetes pull failure", report.WorkloadObservation.Pods)
 		}
 	})
 
@@ -194,9 +199,10 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 		if current.Status != operation.StatusSucceeded {
 			t.Fatalf("rollback operation = %#v", current)
 		}
-		snapshot := environment.getRuntimeSnapshot(t, source.TargetID)
-		if snapshot.ReleaseID == nil || *snapshot.ReleaseID != rollback.ReleaseID {
-			t.Fatalf("rollback runtime releaseId = %v, want %s", snapshot.ReleaseID, rollback.ReleaseID)
+		report := environment.getReleaseDiagnostics(t, rollback.ReleaseID)
+		deployment := report.WorkloadObservation.Deployment
+		if deployment == nil || deployment.ReleaseID == nil || *deployment.ReleaseID != rollback.ReleaseID {
+			t.Fatalf("rollback runtime deployment = %#v, want release %s", deployment, rollback.ReleaseID)
 		}
 	})
 
@@ -267,16 +273,22 @@ type operationAttemptResponse struct {
 	Status operation.AttemptStatus `json:"status"`
 }
 
-type runtimeSnapshotResponse struct {
-	Source           string               `json:"source"`
-	Freshness        string               `json:"freshness"`
-	DeploymentExists bool                 `json:"deploymentExists"`
-	ReleaseID        *string              `json:"releaseId"`
-	ReadyReplicas    int                  `json:"readyReplicas"`
-	Pods             []runtimePodResponse `json:"pods"`
+type releaseDiagnosticResponse struct {
+	RuntimeReleaseRelation string `json:"runtimeReleaseRelation"`
+	WorkloadObservation    struct {
+		Metadata struct {
+			Source string `json:"source"`
+			Status string `json:"status"`
+		} `json:"metadata"`
+		Deployment *struct {
+			ReleaseID     *string `json:"releaseId"`
+			ReadyReplicas int     `json:"readyReplicas"`
+		} `json:"deployment"`
+		Pods []diagnosticPodResponse `json:"pods"`
+	} `json:"workloadObservation"`
 }
 
-type runtimePodResponse struct {
+type diagnosticPodResponse struct {
 	Reason string `json:"reason"`
 }
 
@@ -311,8 +323,7 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 		LocalNamespace:  kindNamespace,
 		MigrateOnBoot:   true,
 	}, app.Dependencies{
-		RuntimeObserver:   adapter,
-		DiagnosticSource:  adapter,
+		RuntimeSource:     adapter,
 		RecoveryPublisher: adapter,
 	})
 	if err != nil {
@@ -552,13 +563,13 @@ func (e *kindControlPlane) getOperation(t *testing.T, operationID string) operat
 	return document
 }
 
-func (e *kindControlPlane) getRuntimeSnapshot(
+func (e *kindControlPlane) getReleaseDiagnostics(
 	t *testing.T,
-	targetID string,
-) runtimeSnapshotResponse {
+	releaseID string,
+) releaseDiagnosticResponse {
 	t.Helper()
-	var document runtimeSnapshotResponse
-	e.getJSON(t, "/api/v1/deployment-targets/"+targetID+"/runtime-snapshot", &document)
+	var document releaseDiagnosticResponse
+	e.getJSON(t, "/api/v1/releases/"+releaseID+"/diagnostics", &document)
 	return document
 }
 

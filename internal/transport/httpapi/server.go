@@ -12,7 +12,6 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/propagation"
@@ -25,7 +24,6 @@ type Server struct {
 	diagnostics  *diagnostics.Module
 	operations   *operation.Module
 	authorizer   *projectauth.Module
-	observer     runtimeview.Observer
 	recovery     worker.RecoveryPublisher
 	localActorID string
 	propagator   propagation.TextMapPropagator
@@ -79,7 +77,6 @@ func NewServer(
 	diagnosticModule *diagnostics.Module,
 	operationModule *operation.Module,
 	authorizer *projectauth.Module,
-	observer runtimeview.Observer,
 	recovery worker.RecoveryPublisher,
 	localActorID string,
 	propagator propagation.TextMapPropagator,
@@ -91,7 +88,6 @@ func NewServer(
 		diagnostics:  diagnosticModule,
 		operations:   operationModule,
 		authorizer:   authorizer,
-		observer:     observer,
 		recovery:     recovery,
 		localActorID: localActorID,
 		propagator:   propagator,

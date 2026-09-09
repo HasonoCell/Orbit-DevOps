@@ -69,8 +69,7 @@ func run(logger *slog.Logger) error {
 		LocalNamespace:  config.Kubernetes.Namespace,
 		MigrateOnBoot:   config.MigrateOnBoot,
 	}, app.Dependencies{
-		RuntimeObserver:   adapter,
-		DiagnosticSource:  adapter,
+		RuntimeSource:     adapter,
 		RecoveryPublisher: adapter,
 		Logger:            logger,
 		Metrics:           metrics,

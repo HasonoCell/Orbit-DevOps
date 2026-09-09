@@ -125,26 +125,23 @@ type RuntimeObservation struct {
 	Events   EventObservation
 }
 
-type RuntimeQuery struct {
+// TargetRuntimeQuery 只描述目标级运行事实的读取范围，不暗示 Kubernetes 资源属于某个 Release。
+type TargetRuntimeQuery struct {
 	ProjectID     uuid.UUID
 	ApplicationID uuid.UUID
 	TargetID      uuid.UUID
-	ReleaseID     uuid.UUID
 	ClusterRef    string
 	Namespace     string
 }
 
-// RuntimeSource 隐藏 Kubernetes 查询顺序、关联与裁剪规则。
+// RuntimeSource 隐藏 Kubernetes 查询顺序、关联、裁剪与日志归属校验规则。
 type RuntimeSource interface {
-	ObserveRelease(context.Context, RuntimeQuery) RuntimeObservation
+	ObserveTarget(context.Context, TargetRuntimeQuery) RuntimeObservation
+	ReadReleaseLogs(context.Context, ReleaseRuntimeLogQuery) (RuntimeLogResult, error)
 }
 
-// RuntimeLogSource 只暴露经过资源归属校验的单次日志读取，不允许 Follow 或任意 Namespace 浏览。
-type RuntimeLogSource interface {
-	ReadRuntimeLogs(context.Context, RuntimeLogQuery) (RuntimeLogResult, error)
-}
-
-type RuntimeLogQuery struct {
+// ReleaseRuntimeLogQuery 将日志读取约束在一个明确 Release 的有界 Pod 和 Container 上。
+type ReleaseRuntimeLogQuery struct {
 	ProjectID     uuid.UUID
 	ApplicationID uuid.UUID
 	TargetID      uuid.UUID

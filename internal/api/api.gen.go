@@ -174,19 +174,19 @@ func (e ObservationMetadataSource) Valid() bool {
 
 // Defines values for ObservationMetadataStatus.
 const (
-	ObservationMetadataStatusComplete    ObservationMetadataStatus = "complete"
-	ObservationMetadataStatusPartial     ObservationMetadataStatus = "partial"
-	ObservationMetadataStatusUnavailable ObservationMetadataStatus = "unavailable"
+	Complete    ObservationMetadataStatus = "complete"
+	Partial     ObservationMetadataStatus = "partial"
+	Unavailable ObservationMetadataStatus = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the ObservationMetadataStatus enum.
 func (e ObservationMetadataStatus) Valid() bool {
 	switch e {
-	case ObservationMetadataStatusComplete:
+	case Complete:
 		return true
-	case ObservationMetadataStatusPartial:
+	case Partial:
 		return true
-	case ObservationMetadataStatusUnavailable:
+	case Unavailable:
 		return true
 	default:
 		return false
@@ -391,39 +391,6 @@ const (
 func (e RuntimeLogExcerptSource) Valid() bool {
 	switch e {
 	case RuntimeLogExcerptSourceKubernetes:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for RuntimeSnapshotFreshness.
-const (
-	RuntimeSnapshotFreshnessFresh       RuntimeSnapshotFreshness = "fresh"
-	RuntimeSnapshotFreshnessUnavailable RuntimeSnapshotFreshness = "unavailable"
-)
-
-// Valid indicates whether the value is a known member of the RuntimeSnapshotFreshness enum.
-func (e RuntimeSnapshotFreshness) Valid() bool {
-	switch e {
-	case RuntimeSnapshotFreshnessFresh:
-		return true
-	case RuntimeSnapshotFreshnessUnavailable:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for RuntimeSnapshotSource.
-const (
-	RuntimeSnapshotSourceKubernetes RuntimeSnapshotSource = "kubernetes"
-)
-
-// Valid indicates whether the value is a known member of the RuntimeSnapshotSource enum.
-func (e RuntimeSnapshotSource) Valid() bool {
-	switch e {
-	case RuntimeSnapshotSourceKubernetes:
 		return true
 	default:
 		return false
@@ -814,14 +781,6 @@ type ReleaseTargetSnapshotStage string
 // RetryDisposition defines model for RetryDisposition.
 type RetryDisposition string
 
-// RuntimeCondition defines model for RuntimeCondition.
-type RuntimeCondition struct {
-	Message string `json:"message"`
-	Reason  string `json:"reason"`
-	Status  string `json:"status"`
-	Type    string `json:"type"`
-}
-
 // RuntimeLogExcerpt defines model for RuntimeLogExcerpt.
 type RuntimeLogExcerpt struct {
 	Container string `json:"container"`
@@ -839,38 +798,6 @@ type RuntimeLogExcerpt struct {
 
 // RuntimeLogExcerptSource defines model for RuntimeLogExcerpt.Source.
 type RuntimeLogExcerptSource string
-
-// RuntimePod defines model for RuntimePod.
-type RuntimePod struct {
-	Name   string `json:"name"`
-	Phase  string `json:"phase"`
-	Ready  bool   `json:"ready"`
-	Reason string `json:"reason"`
-}
-
-// RuntimeSnapshot defines model for RuntimeSnapshot.
-type RuntimeSnapshot struct {
-	AvailableReplicas  int                      `json:"availableReplicas"`
-	Conditions         []RuntimeCondition       `json:"conditions"`
-	DeploymentExists   bool                     `json:"deploymentExists"`
-	DeploymentName     string                   `json:"deploymentName"`
-	DeploymentTargetId openapi_types.UUID       `json:"deploymentTargetId"`
-	DesiredReplicas    int                      `json:"desiredReplicas"`
-	ErrorCategory      *string                  `json:"errorCategory,omitempty"`
-	Freshness          RuntimeSnapshotFreshness `json:"freshness"`
-	ObservedAt         time.Time                `json:"observedAt"`
-	Pods               []RuntimePod             `json:"pods"`
-	ReadyReplicas      int                      `json:"readyReplicas"`
-	ReleaseId          *openapi_types.UUID      `json:"releaseId,omitempty"`
-	Source             RuntimeSnapshotSource    `json:"source"`
-	UpdatedReplicas    int                      `json:"updatedReplicas"`
-}
-
-// RuntimeSnapshotFreshness defines model for RuntimeSnapshot.Freshness.
-type RuntimeSnapshotFreshness string
-
-// RuntimeSnapshotSource defines model for RuntimeSnapshot.Source.
-type RuntimeSnapshotSource string
 
 // SnapshotDifference defines model for SnapshotDifference.
 type SnapshotDifference struct {
@@ -1041,9 +968,6 @@ type ServerInterface interface {
 	// CreateRelease 创建发布并接纳异步操作
 	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
 	CreateRelease(c *gin.Context, deploymentTargetId openapi_types.UUID, params CreateReleaseParams)
-	// GetRuntimeSnapshot 从 Kubernetes 查询部署目标的当前运行状态
-	// (GET /api/v1/deployment-targets/{deploymentTargetId}/runtime-snapshot)
-	GetRuntimeSnapshot(c *gin.Context, deploymentTargetId openapi_types.UUID)
 	// GetOperation 查询异步操作
 	// (GET /api/v1/operations/{operationId})
 	GetOperation(c *gin.Context, operationId openapi_types.UUID)
@@ -1351,31 +1275,6 @@ func (siw *ServerInterfaceWrapper) CreateRelease(c *gin.Context) {
 	}
 
 	siw.Handler.CreateRelease(c, deploymentTargetId, params)
-}
-
-// GetRuntimeSnapshot operation middleware
-func (siw *ServerInterfaceWrapper) GetRuntimeSnapshot(c *gin.Context) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "deploymentTargetId" -------------
-	var deploymentTargetId openapi_types.UUID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "deploymentTargetId", c.Param("deploymentTargetId"), &deploymentTargetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deploymentTargetId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetRuntimeSnapshot(c, deploymentTargetId)
 }
 
 // GetOperation operation middleware
@@ -2132,7 +2031,6 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId", wrapper.UpdateDeploymentTarget)
 	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/releases", wrapper.ListReleaseHistory)
 	router.POST(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/releases", wrapper.CreateRelease)
-	router.GET(options.BaseURL+"/api/v1/deployment-targets/:deploymentTargetId/runtime-snapshot", wrapper.GetRuntimeSnapshot)
 	router.GET(options.BaseURL+"/api/v1/releases/:releaseId", wrapper.GetRelease)
 	router.GET(options.BaseURL+"/api/v1/releases/:releaseId/diagnostics", wrapper.GetReleaseDiagnostics)
 	router.GET(options.BaseURL+"/api/v1/releases/:releaseId/runtime-logs", wrapper.GetReleaseRuntimeLogs)
@@ -2570,59 +2468,6 @@ type CreateReleasedefaultJSONResponse struct {
 }
 
 func (response CreateReleasedefaultJSONResponse) VisitCreateReleaseResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetRuntimeSnapshotRequestObject struct {
-	DeploymentTargetId openapi_types.UUID `json:"deploymentTargetId"`
-}
-
-type GetRuntimeSnapshotResponseObject interface {
-	VisitGetRuntimeSnapshotResponse(w http.ResponseWriter) error
-}
-
-type GetRuntimeSnapshot200JSONResponse RuntimeSnapshot
-
-func (response GetRuntimeSnapshot200JSONResponse) VisitGetRuntimeSnapshotResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetRuntimeSnapshot404JSONResponse Error
-
-func (response GetRuntimeSnapshot404JSONResponse) VisitGetRuntimeSnapshotResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetRuntimeSnapshotdefaultJSONResponse struct {
-	Body       Error
-	StatusCode int
-}
-
-func (response GetRuntimeSnapshotdefaultJSONResponse) VisitGetRuntimeSnapshotResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3855,9 +3700,6 @@ type StrictServerInterface interface {
 	// CreateRelease 创建发布并接纳异步操作
 	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
 	CreateRelease(ctx context.Context, request CreateReleaseRequestObject) (CreateReleaseResponseObject, error)
-	// GetRuntimeSnapshot 从 Kubernetes 查询部署目标的当前运行状态
-	// (GET /api/v1/deployment-targets/{deploymentTargetId}/runtime-snapshot)
-	GetRuntimeSnapshot(ctx context.Context, request GetRuntimeSnapshotRequestObject) (GetRuntimeSnapshotResponseObject, error)
 	// GetOperation 查询异步操作
 	// (GET /api/v1/operations/{operationId})
 	GetOperation(ctx context.Context, request GetOperationRequestObject) (GetOperationResponseObject, error)
@@ -4139,32 +3981,6 @@ func (sh *strictHandler) CreateRelease(ctx *gin.Context, deploymentTargetId open
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(CreateReleaseResponseObject); ok {
 		if err := validResponse.VisitCreateReleaseResponse(ctx.Writer); err != nil {
-			sh.options.ResponseErrorHandlerFunc(ctx, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetRuntimeSnapshot operation middleware
-func (sh *strictHandler) GetRuntimeSnapshot(ctx *gin.Context, deploymentTargetId openapi_types.UUID) {
-	var request GetRuntimeSnapshotRequestObject
-
-	request.DeploymentTargetId = deploymentTargetId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetRuntimeSnapshot(ctx, request.(GetRuntimeSnapshotRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetRuntimeSnapshot")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		sh.options.HandlerErrorFunc(ctx, err)
-	} else if validResponse, ok := response.(GetRuntimeSnapshotResponseObject); ok {
-		if err := validResponse.VisitGetRuntimeSnapshotResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -4640,89 +4456,85 @@ func (sh *strictHandler) GetReleaseRuntimeLogs(ctx *gin.Context, releaseId opena
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"nKZFbJvA0NDQ/wcAAP//",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

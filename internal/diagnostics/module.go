@@ -44,7 +44,6 @@ type Module struct {
 	operations *operation.Module
 	authorizer *projectauth.Module
 	source     RuntimeSource
-	logSource  RuntimeLogSource
 	now        func() time.Time
 }
 
@@ -53,16 +52,11 @@ func New(db *sqlx.DB, authorizer *projectauth.Module, source RuntimeSource) *Mod
 	if source == nil {
 		source = UnavailableSource{}
 	}
-	logSource, ok := source.(RuntimeLogSource)
-	if !ok {
-		logSource = UnavailableSource{}
-	}
 	return &Module{
 		db:         db,
 		operations: operation.New(db),
 		authorizer: authorizer,
 		source:     source,
-		logSource:  logSource,
 		now:        func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -89,7 +83,7 @@ func (m *Module) GetRuntimeLogs(
 	if err != nil {
 		return LogExcerpt{}, err
 	}
-	result, err := m.logSource.ReadRuntimeLogs(ctx, RuntimeLogQuery{
+	result, err := m.source.ReadReleaseLogs(ctx, ReleaseRuntimeLogQuery{
 		ProjectID: release.TargetSnapshot.ProjectID, ApplicationID: release.TargetSnapshot.ApplicationID,
 		TargetID: release.DeploymentTargetID, ReleaseID: release.ID,
 		ClusterRef: release.TargetSnapshot.ClusterRef, Namespace: release.TargetSnapshot.Namespace,
@@ -155,11 +149,10 @@ func (m *Module) GetReleaseReport(
 		return Report{}, err
 	}
 
-	observation := m.source.ObserveRelease(ctx, RuntimeQuery{
+	observation := m.source.ObserveTarget(ctx, TargetRuntimeQuery{
 		ProjectID:     release.TargetSnapshot.ProjectID,
 		ApplicationID: release.TargetSnapshot.ApplicationID,
 		TargetID:      release.DeploymentTargetID,
-		ReleaseID:     release.ID,
 		ClusterRef:    release.TargetSnapshot.ClusterRef,
 		Namespace:     release.TargetSnapshot.Namespace,
 	})

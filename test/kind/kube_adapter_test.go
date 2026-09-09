@@ -31,7 +31,7 @@ const readyImage = "registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff
 func TestKindDeliveryScenarios(t *testing.T) {
 	adapter, client := newKindAdapter(t)
 
-	t.Run("ready deployment and runtime snapshot", func(t *testing.T) {
+	t.Run("ready deployment and target observation", func(t *testing.T) {
 		request := kindPublishRequest(readyImage)
 		cleanupResources(t, client, request.DeploymentTargetID)
 
@@ -69,19 +69,21 @@ func TestKindDeliveryScenarios(t *testing.T) {
 			t.Errorf("service type = %q, want ClusterIP", service.Spec.Type)
 		}
 
-		snapshot := adapter.Observe(context.Background(), kube.ObserveRequest{
+		observation := adapter.ObserveTarget(context.Background(), diagnostics.TargetRuntimeQuery{
 			ClusterRef: kindCluster,
 			Namespace:  kindNamespace,
 			TargetID:   request.DeploymentTargetID,
 		})
-		if snapshot.Source != kube.SourceKubernetes || snapshot.Freshness != kube.FreshnessFresh {
-			t.Errorf("snapshot source/freshness = %q/%q, want kubernetes/fresh", snapshot.Source, snapshot.Freshness)
+		if observation.Workload.Metadata.Source != diagnostics.SourceKubernetes ||
+			observation.Workload.Metadata.Status != diagnostics.ObservationComplete {
+			t.Errorf("observation metadata = %#v, want complete Kubernetes evidence", observation.Workload.Metadata)
 		}
-		if !snapshot.DeploymentExists || snapshot.ReadyReplicas != 1 || snapshot.AvailableReplicas != 1 {
-			t.Errorf("snapshot readiness = %#v, want one ready replica", snapshot)
+		deploymentEvidence := observation.Workload.Deployment
+		if deploymentEvidence == nil || deploymentEvidence.ReadyReplicas != 1 || deploymentEvidence.AvailableReplicas != 1 {
+			t.Errorf("deployment evidence = %#v, want one ready replica", deploymentEvidence)
 		}
-		if snapshot.ReleaseID == nil || *snapshot.ReleaseID != request.ReleaseID {
-			t.Errorf("snapshot release id = %v, want %s", snapshot.ReleaseID, request.ReleaseID)
+		if deploymentEvidence.ReleaseID == nil || *deploymentEvidence.ReleaseID != request.ReleaseID {
+			t.Errorf("observed release id = %v, want %s", deploymentEvidence.ReleaseID, request.ReleaseID)
 		}
 	})
 
@@ -102,16 +104,17 @@ func TestKindDeliveryScenarios(t *testing.T) {
 			t.Errorf("failure code = %q, want image_pull_failed", failure.Code())
 		}
 
-		snapshot := adapter.Observe(context.Background(), kube.ObserveRequest{
+		observation := adapter.ObserveTarget(context.Background(), diagnostics.TargetRuntimeQuery{
 			ClusterRef: kindCluster,
 			Namespace:  kindNamespace,
 			TargetID:   request.DeploymentTargetID,
 		})
-		if snapshot.Freshness != kube.FreshnessFresh || !snapshot.DeploymentExists {
-			t.Errorf("failure snapshot = %#v, want fresh Kubernetes observation", snapshot)
+		if observation.Workload.Metadata.Status != diagnostics.ObservationComplete ||
+			observation.Workload.Deployment == nil {
+			t.Errorf("failure observation = %#v, want complete Kubernetes evidence", observation.Workload)
 		}
-		if len(snapshot.Pods) == 0 || snapshot.Pods[0].Reason == "" {
-			t.Errorf("failure pod summaries = %#v, want observed pull reason", snapshot.Pods)
+		if len(observation.Workload.Pods) == 0 || observation.Workload.Pods[0].Reason == "" {
+			t.Errorf("failure pod evidence = %#v, want observed pull reason", observation.Workload.Pods)
 		}
 	})
 
@@ -224,7 +227,7 @@ func TestKindRuntimeLogsReadsPreviousContainerInstance(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 	}
 
-	result, err := adapter.ReadRuntimeLogs(context.Background(), diagnostics.RuntimeLogQuery{
+	result, err := adapter.ReadReleaseLogs(context.Background(), diagnostics.ReleaseRuntimeLogQuery{
 		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
 		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
 		ClusterRef: kindCluster, Namespace: kindNamespace,

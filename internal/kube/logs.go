@@ -11,10 +11,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ReadRuntimeLogs 在读取正文前重新验证边界、Pod 归属、Release 身份与 Container。
-func (a *Adapter) ReadRuntimeLogs(
+// ReadReleaseLogs 在读取正文前重新验证边界、Pod 归属、Release 身份与 Container。
+func (a *Adapter) ReadReleaseLogs(
 	ctx context.Context,
-	query diagnostics.RuntimeLogQuery,
+	query diagnostics.ReleaseRuntimeLogQuery,
 ) (diagnostics.RuntimeLogResult, error) {
 	if query.ClusterRef != a.config.ClusterRef || query.Namespace != a.config.Namespace {
 		return diagnostics.RuntimeLogResult{}, diagnostics.ErrRuntimeLogSourceNotFound
@@ -82,7 +82,7 @@ func (a *Adapter) ReadRuntimeLogs(
 // runtimeLogPodVisible 复用诊断报告的归属、排序和上限，避免用已知 Pod 名称绕过可见证据集合。
 func (a *Adapter) runtimeLogPodVisible(
 	ctx context.Context,
-	query diagnostics.RuntimeLogQuery,
+	query diagnostics.ReleaseRuntimeLogQuery,
 	podUID string,
 ) (bool, error) {
 	pods, err := a.client.CoreV1().Pods(query.Namespace).List(
@@ -96,7 +96,7 @@ func (a *Adapter) runtimeLogPodVisible(
 	projected := make([]diagnostics.PodEvidence, 0, len(pods.Items))
 	for index := range pods.Items {
 		pod := &pods.Items[index]
-		if matchesDiagnosticOwnership(pod.Labels, diagnostics.RuntimeQuery{
+		if matchesDiagnosticOwnership(pod.Labels, diagnostics.TargetRuntimeQuery{
 			ProjectID: query.ProjectID, ApplicationID: query.ApplicationID, TargetID: query.TargetID,
 		}) {
 			projected = append(projected, projectPod(pod))
@@ -111,8 +111,8 @@ func (a *Adapter) runtimeLogPodVisible(
 	return false, nil
 }
 
-func matchesRuntimeLogOwnership(labels map[string]string, query diagnostics.RuntimeLogQuery) bool {
-	return matchesDiagnosticOwnership(labels, diagnostics.RuntimeQuery{
+func matchesRuntimeLogOwnership(labels map[string]string, query diagnostics.ReleaseRuntimeLogQuery) bool {
+	return matchesDiagnosticOwnership(labels, diagnostics.TargetRuntimeQuery{
 		ProjectID: query.ProjectID, ApplicationID: query.ApplicationID,
 		TargetID: query.TargetID,
 	}) && labels[ReleaseIDLabel] == query.ReleaseID.String()

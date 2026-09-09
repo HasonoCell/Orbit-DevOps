@@ -115,8 +115,8 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 	for _, path := range []string{
 		"/api/v1/deployment-targets/" + target.ID,
 		"/api/v1/deployment-targets/" + target.ID + "/releases",
-		"/api/v1/deployment-targets/" + target.ID + "/runtime-snapshot",
 		"/api/v1/releases/" + acceptance.Release.ID,
+		"/api/v1/releases/" + acceptance.Release.ID + "/diagnostics",
 		"/api/v1/operations/" + acceptance.Operation.ID,
 	} {
 		response := requestJSON(t, viewerServer, http.MethodGet, path, "", "")

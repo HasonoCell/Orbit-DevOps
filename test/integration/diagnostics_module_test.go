@@ -20,11 +20,13 @@ type staticRuntimeSource struct {
 	observation diagnostics.RuntimeObservation
 }
 
-type matchingRuntimeSource struct{}
+type matchingRuntimeSource struct {
+	releaseID *uuid.UUID
+}
 
-func (matchingRuntimeSource) ObserveRelease(
+func (s *matchingRuntimeSource) ObserveTarget(
 	_ context.Context,
-	query diagnostics.RuntimeQuery,
+	_ diagnostics.TargetRuntimeQuery,
 ) diagnostics.RuntimeObservation {
 	metadata := diagnostics.ObservationMetadata{
 		Source: diagnostics.SourceKubernetes, ObservedAt: time.Now().UTC(),
@@ -35,7 +37,7 @@ func (matchingRuntimeSource) ObserveRelease(
 			Metadata: metadata,
 			Deployment: &diagnostics.DeploymentEvidence{
 				Name: "application", UID: "deployment-uid",
-				OwnershipMatches: true, ReleaseID: &query.ReleaseID,
+				OwnershipMatches: true, ReleaseID: s.releaseID,
 			},
 			Pods: []diagnostics.PodEvidence{},
 		},
@@ -43,30 +45,44 @@ func (matchingRuntimeSource) ObserveRelease(
 	}
 }
 
+func (*matchingRuntimeSource) ReadReleaseLogs(
+	context.Context,
+	diagnostics.ReleaseRuntimeLogQuery,
+) (diagnostics.RuntimeLogResult, error) {
+	return diagnostics.RuntimeLogResult{}, diagnostics.ErrKubernetesUnavailable
+}
+
 type staticRuntimeLogSource struct {
 	result diagnostics.RuntimeLogResult
 	err    error
 }
 
-func (staticRuntimeLogSource) ObserveRelease(
+func (staticRuntimeLogSource) ObserveTarget(
 	context.Context,
-	diagnostics.RuntimeQuery,
+	diagnostics.TargetRuntimeQuery,
 ) diagnostics.RuntimeObservation {
-	return diagnostics.UnavailableSource{}.ObserveRelease(context.Background(), diagnostics.RuntimeQuery{})
+	return diagnostics.UnavailableSource{}.ObserveTarget(context.Background(), diagnostics.TargetRuntimeQuery{})
 }
 
-func (s staticRuntimeLogSource) ReadRuntimeLogs(
+func (s staticRuntimeLogSource) ReadReleaseLogs(
 	context.Context,
-	diagnostics.RuntimeLogQuery,
+	diagnostics.ReleaseRuntimeLogQuery,
 ) (diagnostics.RuntimeLogResult, error) {
 	return s.result, s.err
 }
 
-func (s staticRuntimeSource) ObserveRelease(
+func (s staticRuntimeSource) ObserveTarget(
 	context.Context,
-	diagnostics.RuntimeQuery,
+	diagnostics.TargetRuntimeQuery,
 ) diagnostics.RuntimeObservation {
 	return s.observation
+}
+
+func (staticRuntimeSource) ReadReleaseLogs(
+	context.Context,
+	diagnostics.ReleaseRuntimeLogQuery,
+) (diagnostics.RuntimeLogResult, error) {
+	return diagnostics.RuntimeLogResult{}, diagnostics.ErrKubernetesUnavailable
 }
 
 func TestReleaseReportDistinguishesAnOlderRunningRelease(t *testing.T) {
@@ -159,6 +175,77 @@ func TestReleaseReportRetainsControlPlaneEvidenceWhenKubernetesIsUnavailable(t *
 	}
 }
 
+func TestReleaseReportMarksMissingDeployment(t *testing.T) {
+	environment := newTestEnvironment(t)
+	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-deployment-missing")
+	acceptance := createReleaseForTarget(t, environment, target.ID, "diagnostics-deployment-missing")
+	db := openTestDatabase(t, environment.databaseURL)
+	metadata := diagnostics.ObservationMetadata{
+		Source: diagnostics.SourceKubernetes, ObservedAt: time.Now().UTC(),
+		Status: diagnostics.ObservationComplete, ErrorCategories: []string{},
+	}
+	module := diagnostics.New(db, projectauth.New(db), staticRuntimeSource{
+		observation: diagnostics.RuntimeObservation{
+			Workload: diagnostics.WorkloadObservation{Metadata: metadata, Pods: []diagnostics.PodEvidence{}},
+			Events:   diagnostics.EventObservation{Metadata: metadata, Items: []diagnostics.EventEvidence{}},
+		},
+	})
+
+	report, err := module.GetReleaseReport(context.Background(), diagnostics.GetReleaseReportQuery{
+		ReleaseID: uuid.MustParse(acceptance.Release.ID), ActorID: "local-developer",
+	})
+	if err != nil {
+		t.Fatalf("get missing deployment report: %v", err)
+	}
+	if report.RuntimeReleaseRelation != diagnostics.RuntimeReleaseAbsent ||
+		!containsDiagnosticSignal(report.Signals, diagnostics.SignalDeploymentMissing) {
+		t.Fatalf("missing deployment report = %#v", report)
+	}
+}
+
+func TestReleaseReportRetainsEvidenceFromPartialObservation(t *testing.T) {
+	environment := newTestEnvironment(t)
+	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-partial")
+	acceptance := createReleaseForTarget(t, environment, target.ID, "diagnostics-partial")
+	releaseID := uuid.MustParse(acceptance.Release.ID)
+	db := openTestDatabase(t, environment.databaseURL)
+	observedAt := time.Now().UTC()
+	module := diagnostics.New(db, projectauth.New(db), staticRuntimeSource{
+		observation: diagnostics.RuntimeObservation{
+			Workload: diagnostics.WorkloadObservation{
+				Metadata: diagnostics.ObservationMetadata{
+					Source: diagnostics.SourceKubernetes, ObservedAt: observedAt,
+					Status: diagnostics.ObservationPartial, ErrorCategories: []string{"pods_unavailable"},
+				},
+				Deployment: &diagnostics.DeploymentEvidence{
+					Name: "application", UID: "deployment-uid", OwnershipMatches: true,
+					ReleaseID: &releaseID, DesiredReplicas: 1, ReadyReplicas: 1,
+				},
+				Pods: []diagnostics.PodEvidence{},
+			},
+			Events: diagnostics.EventObservation{
+				Metadata: diagnostics.ObservationMetadata{
+					Source: diagnostics.SourceKubernetes, ObservedAt: observedAt,
+					Status: diagnostics.ObservationUnavailable, ErrorCategories: []string{"events_unavailable"},
+				},
+				Items: []diagnostics.EventEvidence{},
+			},
+		},
+	})
+
+	report, err := module.GetReleaseReport(context.Background(), diagnostics.GetReleaseReportQuery{
+		ReleaseID: releaseID, ActorID: "local-developer",
+	})
+	if err != nil {
+		t.Fatalf("get partial observation report: %v", err)
+	}
+	if report.Workload.Metadata.Status != diagnostics.ObservationPartial ||
+		report.Workload.Deployment == nil || report.Workload.Deployment.ReadyReplicas != 1 ||
+		report.RuntimeReleaseRelation != diagnostics.RuntimeReleaseMatches {
+		t.Fatalf("partial observation report = %#v", report)
+	}
+}
+
 func TestReleaseReportHidesReleaseFromNonMember(t *testing.T) {
 	environment := newTestEnvironment(t)
 	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-non-member")
@@ -172,6 +259,26 @@ func TestReleaseReportHidesReleaseFromNonMember(t *testing.T) {
 	})
 	if !errors.Is(err, diagnostics.ErrReleaseNotFound) {
 		t.Fatalf("non-member error = %v, want ErrReleaseNotFound", err)
+	}
+}
+
+func TestReleaseDiagnosticsHTTPHidesReleaseFromNonMember(t *testing.T) {
+	environment := newTestEnvironment(t)
+	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-http-non-member")
+	acceptance := createReleaseForTarget(t, environment, target.ID, "diagnostics-http-non-member")
+	outsiderServer := environment.serverForActor(t, "diagnostics-outsider")
+
+	response := requestJSON(
+		t,
+		outsiderServer,
+		http.MethodGet,
+		"/api/v1/releases/"+acceptance.Release.ID+"/diagnostics",
+		"",
+		"",
+	)
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("non-member diagnostics status = %d, want %d", response.StatusCode, http.StatusNotFound)
 	}
 }
 
@@ -202,11 +309,14 @@ func TestReleaseReportShowsImmutableTargetDifferences(t *testing.T) {
 }
 
 func TestReleaseDiagnosticsHTTPExposesTheModuleReport(t *testing.T) {
+	source := &matchingRuntimeSource{}
 	environment := newTestEnvironmentWithDependencies(t, app.Dependencies{
-		DiagnosticSource: matchingRuntimeSource{},
+		RuntimeSource: source,
 	})
 	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-http")
 	acceptance := createReleaseForTarget(t, environment, target.ID, "diagnostics-http")
+	releaseID := uuid.MustParse(acceptance.Release.ID)
+	source.releaseID = &releaseID
 
 	response := environment.get(t, "/api/v1/releases/"+acceptance.Release.ID+"/diagnostics")
 	defer response.Body.Close()
@@ -292,7 +402,7 @@ func TestRuntimeLogsRejectsViewer(t *testing.T) {
 
 func TestRuntimeLogsHTTPReturnsTheProtectedExcerpt(t *testing.T) {
 	environment := newTestEnvironmentWithDependencies(t, app.Dependencies{
-		DiagnosticSource: staticRuntimeLogSource{result: diagnostics.RuntimeLogResult{
+		RuntimeSource: staticRuntimeLogSource{result: diagnostics.RuntimeLogResult{
 			Content:    "application started\n",
 			ObservedAt: time.Date(2026, 9, 9, 16, 0, 0, 0, time.UTC),
 		}},
@@ -329,7 +439,7 @@ func TestRuntimeLogsHTTPReturnsTheProtectedExcerpt(t *testing.T) {
 
 func TestRuntimeLogsHTTPReturnsForbiddenForViewer(t *testing.T) {
 	environment := newTestEnvironmentWithDependencies(t, app.Dependencies{
-		DiagnosticSource: staticRuntimeLogSource{},
+		RuntimeSource: staticRuntimeLogSource{},
 	})
 	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-logs-viewer-http")
 	acceptance := createReleaseForTarget(t, environment, target.ID, "diagnostics-logs-viewer-http")

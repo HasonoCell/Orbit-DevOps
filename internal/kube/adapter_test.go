@@ -140,7 +140,7 @@ func TestPublisherRefusesForeignResourceBeforeApply(t *testing.T) {
 	}
 }
 
-func TestRuntimeSnapshotReportsKubernetesUnavailable(t *testing.T) {
+func TestDiagnosticObservationReportsKubernetesReadFailure(t *testing.T) {
 	metrics := observability.NewMetrics(nil)
 	client := fake.NewClientset()
 	client.PrependReactor(
@@ -161,22 +161,23 @@ func TestRuntimeSnapshotReportsKubernetesUnavailable(t *testing.T) {
 	}
 	targetID := uuid.New()
 
-	snapshot := adapter.Observe(context.Background(), kube.ObserveRequest{
+	observation := adapter.ObserveTarget(context.Background(), diagnostics.TargetRuntimeQuery{
 		ClusterRef: "kind-orbitops-s1",
 		Namespace:  "orbitops-s1",
 		TargetID:   targetID,
 	})
-	if snapshot.Source != kube.SourceKubernetes {
-		t.Errorf("source = %q, want %q", snapshot.Source, kube.SourceKubernetes)
+	if observation.Workload.Metadata.Source != diagnostics.SourceKubernetes {
+		t.Errorf("source = %q, want %q", observation.Workload.Metadata.Source, diagnostics.SourceKubernetes)
 	}
-	if snapshot.Freshness != kube.FreshnessUnavailable {
-		t.Errorf("freshness = %q, want %q", snapshot.Freshness, kube.FreshnessUnavailable)
+	if observation.Workload.Metadata.Status != diagnostics.ObservationPartial {
+		t.Errorf("status = %q, want %q", observation.Workload.Metadata.Status, diagnostics.ObservationPartial)
 	}
-	if snapshot.ObservedAt.IsZero() {
+	if observation.Workload.Metadata.ObservedAt.IsZero() {
 		t.Error("observedAt is zero")
 	}
-	if snapshot.ErrorCategory == nil || *snapshot.ErrorCategory != "kubernetes_unavailable" {
-		t.Errorf("error category = %v, want kubernetes_unavailable", snapshot.ErrorCategory)
+	if len(observation.Workload.Metadata.ErrorCategories) != 1 ||
+		observation.Workload.Metadata.ErrorCategories[0] != "kubernetes_unavailable" {
+		t.Errorf("error categories = %v, want kubernetes_unavailable", observation.Workload.Metadata.ErrorCategories)
 	}
 	metricResponse := httptest.NewRecorder()
 	metrics.Handler().ServeHTTP(metricResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -253,8 +254,8 @@ func TestDiagnosticObservationProjectsWorkloadAndRelatedEvents(t *testing.T) {
 		t.Fatalf("create adapter: %v", err)
 	}
 
-	observation := adapter.ObserveRelease(context.Background(), diagnostics.RuntimeQuery{
-		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
+	observation := adapter.ObserveTarget(context.Background(), diagnostics.TargetRuntimeQuery{
+		TargetID:  request.DeploymentTargetID,
 		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
 	})
@@ -297,9 +298,9 @@ func TestDiagnosticObservationKeepsWorkloadWhenEventReadFails(t *testing.T) {
 		t.Fatalf("create adapter: %v", err)
 	}
 
-	observation := adapter.ObserveRelease(context.Background(), diagnostics.RuntimeQuery{
+	observation := adapter.ObserveTarget(context.Background(), diagnostics.TargetRuntimeQuery{
 		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
-		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
+		TargetID:   request.DeploymentTargetID,
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
 	})
 	if observation.Workload.Metadata.Status != diagnostics.ObservationComplete ||
@@ -355,9 +356,9 @@ func TestDiagnosticObservationPrioritizesAbnormalPodsBeforeLimiting(t *testing.T
 		t.Fatalf("create adapter: %v", err)
 	}
 
-	observation := adapter.ObserveRelease(context.Background(), diagnostics.RuntimeQuery{
+	observation := adapter.ObserveTarget(context.Background(), diagnostics.TargetRuntimeQuery{
 		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
-		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
+		TargetID:   request.DeploymentTargetID,
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
 	})
 	if len(observation.Workload.Pods) != 20 {
@@ -385,7 +386,7 @@ func TestRuntimeLogsRefusesPodFromDifferentRelease(t *testing.T) {
 		t.Fatalf("create adapter: %v", err)
 	}
 
-	_, err = adapter.ReadRuntimeLogs(context.Background(), diagnostics.RuntimeLogQuery{
+	_, err = adapter.ReadReleaseLogs(context.Background(), diagnostics.ReleaseRuntimeLogQuery{
 		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
 		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
@@ -445,7 +446,7 @@ func TestRuntimeLogsReadsTheVerifiedContainerWithBoundedOptions(t *testing.T) {
 		t.Fatalf("create adapter: %v", err)
 	}
 
-	result, err := adapter.ReadRuntimeLogs(context.Background(), diagnostics.RuntimeLogQuery{
+	result, err := adapter.ReadReleaseLogs(context.Background(), diagnostics.ReleaseRuntimeLogQuery{
 		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
 		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
@@ -492,7 +493,7 @@ func TestRuntimeLogsRefusesOwnedPodOutsideTheDiagnosticProjection(t *testing.T) 
 		t.Fatalf("create adapter: %v", err)
 	}
 
-	_, err = adapter.ReadRuntimeLogs(context.Background(), diagnostics.RuntimeLogQuery{
+	_, err = adapter.ReadReleaseLogs(context.Background(), diagnostics.ReleaseRuntimeLogQuery{
 		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
 		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,

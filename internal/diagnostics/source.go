@@ -8,7 +8,7 @@ import (
 // UnavailableSource 保证尚未配置或无法连接 Kubernetes 时仍返回诚实的数据库诊断证据。
 type UnavailableSource struct{}
 
-func (UnavailableSource) ObserveRelease(context.Context, RuntimeQuery) RuntimeObservation {
+func (UnavailableSource) ObserveTarget(context.Context, TargetRuntimeQuery) RuntimeObservation {
 	now := time.Now().UTC()
 	metadata := ObservationMetadata{
 		Source:          SourceKubernetes,
@@ -22,9 +22,9 @@ func (UnavailableSource) ObserveRelease(context.Context, RuntimeQuery) RuntimeOb
 	}
 }
 
-func (UnavailableSource) ReadRuntimeLogs(
+func (UnavailableSource) ReadReleaseLogs(
 	context.Context,
-	RuntimeLogQuery,
+	ReleaseRuntimeLogQuery,
 ) (RuntimeLogResult, error) {
 	return RuntimeLogResult{}, ErrKubernetesUnavailable
 }

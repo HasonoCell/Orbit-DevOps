@@ -182,37 +182,6 @@ type releaseAcceptanceDocument struct {
 	Operation operationDocument `json:"operation"`
 }
 
-type runtimeSnapshotDocument struct {
-	DeploymentTargetID string                     `json:"deploymentTargetId"`
-	Source             string                     `json:"source"`
-	ObservedAt         time.Time                  `json:"observedAt"`
-	Freshness          string                     `json:"freshness"`
-	DeploymentName     string                     `json:"deploymentName"`
-	DeploymentExists   bool                       `json:"deploymentExists"`
-	ReleaseID          *string                    `json:"releaseId"`
-	DesiredReplicas    int                        `json:"desiredReplicas"`
-	UpdatedReplicas    int                        `json:"updatedReplicas"`
-	ReadyReplicas      int                        `json:"readyReplicas"`
-	AvailableReplicas  int                        `json:"availableReplicas"`
-	Conditions         []runtimeConditionDocument `json:"conditions"`
-	Pods               []runtimePodDocument       `json:"pods"`
-	ErrorCategory      *string                    `json:"errorCategory"`
-}
-
-type runtimeConditionDocument struct {
-	Type    string `json:"type"`
-	Status  string `json:"status"`
-	Reason  string `json:"reason"`
-	Message string `json:"message"`
-}
-
-type runtimePodDocument struct {
-	Name   string `json:"name"`
-	Phase  string `json:"phase"`
-	Ready  bool   `json:"ready"`
-	Reason string `json:"reason"`
-}
-
 func newTestEnvironment(t *testing.T) *testEnvironment {
 	return newTestEnvironmentWithDependencies(t, app.Dependencies{})
 }
@@ -431,15 +400,4 @@ func decodeOperation(t *testing.T, response *http.Response) operationDocument {
 	}
 
 	return operation
-}
-
-func decodeRuntimeSnapshot(t *testing.T, response *http.Response) runtimeSnapshotDocument {
-	t.Helper()
-
-	var snapshot runtimeSnapshotDocument
-	if err := json.NewDecoder(response.Body).Decode(&snapshot); err != nil {
-		t.Fatalf("decode runtime snapshot response: %v", err)
-	}
-
-	return snapshot
 }

@@ -19,10 +19,10 @@ const (
 	maximumEvidenceTextRunes = 512
 )
 
-// ObserveRelease 读取一个 Release 所需的有界 Kubernetes 证据；各子查询失败不会抹掉已取得的证据。
-func (a *Adapter) ObserveRelease(
+// ObserveTarget 读取一个部署目标的有界 Kubernetes 事实；各子查询失败不会抹掉已取得的证据。
+func (a *Adapter) ObserveTarget(
 	ctx context.Context,
-	query diagnostics.RuntimeQuery,
+	query diagnostics.TargetRuntimeQuery,
 ) diagnostics.RuntimeObservation {
 	observedAt := time.Now().UTC()
 	if query.ClusterRef != a.config.ClusterRef || query.Namespace != a.config.Namespace {
@@ -97,7 +97,7 @@ func (a *Adapter) ObserveRelease(
 
 func (a *Adapter) observeRelatedEvents(
 	ctx context.Context,
-	query diagnostics.RuntimeQuery,
+	query diagnostics.TargetRuntimeQuery,
 	observedAt time.Time,
 	relatedUIDs map[string]struct{},
 ) diagnostics.EventObservation {
@@ -148,7 +148,7 @@ func (a *Adapter) observeRelatedEvents(
 
 func projectDeployment(
 	deployment *appsv1.Deployment,
-	query diagnostics.RuntimeQuery,
+	query diagnostics.TargetRuntimeQuery,
 ) *diagnostics.DeploymentEvidence {
 	evidence := &diagnostics.DeploymentEvidence{
 		Name:             deployment.Name,
@@ -180,7 +180,7 @@ func projectDeployment(
 	return evidence
 }
 
-func projectService(service *corev1.Service, query diagnostics.RuntimeQuery) *diagnostics.ServiceEvidence {
+func projectService(service *corev1.Service, query diagnostics.TargetRuntimeQuery) *diagnostics.ServiceEvidence {
 	evidence := &diagnostics.ServiceEvidence{
 		Name:             service.Name,
 		OwnershipMatches: matchesDiagnosticOwnership(service.Labels, query),
@@ -292,7 +292,7 @@ func projectEvent(event *corev1.Event) diagnostics.EventEvidence {
 	}
 }
 
-func matchesDiagnosticOwnership(labels map[string]string, query diagnostics.RuntimeQuery) bool {
+func matchesDiagnosticOwnership(labels map[string]string, query diagnostics.TargetRuntimeQuery) bool {
 	if labels[ManagedByLabel] != ManagedByValue || labels[TargetIDLabel] != query.TargetID.String() {
 		return false
 	}
@@ -348,7 +348,7 @@ func orderAndLimitEvents(events *[]diagnostics.EventEvidence) {
 
 func diagnosticMetadata(observedAt time.Time, status diagnostics.ObservationStatus) diagnostics.ObservationMetadata {
 	return diagnostics.ObservationMetadata{
-		Source: SourceKubernetes, ObservedAt: observedAt, Status: status, ErrorCategories: []string{},
+		Source: diagnostics.SourceKubernetes, ObservedAt: observedAt, Status: status, ErrorCategories: []string{},
 	}
 }
 
@@ -366,6 +366,14 @@ func finalizeObservationStatus(metadata *diagnostics.ObservationMetadata) {
 	if len(metadata.ErrorCategories) > 0 {
 		metadata.Status = diagnostics.ObservationPartial
 	}
+}
+
+// desiredReplicas 按 Kubernetes 默认语义补齐省略的副本数。
+func desiredReplicas(deployment *appsv1.Deployment) int32 {
+	if deployment.Spec.Replicas == nil {
+		return 1
+	}
+	return *deployment.Spec.Replicas
 }
 
 func unavailableDiagnosticObservation(observedAt time.Time, category string) diagnostics.RuntimeObservation {

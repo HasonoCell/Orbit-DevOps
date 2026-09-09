@@ -161,23 +161,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/deployment-targets/{deploymentTargetId}/runtime-snapshot": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 从 Kubernetes 查询部署目标的当前运行状态 */
-        get: operations["getRuntimeSnapshot"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/releases/{releaseId}": {
         parameters: {
             query?: never;
@@ -683,39 +666,6 @@ export interface components {
             /** @description 已脱敏且 UTF-8 编码不超过 128 KiB 的一次性日志摘录。 */
             content: string;
             truncated: boolean;
-        };
-        RuntimeSnapshot: {
-            /** Format: uuid */
-            deploymentTargetId: string;
-            /** @enum {string} */
-            source: "kubernetes";
-            /** Format: date-time */
-            observedAt: string;
-            /** @enum {string} */
-            freshness: "fresh" | "unavailable";
-            deploymentName: string;
-            deploymentExists: boolean;
-            /** Format: uuid */
-            releaseId?: string;
-            desiredReplicas: number;
-            updatedReplicas: number;
-            readyReplicas: number;
-            availableReplicas: number;
-            conditions: components["schemas"]["RuntimeCondition"][];
-            pods: components["schemas"]["RuntimePod"][];
-            errorCategory?: string;
-        };
-        RuntimeCondition: {
-            type: string;
-            status: string;
-            reason: string;
-            message: string;
-        };
-        RuntimePod: {
-            name: string;
-            phase: string;
-            ready: boolean;
-            reason: string;
         };
         ReleaseAcceptance: {
             release: components["schemas"]["Release"];
@@ -1465,46 +1415,6 @@ export interface operations {
             };
             /** @description 幂等键已经用于不同请求 */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description 请求失败 */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    getRuntimeSnapshot: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                deploymentTargetId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Kubernetes 运行时快照；不可访问时 freshness 为 unavailable */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RuntimeSnapshot"];
-                };
-            };
-            /** @description 部署目标不存在 */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
