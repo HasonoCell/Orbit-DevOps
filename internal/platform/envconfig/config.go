@@ -52,6 +52,30 @@ type ReleaseWorker struct {
 	ReleaseQueue            ReleaseQueue
 }
 
+// BuildWorker 将构建业务租约、队列运输和受限 Kubernetes Job 配置分开保存。
+type BuildWorker struct {
+	Address                 string
+	DatabaseURL             string
+	WorkerID                string
+	PollInterval            time.Duration
+	LeaseDuration           time.Duration
+	BuildOperationTimeout   time.Duration
+	MaximumAutomaticRetries int
+	RetryBaseDelay          time.Duration
+	KubeconfigPath          string
+	KubernetesContext       string
+	Namespace               string
+	FieldManager            string
+	GitImage                string
+	BuildkitImage           string
+	RegistrySecretName      string
+	RegistryInsecure        bool
+	JobTTL                  time.Duration
+	CPU                     string
+	Memory                  string
+	BuildQueue              ReleaseQueue
+}
+
 // ReleaseQueue 只配置消息运输；业务租约、重试预算仍由 ReleaseWorker 与 ReleaseOperation 管理。
 type ReleaseQueue struct {
 	RedisAddress     string
@@ -178,6 +202,98 @@ func LoadReleaseWorker() (ReleaseWorker, error) {
 		Kubernetes:              kubernetes,
 		ReleaseQueue:            queue,
 	}, nil
+}
+
+// LoadBuildWorker 拒绝未固定 Digest 的运行镜像，并让队列超时覆盖完整构建窗口。
+func LoadBuildWorker() (BuildWorker, error) {
+	pollInterval, err := duration("ORBITOPS_BUILD_WORKER_POLL_INTERVAL", 500*time.Millisecond)
+	if err != nil {
+		return BuildWorker{}, err
+	}
+	leaseDuration, err := duration("ORBITOPS_BUILD_WORKER_LEASE_DURATION", 15*time.Second)
+	if err != nil {
+		return BuildWorker{}, err
+	}
+	buildTimeout, err := duration("ORBITOPS_BUILD_OPERATION_TIMEOUT", 20*time.Minute)
+	if err != nil {
+		return BuildWorker{}, err
+	}
+	queue, err := loadBuildQueue(buildTimeout)
+	if err != nil {
+		return BuildWorker{}, err
+	}
+	maximumRetries, err := nonNegativeInteger("ORBITOPS_BUILD_MAX_AUTOMATIC_RETRIES", 2)
+	if err != nil {
+		return BuildWorker{}, err
+	}
+	retryBaseDelay, err := duration("ORBITOPS_BUILD_RETRY_BASE_DELAY", 5*time.Second)
+	if err != nil {
+		return BuildWorker{}, err
+	}
+	jobTTL, err := duration("ORBITOPS_BUILD_JOB_TTL", time.Hour)
+	if err != nil {
+		return BuildWorker{}, err
+	}
+	registryInsecure, err := boolean("ORBITOPS_BUILD_REGISTRY_INSECURE", false)
+	if err != nil {
+		return BuildWorker{}, err
+	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		return BuildWorker{}, fmt.Errorf("read hostname: %w", err)
+	}
+	config := BuildWorker{
+		Address: value("ORBITOPS_BUILD_WORKER_ADDRESS", "127.0.0.1:9092"), DatabaseURL: value("ORBITOPS_DATABASE_URL", defaultDatabaseURL),
+		WorkerID: value("ORBITOPS_BUILD_WORKER_ID", hostname), PollInterval: pollInterval, LeaseDuration: leaseDuration,
+		BuildOperationTimeout: buildTimeout, MaximumAutomaticRetries: maximumRetries, RetryBaseDelay: retryBaseDelay,
+		KubeconfigPath: value("ORBITOPS_KUBECONFIG", clientcmd.RecommendedHomeFile), KubernetesContext: value("ORBITOPS_KUBERNETES_CONTEXT", "kind-orbitops-s1"),
+		Namespace: value("ORBITOPS_BUILD_NAMESPACE", "orbitops-s4-build"), FieldManager: value("ORBITOPS_BUILD_FIELD_MANAGER", "orbitops-build-worker"),
+		GitImage:           value("ORBITOPS_BUILD_GIT_IMAGE", "alpine/git:v2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26"),
+		BuildkitImage:      value("ORBITOPS_BUILDKIT_IMAGE", "moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef"),
+		RegistrySecretName: os.Getenv("ORBITOPS_BUILD_REGISTRY_SECRET"), RegistryInsecure: registryInsecure, JobTTL: jobTTL,
+		CPU: value("ORBITOPS_BUILD_CPU", "1"), Memory: value("ORBITOPS_BUILD_MEMORY", "1Gi"), BuildQueue: queue,
+	}
+	for name, image := range map[string]string{"ORBITOPS_BUILD_GIT_IMAGE": config.GitImage, "ORBITOPS_BUILDKIT_IMAGE": config.BuildkitImage} {
+		parts := strings.Split(image, "@sha256:")
+		if len(parts) != 2 || parts[0] == "" || len(parts[1]) != 64 {
+			return BuildWorker{}, fmt.Errorf("%s must be pinned by sha256 digest", name)
+		}
+	}
+	return config, nil
+}
+
+func loadBuildQueue(buildTimeout time.Duration) (ReleaseQueue, error) {
+	config := ReleaseQueue{RedisAddress: value("ORBITOPS_REDIS_ADDRESS", "127.0.0.1:6379"),
+		RedisUsername: os.Getenv("ORBITOPS_REDIS_USERNAME"), RedisPassword: os.Getenv("ORBITOPS_REDIS_PASSWORD"),
+		Name: value("ORBITOPS_BUILD_QUEUE_NAME", "orbitops-build")}
+	var err error
+	config.RedisDB, err = nonNegativeInteger("ORBITOPS_REDIS_DB", 0)
+	if err != nil {
+		return ReleaseQueue{}, err
+	}
+	config.Concurrency, err = nonNegativeInteger("ORBITOPS_BUILD_QUEUE_CONCURRENCY", 2)
+	if err != nil || config.Concurrency < 1 || config.Concurrency > 100 {
+		return ReleaseQueue{}, errors.New("ORBITOPS_BUILD_QUEUE_CONCURRENCY must be between 1 and 100")
+	}
+	for _, item := range []struct {
+		name     string
+		fallback time.Duration
+		target   *time.Duration
+	}{
+		{"ORBITOPS_BUILD_QUEUE_REPAIR_INTERVAL", 5 * time.Second, &config.RepairInterval},
+		{"ORBITOPS_BUILD_QUEUE_CONSUMPTION_GRACE", 30 * time.Second, &config.ConsumptionGrace},
+		{"ORBITOPS_BUILD_QUEUE_TASK_TIMEOUT", buildTimeout + time.Minute, &config.TaskTimeout},
+		{"ORBITOPS_BUILD_QUEUE_SHUTDOWN_TIMEOUT", 30 * time.Second, &config.ShutdownTimeout},
+	} {
+		*item.target, err = duration(item.name, item.fallback)
+		if err != nil {
+			return ReleaseQueue{}, err
+		}
+	}
+	if config.TaskTimeout < buildTimeout+time.Minute {
+		return ReleaseQueue{}, errors.New("ORBITOPS_BUILD_QUEUE_TASK_TIMEOUT must exceed build operation timeout by at least 1m")
+	}
+	return config, nil
 }
 
 func loadKubernetes() (Kubernetes, error) {

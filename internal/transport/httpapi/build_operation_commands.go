@@ -32,6 +32,32 @@ func (s *Server) GetBuildOperation(ctx context.Context, request api.GetBuildOper
 	return api.GetBuildOperation200JSONResponse(buildOperationResponse(current)), nil
 }
 
+// GetBuildAttemptLog 在读取摘录前要求 develop 权限，viewer 只能读取不含日志的 Attempt 元数据。
+func (s *Server) GetBuildAttemptLog(ctx context.Context, request api.GetBuildAttemptLogRequestObject) (api.GetBuildAttemptLogResponseObject, error) {
+	log, err := s.buildOperations.GetAttemptLog(httpRequestContext(ctx), request.BuildAttemptId)
+	if err != nil {
+		if errors.Is(err, buildoperation.ErrNotFound) {
+			return api.GetBuildAttemptLog404JSONResponse{Code: "build_attempt_not_found", Message: "build attempt not found"}, nil
+		}
+		return nil, err
+	}
+	accepted, err := s.builds.Get(httpRequestContext(ctx), log.BuildID, s.localActorID)
+	if err != nil {
+		if errors.Is(err, build.ErrNotFound) || errors.Is(err, projectauth.ErrNotMember) {
+			return api.GetBuildAttemptLog404JSONResponse{Code: "build_attempt_not_found", Message: "build attempt not found"}, nil
+		}
+		return nil, err
+	}
+	observability.SetRequestProjectID(ctx, accepted.Build.ProjectID)
+	if err := s.authorizer.Require(httpRequestContext(ctx), accepted.Build.ProjectID, s.localActorID, projectauth.PermissionDevelop); err != nil {
+		if errors.Is(err, projectauth.ErrForbidden) {
+			return api.GetBuildAttemptLog403JSONResponse{Code: "project_permission_denied", Message: "current project role cannot read build logs"}, nil
+		}
+		return nil, err
+	}
+	return api.GetBuildAttemptLog200JSONResponse{BuildAttemptId: log.AttemptID, Excerpt: log.Excerpt, Truncated: log.Truncated}, nil
+}
+
 func (s *Server) RetryBuildOperation(ctx context.Context, request api.RetryBuildOperationRequestObject) (api.RetryBuildOperationResponseObject, error) {
 	updated, err := s.buildOperations.Retry(httpRequestContext(ctx), buildoperation.RetryCommand{
 		BuildOperationID: request.BuildOperationId, ActorID: s.localActorID, IdempotencyKey: request.Params.IdempotencyKey,

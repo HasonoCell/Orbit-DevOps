@@ -615,6 +615,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/build-attempts/{buildAttemptId}/log:
+    get:
+      operationId: getBuildAttemptLog
+      summary: 查询有界且已脱敏的构建日志摘录
+      parameters:
+        - name: buildAttemptId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 构建日志摘录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildAttemptLog"
+        "403":
+          description: viewer 不能读取构建日志
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: BuildAttempt 不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/applications/{applicationId}/deployment-targets:
     post:
       operationId: createDeploymentTarget
@@ -1618,8 +1654,6 @@ components:
         - number
         - workerId
         - status
-        - logExcerpt
-        - logTruncated
         - startedAt
       properties:
         id:
@@ -1655,16 +1689,27 @@ components:
             - retryable
             - non_retryable
             - unknown_outcome
-        logExcerpt:
-          type: string
-        logTruncated:
-          type: boolean
         startedAt:
           type: string
           format: date-time
         finishedAt:
           type: string
           format: date-time
+    BuildAttemptLog:
+      type: object
+      additionalProperties: false
+      required:
+        - buildAttemptId
+        - excerpt
+        - truncated
+      properties:
+        buildAttemptId:
+          type: string
+          format: uuid
+        excerpt:
+          type: string
+        truncated:
+          type: boolean
     ForceFailBuildOperationRequest:
       type: object
       additionalProperties: false

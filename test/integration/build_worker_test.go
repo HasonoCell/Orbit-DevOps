@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -94,11 +95,120 @@ func TestBuildWorkerCompletesAcceptedBuildThroughQueue(t *testing.T) {
 	t.Fatal("build worker did not complete accepted build")
 }
 
+// 接管 Worker 必须先观察已经记录的旧 Job，不能因新 Attempt 再次启动外部构建。
+func TestBuildWorkerRecoveryObservesExistingExecutorBeforeStarting(t *testing.T) {
+	environment := newTestEnvironment(t)
+	project := createProject(t, environment, "build-worker-recovery-project")
+	application := createApplication(t, environment, project.ID, "build-worker-recovery-application")
+	response := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/builds", "build-worker-recovery",
+		`{"repositoryUrl":"https://github.com/example/demo.git","sourceCommit":"`+strings.Repeat("c", 40)+`"}`)
+	defer response.Body.Close()
+	var acceptance buildAcceptanceDocument
+	if response.StatusCode != http.StatusCreated || json.NewDecoder(response.Body).Decode(&acceptance) != nil {
+		t.Fatalf("create recovery build status = %d", response.StatusCode)
+	}
+
+	database := openTestDatabase(t, environment.databaseURL)
+	now := acceptance.Build.CreatedAt.Add(time.Second)
+	operations := buildoperation.New(database, buildoperation.WithClock(func() time.Time { return now }))
+	first := claimBuildDispatch(t, operations, "build-worker-lost")
+	oldIdentity := buildworker.ExecutionIdentity{Name: "existing-build-job", UID: "existing-build-uid"}
+	if err := operations.RecordExecutorIdentity(context.Background(), first, buildoperation.ExecutorIdentity{
+		Name: oldIdentity.Name, UID: oldIdentity.UID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now = first.ExpiresAt.Add(time.Second)
+	if repaired, err := operations.RepairDispatches(context.Background(), 10); err != nil || repaired != 1 {
+		t.Fatalf("repair expired execution = %d, %v", repaired, err)
+	}
+	items, err := operations.ReserveDispatches(context.Background(), 10, time.Minute)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("reserve recovery dispatch = %d, %v", len(items), err)
+	}
+	if err := operations.ConfirmDispatch(context.Background(), items[0], "", time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	executor := &memoryBuildExecutor{
+		repository: acceptance.Build.DestinationRepository, digest: "sha256:" + strings.Repeat("d", 64),
+		started: map[string]bool{oldIdentity.Name: true},
+	}
+	runner, err := buildworker.New(buildworker.Config{WorkerID: "build-worker-recovery", LeaseDuration: time.Minute,
+		BuildTimeout: time.Minute, PollInterval: time.Millisecond}, operations,
+		build.New(database, build.Config{}, operations, projectauth.New(database)), executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := runner.RunDispatch(context.Background(), items[0].DispatchRef)
+	if err != nil || outcome != buildoperation.ClaimOutcomeClaimed {
+		t.Fatalf("run recovery dispatch = %s, %v", outcome, err)
+	}
+	current, err := operations.Get(context.Background(), uuid.MustParse(acceptance.BuildOperation.ID))
+	if err != nil || current.Status != buildoperation.StatusSucceeded || executor.startCount != 0 || len(current.Attempts) != 2 {
+		t.Fatalf("recovered build = operation %#v, starts %d, error %v", current, executor.startCount, err)
+	}
+	if current.Attempts[1].ExecutorUID == nil || *current.Attempts[1].ExecutorUID != oldIdentity.UID {
+		t.Fatalf("recovery attempt did not preserve executor identity: %#v", current.Attempts[1])
+	}
+}
+
+// BuildOperation 元数据对 viewer 可见，但日志摘录需要 develop 权限且不内嵌在普通详情中。
+func TestBuildAttemptLogsRequireDevelopPermission(t *testing.T) {
+	environment := newTestEnvironment(t)
+	project := createProject(t, environment, "build-log-project")
+	application := createApplication(t, environment, project.ID, "build-log-application")
+	addMember(t, environment.server, project.ID, "build-log-viewer", "viewer", "add-build-log-viewer")
+	response := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/builds", "build-log",
+		`{"repositoryUrl":"https://github.com/example/demo.git","sourceCommit":"`+strings.Repeat("e", 40)+`"}`)
+	defer response.Body.Close()
+	var acceptance buildAcceptanceDocument
+	if response.StatusCode != http.StatusCreated || json.NewDecoder(response.Body).Decode(&acceptance) != nil {
+		t.Fatalf("create log build status = %d", response.StatusCode)
+	}
+	operations := buildoperation.New(openTestDatabase(t, environment.databaseURL))
+	lease := claimBuildDispatch(t, operations, "build-log-worker")
+	const sensitiveExcerpt = "build-secret-marker"
+	if _, err := operations.Fail(context.Background(), lease, buildoperation.Failure{
+		Code: "dockerfile_build_failed", Summary: "build failed", Disposition: buildoperation.NonRetryable,
+		LogExcerpt: sensitiveExcerpt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	viewerServer := environment.serverForActor(t, "build-log-viewer")
+	operationResponse := requestJSON(t, viewerServer, http.MethodGet,
+		"/api/v1/build-operations/"+acceptance.BuildOperation.ID, "", "")
+	operationBody, err := io.ReadAll(operationResponse.Body)
+	operationResponse.Body.Close()
+	if err != nil || operationResponse.StatusCode != http.StatusOK || strings.Contains(string(operationBody), sensitiveExcerpt) {
+		t.Fatalf("viewer operation status=%d body=%s error=%v", operationResponse.StatusCode, operationBody, err)
+	}
+
+	viewerLog := requestJSON(t, viewerServer, http.MethodGet,
+		"/api/v1/build-attempts/"+lease.BuildAttemptID.String()+"/log", "", "")
+	defer viewerLog.Body.Close()
+	assertError(t, viewerLog, http.StatusForbidden, "project_permission_denied")
+	ownerLog := requestJSON(t, environment.server, http.MethodGet,
+		"/api/v1/build-attempts/"+lease.BuildAttemptID.String()+"/log", "", "")
+	defer ownerLog.Body.Close()
+	if ownerLog.StatusCode != http.StatusOK {
+		t.Fatalf("owner log status = %d", ownerLog.StatusCode)
+	}
+	var document struct {
+		Excerpt string `json:"excerpt"`
+	}
+	if json.NewDecoder(ownerLog.Body).Decode(&document) != nil || document.Excerpt != sensitiveExcerpt {
+		t.Fatalf("owner build log = %#v", document)
+	}
+}
+
 type memoryBuildExecutor struct {
 	mu         sync.Mutex
 	repository string
 	digest     string
 	started    map[string]bool
+	startCount int
 }
 
 func (e *memoryBuildExecutor) Start(_ context.Context, execution buildworker.BuildExecution) (buildworker.ExecutionIdentity, error) {
@@ -109,6 +219,7 @@ func (e *memoryBuildExecutor) Start(_ context.Context, execution buildworker.Bui
 	}
 	name := "memory-build-" + execution.BuildAttemptID.String()
 	e.started[name] = true
+	e.startCount++
 	return buildworker.ExecutionIdentity{Name: name, UID: "uid-" + execution.BuildAttemptID.String()}, nil
 }
 

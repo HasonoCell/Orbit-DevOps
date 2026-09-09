@@ -1,4 +1,4 @@
-.PHONY: bootstrap kind-up db-up db-down api release-worker web generate check test test-kind
+.PHONY: bootstrap kind-up db-up db-down api release-worker build-worker web generate check test test-kind
 
 bootstrap: kind-up db-up
 	corepack pnpm install --frozen-lockfile
@@ -18,6 +18,9 @@ api:
 release-worker:
 	go run ./cmd/orbitops-release-worker
 
+build-worker:
+	go run ./cmd/orbitops-build-worker
+
 web:
 	corepack pnpm --filter @orbitops/web dev
 
@@ -36,4 +39,8 @@ test:
 
 test-kind:
 	ORBITOPS_NAMESPACE=orbitops-s3 ./scripts/setup-kind.sh
-	ORBITOPS_NAMESPACE=orbitops-s3 ORBITOPS_KIND_E2E=1 go test ./test/kind -count=1 -v
+	ORBITOPS_NAMESPACE=orbitops-s3 \
+		ORBITOPS_KIND_E2E=1 \
+		ORBITOPS_KIND_BUILD_E2E=1 \
+		ORBITOPS_KIND_BUILD_REGISTRY=orbitops-s4-registry.orbitops-s4-build.svc.cluster.local:5000 \
+		go test ./test/kind -count=1 -v

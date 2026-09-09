@@ -82,7 +82,6 @@ func buildOperationResponse(operation buildoperation.Record) api.BuildOperation 
 			Status: api.BuildAttemptStatus(attempt.Status), RecoveredFromAttemptId: attempt.RecoveredFromAttemptID,
 			ExecutorName: attempt.ExecutorName, ExecutorUid: attempt.ExecutorUID,
 			ErrorCode: attempt.ErrorCode, ErrorSummary: attempt.ErrorSummary,
-			LogExcerpt: attempt.LogExcerpt, LogTruncated: attempt.LogTruncated,
 			StartedAt: attempt.StartedAt, FinishedAt: attempt.FinishedAt,
 		}
 		if attempt.RetryDisposition != nil {

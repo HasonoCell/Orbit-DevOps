@@ -80,6 +80,13 @@ type Attempt struct {
 	FinishedAt             *time.Time    `db:"finished_at"`
 }
 
+type AttemptLog struct {
+	BuildID   uuid.UUID `db:"build_id"`
+	AttemptID uuid.UUID `db:"attempt_id"`
+	Excerpt   string    `db:"log_excerpt"`
+	Truncated bool      `db:"log_truncated"`
+}
+
 type CreatePendingCommand struct {
 	ID             uuid.UUID
 	BuildID        uuid.UUID
@@ -200,6 +207,19 @@ func (m *Module) Get(ctx context.Context, id uuid.UUID) (Record, error) {
 		return Record{}, fmt.Errorf("list build attempts: %w", err)
 	}
 	return record, nil
+}
+
+// GetAttemptLog 返回已脱敏的有界摘录及其 Build 归属，授权由 HTTP Adapter 在返回前完成。
+func (m *Module) GetAttemptLog(ctx context.Context, id uuid.UUID) (AttemptLog, error) {
+	var log AttemptLog
+	if err := m.db.GetContext(ctx, &log, `SELECT o.build_id, a.id AS attempt_id, a.log_excerpt, a.log_truncated
+	 FROM build_attempts a JOIN build_operations o ON o.id = a.build_operation_id WHERE a.id = $1`, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return AttemptLog{}, ErrNotFound
+		}
+		return AttemptLog{}, fmt.Errorf("get build attempt log: %w", err)
+	}
+	return log, nil
 }
 
 // scheduleDispatch 只在领域状态事务中调用，保证已受理 Build 一定有持久化运输意图。

@@ -182,6 +182,9 @@ func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Leas
 		}
 		if observation.Phase != PhaseMissing {
 			// 新 Attempt 只是在观察旧 Job，仍记录同一外部身份以保留清晰证据链。
+			if observation.Identity.Name != "" && observation.Identity.UID != "" {
+				previous = observation.Identity
+			}
 			return previous, observation, true, nil
 		}
 		if uid != "" {
@@ -268,8 +271,12 @@ func newFailure(code, summary, disposition string, cause error) *FailureError {
 	return &FailureError{code: code, summary: summary, disposition: disposition, cause: cause}
 }
 
-func (e *FailureError) Error() string { return e.summary }
-func (e *FailureError) Unwrap() error { return e.cause }
+func (e *FailureError) Error() string          { return e.summary }
+func (e *FailureError) Unwrap() error          { return e.cause }
+func (e *FailureError) Code() string           { return e.code }
+func (e *FailureError) Summary() string        { return e.summary }
+func (e *FailureError) Disposition() string    { return e.disposition }
+func (e *FailureError) RetryRecommended() bool { return e.retry }
 
 func stableValue(value, fallback string) string {
 	if strings.TrimSpace(value) == "" {

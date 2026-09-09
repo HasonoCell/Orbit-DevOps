@@ -1,6 +1,7 @@
 package envconfig_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -90,5 +91,30 @@ func TestReleaseWorkerDoesNotReadLegacyEnvironmentNames(t *testing.T) {
 	}
 	if config.WorkerID == "legacy-worker" {
 		t.Fatal("ReleaseWorker unexpectedly read the legacy worker ID")
+	}
+}
+
+func TestBuildWorkerDefaultsUseIndependentQueueAndPinnedImages(t *testing.T) {
+	for _, name := range []string{"ORBITOPS_BUILD_QUEUE_NAME", "ORBITOPS_BUILD_GIT_IMAGE", "ORBITOPS_BUILDKIT_IMAGE",
+		"ORBITOPS_BUILD_OPERATION_TIMEOUT", "ORBITOPS_BUILD_QUEUE_TASK_TIMEOUT", "ORBITOPS_BUILD_NAMESPACE"} {
+		t.Setenv(name, "")
+	}
+	config, err := envconfig.LoadBuildWorker()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.BuildQueue.Name != "orbitops-build" || config.Namespace != "orbitops-s4-build" ||
+		config.BuildQueue.TaskTimeout < config.BuildOperationTimeout+time.Minute {
+		t.Fatalf("build worker defaults = %#v", config)
+	}
+	if !strings.Contains(config.GitImage, "@sha256:") || !strings.Contains(config.BuildkitImage, "@sha256:") {
+		t.Fatalf("build images are not pinned: %q / %q", config.GitImage, config.BuildkitImage)
+	}
+}
+
+func TestBuildWorkerRejectsMutableRuntimeImage(t *testing.T) {
+	t.Setenv("ORBITOPS_BUILDKIT_IMAGE", "moby/buildkit:v0.33.0-rootless")
+	if _, err := envconfig.LoadBuildWorker(); err == nil {
+		t.Fatal("mutable BuildKit image was accepted")
 	}
 }

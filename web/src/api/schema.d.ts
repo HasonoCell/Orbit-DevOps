@@ -227,6 +227,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/build-attempts/{buildAttemptId}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询有界且已脱敏的构建日志摘录 */
+        get: operations["getBuildAttemptLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/applications/{applicationId}/deployment-targets": {
         parameters: {
             query?: never;
@@ -589,12 +606,16 @@ export interface components {
             errorSummary?: string;
             /** @enum {string} */
             retryDisposition?: "retryable" | "non_retryable" | "unknown_outcome";
-            logExcerpt: string;
-            logTruncated: boolean;
             /** Format: date-time */
             startedAt: string;
             /** Format: date-time */
             finishedAt?: string;
+        };
+        BuildAttemptLog: {
+            /** Format: uuid */
+            buildAttemptId: string;
+            excerpt: string;
+            truncated: boolean;
         };
         ForceFailBuildOperationRequest: {
             reason: string;
@@ -1730,6 +1751,55 @@ export interface operations {
             };
             /** @description 状态或幂等冲突 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getBuildAttemptLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buildAttemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 构建日志摘录 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildAttemptLog"];
+                };
+            };
+            /** @description viewer 不能读取构建日志 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description BuildAttempt 不存在 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
