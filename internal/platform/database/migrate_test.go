@@ -73,7 +73,7 @@ func TestProjectMemberMigrationBackfillsExistingCreators(t *testing.T) {
 	}
 }
 
-func TestReliableOperationMigrationBackfillsSchedulingState(t *testing.T) {
+func TestReliableReleaseOperationMigrationBackfillsSchedulingState(t *testing.T) {
 	ctx := context.Background()
 	container, err := postgres.Run(
 		ctx,
@@ -107,7 +107,7 @@ func TestReliableOperationMigrationBackfillsSchedulingState(t *testing.T) {
 	applicationID := uuid.New()
 	targetID := uuid.New()
 	releaseID := uuid.New()
-	operationID := uuid.New()
+	releaseOperationID := uuid.New()
 	attemptID := uuid.New()
 	createdAt := time.Now().UTC().Add(-time.Minute).Truncate(time.Microsecond)
 	statements := []struct {
@@ -133,12 +133,12 @@ func TestReliableOperationMigrationBackfillsSchedulingState(t *testing.T) {
 		   started_at, finished_at)
 		  VALUES ($1, 'release.deploy', $2, 'owner', 'existing-operation', 'failed',
 		          1, 'image_pull_failed', 'image unavailable', $3, $3, $3, $3)`,
-			[]any{operationID, releaseID, createdAt}},
+			[]any{releaseOperationID, releaseID, createdAt}},
 		{`INSERT INTO operation_attempts
 		  (id, operation_id, attempt_number, worker_id, status, error_category,
 		   error_summary, started_at, finished_at)
 		  VALUES ($1, $2, 1, 'worker-one', 'failed', 'image_pull_failed',
-		          'image unavailable', $3, $3)`, []any{attemptID, operationID, createdAt}},
+		          'image unavailable', $3, $3)`, []any{attemptID, releaseOperationID, createdAt}},
 	}
 	for _, statement := range statements {
 		if _, err := database.ExecContext(ctx, statement.query, statement.args...); err != nil {
@@ -159,7 +159,7 @@ func TestReliableOperationMigrationBackfillsSchedulingState(t *testing.T) {
 		`SELECT deployment_target_id, queued_at, available_at, error_code,
 		        retry_disposition, recovery_required
 		 FROM operations WHERE id = $1`,
-		operationID,
+		releaseOperationID,
 	).Scan(
 		&gotTargetID,
 		&queuedAt,
@@ -232,7 +232,7 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 	applicationID := uuid.New()
 	targetID := uuid.New()
 	releaseID := uuid.New()
-	operationID := uuid.New()
+	releaseOperationID := uuid.New()
 	dispatchID := uuid.New()
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
 	statements := []struct {
@@ -256,12 +256,12 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 		  (id, operation_type, release_id, deployment_target_id, actor_id, idempotency_key,
 		   status, queued_at, available_at, created_at, updated_at, dispatch_generation)
 		  VALUES ($1, 'release.deploy', $2, $3, 'owner', 'dispatch-migration',
-		          'pending', $4, $4, $4, $4, 7)`, []any{operationID, releaseID, targetID, createdAt}},
+		          'pending', $4, $4, $4, $4, 7)`, []any{releaseOperationID, releaseID, targetID, createdAt}},
 		{`INSERT INTO operation_dispatches
 		  (id, operation_id, generation, version, reason, expected_attempt_count, state,
 		   available_at, next_dispatch_at, delivery_count, created_at, updated_at)
 		  VALUES ($1, $2, 7, 1, 'accepted', 0, 'published', $3, $3, 2, $3, $3)`,
-			[]any{dispatchID, operationID, createdAt}},
+			[]any{dispatchID, releaseOperationID, createdAt}},
 	}
 	for _, statement := range statements {
 		if _, err := database.ExecContext(ctx, statement.query, statement.args...); err != nil {
@@ -308,7 +308,7 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 	if err := database.QueryRowContext(ctx, `SELECT o.current_dispatch_sequence,
 		d.sequence, d.protocol_version, d.dispatch_reason, d.reservation_count
 		FROM operations o JOIN operation_dispatches d ON d.operation_id = o.id
-		WHERE o.id = $1 AND d.id = $2`, operationID, dispatchID).Scan(
+		WHERE o.id = $1 AND d.id = $2`, releaseOperationID, dispatchID).Scan(
 		&operationSequence,
 		&dispatchSequence,
 		&protocolVersion,
@@ -330,7 +330,7 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 	if err := database.QueryRowContext(ctx, `SELECT o.dispatch_generation,
 		d.generation, d.version, d.reason, d.delivery_count
 		FROM operations o JOIN operation_dispatches d ON d.operation_id = o.id
-		WHERE o.id = $1 AND d.id = $2`, operationID, dispatchID).Scan(
+		WHERE o.id = $1 AND d.id = $2`, releaseOperationID, dispatchID).Scan(
 		&operationGeneration,
 		&dispatchGeneration,
 		&version,

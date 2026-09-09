@@ -1,4 +1,4 @@
-package operation
+package releaseoperation
 
 import (
 	"context"
@@ -13,10 +13,10 @@ import (
 
 // DispatchRef 只定位一次业务调度意图；消息不携带发布配置或权限凭据。
 type DispatchRef struct {
-	DispatchID      uuid.UUID `db:"id" json:"dispatch_id"`
-	OperationID     uuid.UUID `db:"operation_id" json:"operation_id"`
-	Sequence        int64     `db:"sequence" json:"generation"`
-	ProtocolVersion int       `db:"protocol_version" json:"version"`
+	DispatchID         uuid.UUID `db:"id" json:"dispatch_id"`
+	ReleaseOperationID uuid.UUID `db:"operation_id" json:"operation_id"`
+	Sequence           int64     `db:"sequence" json:"generation"`
+	ProtocolVersion    int       `db:"protocol_version" json:"version"`
 }
 
 // Dispatch 是投递器取得的短期运输权限，不是 Worker 的业务执行租约。
@@ -28,8 +28,8 @@ type Dispatch struct {
 }
 
 // scheduleDispatch 与调用者的业务状态变化共用事务，保证提交后必有待投递意图。
-// 调度元数据不更新 Operation.updated_at，避免破坏人工恢复的观测版本。
-func scheduleDispatch(ctx context.Context, tx *sqlx.Tx, operationID uuid.UUID, dispatchReason string, now time.Time) error {
+// 调度元数据不更新 ReleaseOperation.updated_at，避免破坏人工恢复的观测版本。
+func scheduleDispatch(ctx context.Context, tx *sqlx.Tx, releaseOperationID uuid.UUID, dispatchReason string, now time.Time) error {
 	var current struct {
 		Sequence     int64     `db:"current_dispatch_sequence"`
 		AvailableAt  time.Time `db:"available_at"`
@@ -37,17 +37,17 @@ func scheduleDispatch(ctx context.Context, tx *sqlx.Tx, operationID uuid.UUID, d
 	}
 	if err := tx.GetContext(ctx, &current, `UPDATE operations
 	 SET current_dispatch_sequence = current_dispatch_sequence + 1 WHERE id = $1
-	 RETURNING current_dispatch_sequence, available_at, attempt_count`, operationID); err != nil {
+	 RETURNING current_dispatch_sequence, available_at, attempt_count`, releaseOperationID); err != nil {
 		return fmt.Errorf("advance dispatch sequence: %w", err)
 	}
-	if err := obsoleteDispatches(ctx, tx, operationID, now); err != nil {
+	if err := obsoleteDispatches(ctx, tx, releaseOperationID, now); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO operation_dispatches
 	 (id, operation_id, sequence, dispatch_reason, expected_attempt_count, state,
 	  available_at, next_dispatch_at, created_at, updated_at)
 	 VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $7, $7)`,
-		uuid.New(), operationID, current.Sequence, dispatchReason, current.AttemptCount, current.AvailableAt, now)
+		uuid.New(), releaseOperationID, current.Sequence, dispatchReason, current.AttemptCount, current.AvailableAt, now)
 	if err != nil {
 		return fmt.Errorf("record durable dispatch: %w", err)
 	}
@@ -55,10 +55,10 @@ func scheduleDispatch(ctx context.Context, tx *sqlx.Tx, operationID uuid.UUID, d
 }
 
 // obsoleteDispatches 撤销尚未消费的旧意图和投递 token；已消费记录保留关联历史。
-func obsoleteDispatches(ctx context.Context, tx *sqlx.Tx, operationID uuid.UUID, now time.Time) error {
+func obsoleteDispatches(ctx context.Context, tx *sqlx.Tx, releaseOperationID uuid.UUID, now time.Time) error {
 	_, err := tx.ExecContext(ctx, `UPDATE operation_dispatches SET state = 'obsolete',
 	 publish_token = NULL, publish_expires_at = NULL, updated_at = $2
-	 WHERE operation_id = $1 AND state IN ('pending', 'published', 'quarantined')`, operationID, now)
+	 WHERE operation_id = $1 AND state IN ('pending', 'published', 'quarantined')`, releaseOperationID, now)
 	return err
 }
 
@@ -126,11 +126,11 @@ type DispatchClaim struct {
 	Lease   Lease
 }
 
-// ClaimDispatch 只领取指定代次。先锁 Operation 再锁 Outbox，与业务受理/重试保持相同锁序。
+// ClaimDispatch 只领取指定代次。先锁 ReleaseOperation 再锁 Outbox，与业务受理/重试保持相同锁序。
 // 代次被消费与业务租约创建在同一事务内完成，重复消息不能制造新的 Attempt。
 func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request ClaimRequest) (DispatchClaim, error) {
 	ignored := DispatchClaim{Outcome: ClaimOutcomeIgnored}
-	if ref.DispatchID == uuid.Nil || ref.OperationID == uuid.Nil || ref.Sequence <= 0 || ref.ProtocolVersion != 1 {
+	if ref.DispatchID == uuid.Nil || ref.ReleaseOperationID == uuid.Nil || ref.Sequence <= 0 || ref.ProtocolVersion != 1 {
 		return ignored, errors.New("invalid dispatch reference")
 	}
 	if request.WorkerID == "" || request.LeaseDuration <= 0 {
@@ -144,7 +144,7 @@ func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request Cla
 	var candidate claimCandidate
 	err = tx.GetContext(ctx, &candidate, `SELECT id, release_id, deployment_target_id, status,
 	 attempt_count, automatic_retry_count, recovery_required, traceparent, tracestate,
-	 current_dispatch_sequence, available_at, lease_expires_at FROM operations WHERE id = $1 FOR UPDATE`, ref.OperationID)
+	 current_dispatch_sequence, available_at, lease_expires_at FROM operations WHERE id = $1 FOR UPDATE`, ref.ReleaseOperationID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ignored, nil
 	}
@@ -161,7 +161,7 @@ func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request Cla
 	}
 	err = tx.GetContext(ctx, &intent, `SELECT state, expected_attempt_count, protocol_version
 	 FROM operation_dispatches WHERE id = $1 AND operation_id = $2 AND sequence = $3 FOR UPDATE`,
-		ref.DispatchID, ref.OperationID, ref.Sequence)
+		ref.DispatchID, ref.ReleaseOperationID, ref.Sequence)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ignored, nil
 	}
@@ -182,7 +182,7 @@ func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request Cla
 	}
 	active := candidate.Status == StatusRunning || candidate.Status == StatusCancelRequested
 	if intent.Expected != candidate.AttemptCount || (candidate.Status != StatusPending && !active) {
-		if err := obsoleteDispatches(ctx, tx, ref.OperationID, now); err != nil {
+		if err := obsoleteDispatches(ctx, tx, ref.ReleaseOperationID, now); err != nil {
 			return ignored, err
 		}
 		return ignored, tx.Commit()
@@ -191,7 +191,7 @@ func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request Cla
 	err = tx.GetContext(ctx, &preceding, `SELECT EXISTS (SELECT 1 FROM operations p JOIN operations o
 	 ON o.id = $1 WHERE p.deployment_target_id = o.deployment_target_id
 	 AND p.status IN ('pending', 'running', 'cancel_requested', 'attention_required')
-	 AND (p.queued_at, p.id) < (o.queued_at, o.id))`, ref.OperationID)
+	 AND (p.queued_at, p.id) < (o.queued_at, o.id))`, ref.ReleaseOperationID)
 	if err != nil {
 		return ignored, err
 	}

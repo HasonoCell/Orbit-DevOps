@@ -15,8 +15,8 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/google/uuid"
@@ -45,12 +45,12 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 			t.Fatal("successful operation was not processed")
 		}
 
-		current := environment.getOperation(t, acceptance.OperationID)
-		if current.Status != operation.StatusSucceeded {
+		current := environment.getReleaseOperation(t, acceptance.ReleaseOperationID)
+		if current.Status != releaseoperation.StatusSucceeded {
 			t.Errorf("operation status = %q, want succeeded", current.Status)
 		}
 		if current.AttemptCount != 1 || len(current.Attempts) != 1 ||
-			current.Attempts[0].Status != operation.AttemptSucceeded {
+			current.Attempts[0].Status != releaseoperation.AttemptSucceeded {
 			t.Errorf("operation attempts = %#v, want one succeeded attempt", current.Attempts)
 		}
 
@@ -83,14 +83,14 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 			t.Fatal("failed operation was not processed")
 		}
 
-		current := environment.getOperation(t, acceptance.OperationID)
-		if current.Status != operation.StatusFailed {
+		current := environment.getReleaseOperation(t, acceptance.ReleaseOperationID)
+		if current.Status != releaseoperation.StatusFailed {
 			t.Errorf("operation status = %q, want failed", current.Status)
 		}
 		if current.ErrorCode == nil || *current.ErrorCode != "image_pull_failed" {
 			t.Errorf("operation errorCode = %v, want image_pull_failed", current.ErrorCode)
 		}
-		if len(current.Attempts) != 1 || current.Attempts[0].Status != operation.AttemptFailed {
+		if len(current.Attempts) != 1 || current.Attempts[0].Status != releaseoperation.AttemptFailed {
 			t.Errorf("operation attempts = %#v, want one failed attempt", current.Attempts)
 		}
 
@@ -112,11 +112,11 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 		if err != nil || len(items) != 1 {
 			t.Fatalf("reserve pre-interruption intent: %d %v", len(items), err)
 		}
-		claim, err := environment.operations.ClaimDispatch(context.Background(), items[0].DispatchRef, operation.ClaimRequest{
+		claim, err := environment.operations.ClaimDispatch(context.Background(), items[0].DispatchRef, releaseoperation.ClaimRequest{
 			WorkerID: "kind-lost-worker", LeaseDuration: 300 * time.Millisecond,
 		})
-		lease, claimed := claim.Lease, claim.Outcome == operation.ClaimOutcomeClaimed
-		if err != nil || !claimed || lease.OperationID.String() != acceptance.OperationID {
+		lease, claimed := claim.Lease, claim.Outcome == releaseoperation.ClaimOutcomeClaimed
+		if err != nil || !claimed || lease.ReleaseOperationID.String() != acceptance.ReleaseOperationID {
 			t.Fatalf("claim operation before simulated process loss = %#v, %v, %v", lease, claimed, err)
 		}
 		release, err := environment.releases.GetRelease(context.Background(), lease.ReleaseID)
@@ -132,10 +132,10 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 		if err != nil || !processed {
 			t.Fatalf("reconcile externally applied release = %v, error = %v", processed, err)
 		}
-		current := environment.getOperation(t, acceptance.OperationID)
-		if current.Status != operation.StatusSucceeded || current.AttemptCount != 2 ||
-			current.Attempts[0].Status != operation.AttemptOutcomeUnknown ||
-			current.Attempts[1].Status != operation.AttemptSucceeded {
+		current := environment.getReleaseOperation(t, acceptance.ReleaseOperationID)
+		if current.Status != releaseoperation.StatusSucceeded || current.AttemptCount != 2 ||
+			current.Attempts[0].Status != releaseoperation.AttemptOutcomeUnknown ||
+			current.Attempts[1].Status != releaseoperation.AttemptSucceeded {
 			t.Fatalf("reconciled operation = %#v", current)
 		}
 	})
@@ -153,10 +153,10 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 			}
 			result <- err
 		}()
-		eventuallyOperationStatus(t, environment, acceptance.OperationID, operation.StatusRunning, 5*time.Second)
+		eventuallyReleaseOperationStatus(t, environment, acceptance.ReleaseOperationID, releaseoperation.StatusRunning, 5*time.Second)
 		environment.postCommand(
 			t,
-			"/api/v1/operations/"+acceptance.OperationID+"/cancel",
+			"/api/v1/release-operations/"+acceptance.ReleaseOperationID+"/cancel",
 			"cancel-kind-running-release",
 			http.StatusOK,
 		)
@@ -168,9 +168,9 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 		case <-time.After(8 * time.Second):
 			t.Fatal("Kind Worker did not acknowledge cancellation")
 		}
-		current := environment.getOperation(t, acceptance.OperationID)
-		if current.Status != operation.StatusCanceled || len(current.Attempts) != 1 ||
-			current.Attempts[0].Status != operation.AttemptCanceled {
+		current := environment.getReleaseOperation(t, acceptance.ReleaseOperationID)
+		if current.Status != releaseoperation.StatusCanceled || len(current.Attempts) != 1 ||
+			current.Attempts[0].Status != releaseoperation.AttemptCanceled {
 			t.Fatalf("canceled Kind operation = %#v", current)
 		}
 	})
@@ -195,8 +195,8 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 		if processed, err := environment.runner.RunOnce(context.Background()); err != nil || !processed {
 			t.Fatalf("publish rollback = %v, error = %v", processed, err)
 		}
-		current := environment.getOperation(t, rollback.OperationID)
-		if current.Status != operation.StatusSucceeded {
+		current := environment.getReleaseOperation(t, rollback.ReleaseOperationID)
+		if current.Status != releaseoperation.StatusSucceeded {
 			t.Fatalf("rollback operation = %#v", current)
 		}
 		report := environment.getReleaseDiagnostics(t, rollback.ReleaseID)
@@ -233,8 +233,8 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 		if processed, err := environment.runner.RunOnce(context.Background()); err != nil || !processed {
 			t.Fatalf("run ownership-conflict operation = %v, error = %v", processed, err)
 		}
-		current := environment.getOperation(t, acceptance.OperationID)
-		if current.Status != operation.StatusFailed || current.ErrorCode == nil ||
+		current := environment.getReleaseOperation(t, acceptance.ReleaseOperationID)
+		if current.Status != releaseoperation.StatusFailed || current.ErrorCode == nil ||
 			*current.ErrorCode != "ownership_conflict" {
 			t.Fatalf("ownership-conflict operation = %#v", current)
 		}
@@ -251,26 +251,26 @@ type kindControlPlane struct {
 	databaseURL string
 	server      *httptest.Server
 	runner      *kindQueueRunner
-	operations  *operation.Module
+	operations  *releaseoperation.Module
 	releases    *delivery.Module
 }
 
 type releaseAcceptance struct {
 	TargetID            string
 	ReleaseID           string
-	OperationID         string
+	ReleaseOperationID  string
 	RollbackOfReleaseID *string
 }
 
-type operationResponse struct {
-	Status       operation.OperationStatus  `json:"status"`
-	AttemptCount int                        `json:"attemptCount"`
-	ErrorCode    *string                    `json:"errorCode"`
-	Attempts     []operationAttemptResponse `json:"attempts"`
+type releaseOperationResponse struct {
+	Status       releaseoperation.ReleaseOperationStatus `json:"status"`
+	AttemptCount int                                     `json:"attemptCount"`
+	ErrorCode    *string                                 `json:"errorCode"`
+	Attempts     []operationAttemptResponse              `json:"attempts"`
 }
 
 type operationAttemptResponse struct {
-	Status operation.AttemptStatus `json:"status"`
+	Status releaseoperation.AttemptStatus `json:"status"`
 }
 
 type releaseDiagnosticResponse struct {
@@ -346,12 +346,12 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 			t.Errorf("close worker database: %v", err)
 		}
 	})
-	operations := operation.New(db)
+	operations := releaseoperation.New(db)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	runner, err := worker.New(worker.Config{
-		WorkerID:         "kind-worker",
-		LeaseDuration:    5 * time.Second,
-		OperationTimeout: 45 * time.Second,
+		WorkerID:                "kind-worker",
+		LeaseDuration:           5 * time.Second,
+		ReleaseOperationTimeout: 45 * time.Second,
 	}, operations, releases, adapter)
 	if err != nil {
 		t.Fatalf("create worker runner: %v", err)
@@ -370,7 +370,7 @@ func redisAddress(t *testing.T) string { _, address := testsupport.StartRedis(t)
 type kindQueueRunner struct {
 	address    string
 	runner     *worker.Runner
-	operations *operation.Module
+	operations *releaseoperation.Module
 	db         *sqlx.DB
 }
 
@@ -401,7 +401,7 @@ func (r *kindQueueRunner) RunOnce(parent context.Context) (bool, error) {
 			if err != nil {
 				return true, err
 			}
-			if current.Status == operation.StatusPending || current.Status == operation.StatusRunning || current.Status == operation.StatusCancelRequested {
+			if current.Status == releaseoperation.StatusPending || current.Status == releaseoperation.StatusRunning || current.Status == releaseoperation.StatusCancelRequested {
 				complete = false
 			}
 		}
@@ -451,9 +451,9 @@ func (e *kindControlPlane) acceptRelease(
 			ID                  string  `json:"id"`
 			RollbackOfReleaseID *string `json:"rollbackOfReleaseId"`
 		} `json:"release"`
-		Operation struct {
+		ReleaseOperation struct {
 			ID string `json:"id"`
-		} `json:"operation"`
+		} `json:"releaseOperation"`
 	}
 	if err := json.NewDecoder(releaseResponse.Body).Decode(&document); err != nil {
 		t.Fatalf("decode release acceptance: %v", err)
@@ -461,7 +461,7 @@ func (e *kindControlPlane) acceptRelease(
 	return releaseAcceptance{
 		TargetID:            targetID,
 		ReleaseID:           document.Release.ID,
-		OperationID:         document.Operation.ID,
+		ReleaseOperationID:  document.ReleaseOperation.ID,
 		RollbackOfReleaseID: document.Release.RollbackOfReleaseID,
 	}
 }
@@ -475,16 +475,16 @@ func decodeReleaseAcceptance(t *testing.T, response *http.Response) releaseAccep
 			DeploymentTargetID  string  `json:"deploymentTargetId"`
 			RollbackOfReleaseID *string `json:"rollbackOfReleaseId"`
 		} `json:"release"`
-		Operation struct {
+		ReleaseOperation struct {
 			ID string `json:"id"`
-		} `json:"operation"`
+		} `json:"releaseOperation"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&document); err != nil {
 		t.Fatalf("decode release acceptance: %v", err)
 	}
 	return releaseAcceptance{
 		TargetID: document.Release.DeploymentTargetID, ReleaseID: document.Release.ID,
-		OperationID: document.Operation.ID, RollbackOfReleaseID: document.Release.RollbackOfReleaseID,
+		ReleaseOperationID: document.ReleaseOperation.ID, RollbackOfReleaseID: document.Release.RollbackOfReleaseID,
 	}
 }
 
@@ -556,10 +556,10 @@ func decodeID(t *testing.T, response *http.Response, resource string) string {
 	return document.ID
 }
 
-func (e *kindControlPlane) getOperation(t *testing.T, operationID string) operationResponse {
+func (e *kindControlPlane) getReleaseOperation(t *testing.T, releaseOperationID string) releaseOperationResponse {
 	t.Helper()
-	var document operationResponse
-	e.getJSON(t, "/api/v1/operations/"+operationID, &document)
+	var document releaseOperationResponse
+	e.getJSON(t, "/api/v1/release-operations/"+releaseOperationID, &document)
 	return document
 }
 
@@ -588,30 +588,30 @@ func (e *kindControlPlane) getJSON(t *testing.T, path string, destination any) {
 	}
 }
 
-func eventuallyOperationStatus(
+func eventuallyReleaseOperationStatus(
 	t *testing.T,
 	environment *kindControlPlane,
-	operationID string,
-	want operation.OperationStatus,
+	releaseOperationID string,
+	want releaseoperation.ReleaseOperationStatus,
 	timeout time.Duration,
 ) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for {
-		if current := environment.getOperation(t, operationID); current.Status == want {
+		if current := environment.getReleaseOperation(t, releaseOperationID); current.Status == want {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("operation %s did not reach %s", operationID, want)
+			t.Fatalf("operation %s did not reach %s", releaseOperationID, want)
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
 }
 
-func publishRequest(lease operation.Lease, release delivery.Release) worker.PublishRequest {
+func publishRequest(lease releaseoperation.Lease, release delivery.Release) worker.PublishRequest {
 	return worker.PublishRequest{
-		OperationID:        lease.OperationID,
-		AttemptID:          lease.AttemptID,
+		ReleaseOperationID: lease.ReleaseOperationID,
+		ReleaseAttemptID:   lease.ReleaseAttemptID,
 		ReleaseID:          release.ID,
 		ProjectID:          release.TargetSnapshot.ProjectID,
 		ApplicationID:      release.TargetSnapshot.ApplicationID,

@@ -1,4 +1,4 @@
-package operation
+package releaseoperation
 
 import (
 	"context"
@@ -15,20 +15,20 @@ import (
 
 const TypeReleaseDeploy = "release.deploy"
 
-// OperationStatus 表示一次业务工作的整体状态，不描述单次执行或消息运输结果。
-type OperationStatus string
+// ReleaseOperationStatus 表示一次业务工作的整体状态，不描述单次执行或消息运输结果。
+type ReleaseOperationStatus string
 
 const (
-	StatusPending           OperationStatus = "pending"
-	StatusRunning           OperationStatus = "running"
-	StatusCancelRequested   OperationStatus = "cancel_requested"
-	StatusSucceeded         OperationStatus = "succeeded"
-	StatusFailed            OperationStatus = "failed"
-	StatusCanceled          OperationStatus = "canceled"
-	StatusAttentionRequired OperationStatus = "attention_required"
+	StatusPending           ReleaseOperationStatus = "pending"
+	StatusRunning           ReleaseOperationStatus = "running"
+	StatusCancelRequested   ReleaseOperationStatus = "cancel_requested"
+	StatusSucceeded         ReleaseOperationStatus = "succeeded"
+	StatusFailed            ReleaseOperationStatus = "failed"
+	StatusCanceled          ReleaseOperationStatus = "canceled"
+	StatusAttentionRequired ReleaseOperationStatus = "attention_required"
 )
 
-// AttemptStatus 表示某个 Worker 单次执行的结果，与 OperationStatus 的业务结论分离。
+// AttemptStatus 表示某个 Worker 单次执行的结果，与 ReleaseOperationStatus 的业务结论分离。
 type AttemptStatus string
 
 const (
@@ -55,27 +55,27 @@ var (
 )
 
 type Record struct {
-	ID                  uuid.UUID       `db:"id"`
-	Type                string          `db:"operation_type"`
-	ReleaseID           uuid.UUID       `db:"release_id"`
-	DeploymentTargetID  uuid.UUID       `db:"deployment_target_id"`
-	CreatedBy           string          `db:"actor_id"`
-	IdempotencyKey      string          `db:"idempotency_key"`
-	TraceParent         string          `db:"traceparent"`
-	TraceState          string          `db:"tracestate"`
-	Status              OperationStatus `db:"status"`
-	AttemptCount        int             `db:"attempt_count"`
-	AutomaticRetryCount int             `db:"automatic_retry_count"`
-	RecoveryRequired    bool            `db:"recovery_required"`
-	ErrorCode           *string         `db:"error_code"`
-	ErrorSummary        *string         `db:"error_summary"`
-	RetryDisposition    *string         `db:"retry_disposition"`
-	QueuedAt            time.Time       `db:"queued_at"`
-	AvailableAt         time.Time       `db:"available_at"`
-	CreatedAt           time.Time       `db:"created_at"`
-	UpdatedAt           time.Time       `db:"updated_at"`
-	StartedAt           *time.Time      `db:"started_at"`
-	FinishedAt          *time.Time      `db:"finished_at"`
+	ID                  uuid.UUID              `db:"id"`
+	Type                string                 `db:"operation_type"`
+	ReleaseID           uuid.UUID              `db:"release_id"`
+	DeploymentTargetID  uuid.UUID              `db:"deployment_target_id"`
+	CreatedBy           string                 `db:"actor_id"`
+	IdempotencyKey      string                 `db:"idempotency_key"`
+	TraceParent         string                 `db:"traceparent"`
+	TraceState          string                 `db:"tracestate"`
+	Status              ReleaseOperationStatus `db:"status"`
+	AttemptCount        int                    `db:"attempt_count"`
+	AutomaticRetryCount int                    `db:"automatic_retry_count"`
+	RecoveryRequired    bool                   `db:"recovery_required"`
+	ErrorCode           *string                `db:"error_code"`
+	ErrorSummary        *string                `db:"error_summary"`
+	RetryDisposition    *string                `db:"retry_disposition"`
+	QueuedAt            time.Time              `db:"queued_at"`
+	AvailableAt         time.Time              `db:"available_at"`
+	CreatedAt           time.Time              `db:"created_at"`
+	UpdatedAt           time.Time              `db:"updated_at"`
+	StartedAt           *time.Time             `db:"started_at"`
+	FinishedAt          *time.Time             `db:"finished_at"`
 	Attempts            []Attempt
 }
 
@@ -108,16 +108,16 @@ type ClaimRequest struct {
 }
 
 type Lease struct {
-	OperationID        uuid.UUID
-	ReleaseID          uuid.UUID
-	DeploymentTargetID uuid.UUID
-	AttemptID          uuid.UUID
-	AttemptNumber      int
-	WorkerID           string
-	ExpiresAt          time.Time
-	TraceParent        string
-	TraceState         string
-	Recovery           bool
+	ReleaseOperationID   uuid.UUID
+	ReleaseID            uuid.UUID
+	DeploymentTargetID   uuid.UUID
+	ReleaseAttemptID     uuid.UUID
+	ReleaseAttemptNumber int
+	WorkerID             string
+	ExpiresAt            time.Time
+	TraceParent          string
+	TraceState           string
+	Recovery             bool
 }
 
 type Renewal struct {
@@ -132,26 +132,26 @@ type Failure struct {
 	RetryRecommended bool
 }
 
-// FailureResult 告诉 Worker 本次失败是终结了 Operation，还是已进入自动重试等待。
+// FailureResult 告诉 Worker 本次失败是终结了 ReleaseOperation，还是已进入自动重试等待。
 type FailureResult struct {
-	Status         OperationStatus
+	Status         ReleaseOperationStatus
 	RetryScheduled bool
 	AvailableAt    *time.Time
 }
 
 type claimCandidate struct {
-	ID                      uuid.UUID       `db:"id"`
-	ReleaseID               uuid.UUID       `db:"release_id"`
-	DeploymentTargetID      uuid.UUID       `db:"deployment_target_id"`
-	Status                  OperationStatus `db:"status"`
-	AttemptCount            int             `db:"attempt_count"`
-	AutomaticRetryCount     int             `db:"automatic_retry_count"`
-	RecoveryRequired        bool            `db:"recovery_required"`
-	TraceParent             string          `db:"traceparent"`
-	TraceState              string          `db:"tracestate"`
-	CurrentDispatchSequence int64           `db:"current_dispatch_sequence"`
-	AvailableAt             time.Time       `db:"available_at"`
-	LeaseExpiresAt          *time.Time      `db:"lease_expires_at"`
+	ID                      uuid.UUID              `db:"id"`
+	ReleaseID               uuid.UUID              `db:"release_id"`
+	DeploymentTargetID      uuid.UUID              `db:"deployment_target_id"`
+	Status                  ReleaseOperationStatus `db:"status"`
+	AttemptCount            int                    `db:"attempt_count"`
+	AutomaticRetryCount     int                    `db:"automatic_retry_count"`
+	RecoveryRequired        bool                   `db:"recovery_required"`
+	TraceParent             string                 `db:"traceparent"`
+	TraceState              string                 `db:"tracestate"`
+	CurrentDispatchSequence int64                  `db:"current_dispatch_sequence"`
+	AvailableAt             time.Time              `db:"available_at"`
+	LeaseExpiresAt          *time.Time             `db:"lease_expires_at"`
 }
 
 type Module struct {
@@ -162,14 +162,14 @@ type Module struct {
 	retryDelay              func(int) time.Duration
 }
 
-// WithAuthorizer 为面向用户的 Operation 命令接入项目权限校验。
+// WithAuthorizer 为面向用户的 ReleaseOperation 命令接入项目权限校验。
 func WithAuthorizer(authorizer Authorizer) Option {
 	return func(module *Module) {
 		module.authorizer = authorizer
 	}
 }
 
-// Option 只用于配置 Operation 调度策略，所有 Worker 必须使用一致的生产配置。
+// Option 只用于配置 ReleaseOperation 调度策略，所有 Worker 必须使用一致的生产配置。
 type Option func(*Module)
 
 // WithClock 为测试提供确定性时间；生产代码应使用默认 UTC 时钟。
@@ -560,16 +560,16 @@ func (m *Module) claimCandidate(ctx context.Context, tx *sqlx.Tx, candidate clai
 	}
 
 	return Lease{
-		OperationID:        candidate.ID,
-		ReleaseID:          candidate.ReleaseID,
-		DeploymentTargetID: candidate.DeploymentTargetID,
-		AttemptID:          attemptID,
-		AttemptNumber:      attemptNumber,
-		WorkerID:           request.WorkerID,
-		ExpiresAt:          expiresAt,
-		TraceParent:        candidate.TraceParent,
-		TraceState:         candidate.TraceState,
-		Recovery:           recovery,
+		ReleaseOperationID:   candidate.ID,
+		ReleaseID:            candidate.ReleaseID,
+		DeploymentTargetID:   candidate.DeploymentTargetID,
+		ReleaseAttemptID:     attemptID,
+		ReleaseAttemptNumber: attemptNumber,
+		WorkerID:             request.WorkerID,
+		ExpiresAt:            expiresAt,
+		TraceParent:          candidate.TraceParent,
+		TraceState:           candidate.TraceState,
+		Recovery:             recovery,
 	}, true, nil
 }
 
@@ -596,7 +596,7 @@ func (m *Module) Renew(
 
 	now := m.now()
 	expiresAt := now.Add(leaseDuration)
-	var status OperationStatus
+	var status ReleaseOperationStatus
 	err := m.db.GetContext(
 		ctx,
 		&status,
@@ -607,9 +607,9 @@ func (m *Module) Renew(
 		 RETURNING status`,
 		expiresAt,
 		now,
-		lease.OperationID,
+		lease.ReleaseOperationID,
 		lease.WorkerID,
-		lease.AttemptNumber,
+		lease.ReleaseAttemptNumber,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -642,9 +642,9 @@ func (m *Module) ConfirmCanceled(ctx context.Context, lease Lease) error {
 		 WHERE id = $1 AND status = 'cancel_requested' AND lease_owner = $2
 		   AND attempt_count = $3 AND lease_expires_at > $4
 		 FOR UPDATE`,
-		lease.OperationID,
+		lease.ReleaseOperationID,
 		lease.WorkerID,
-		lease.AttemptNumber,
+		lease.ReleaseAttemptNumber,
 		now,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -659,7 +659,7 @@ func (m *Module) ConfirmCanceled(ctx context.Context, lease Lease) error {
 		     recovery_required = false, updated_at = $1, finished_at = $1
 		 WHERE id = $2`,
 		now,
-		lease.OperationID,
+		lease.ReleaseOperationID,
 	); err != nil {
 		return fmt.Errorf("complete operation cancellation: %w", err)
 	}
@@ -683,7 +683,7 @@ func (m *Module) ConfirmCanceled(ctx context.Context, lease Lease) error {
 	return nil
 }
 
-// Fail 关闭当前 Attempt，并依据稳定的失败分类决定终结 Operation 或安排自动重试。
+// Fail 关闭当前 Attempt，并依据稳定的失败分类决定终结 ReleaseOperation 或安排自动重试。
 func (m *Module) Fail(
 	ctx context.Context,
 	lease Lease,
@@ -737,7 +737,7 @@ func (m *Module) Fail(
 			automaticRetryCount,
 			availableAt,
 			now,
-			lease.OperationID,
+			lease.ReleaseOperationID,
 		); err != nil {
 			return FailureResult{}, fmt.Errorf("schedule operation retry: %w", err)
 		}
@@ -760,7 +760,7 @@ func (m *Module) Fail(
 			failure.Summary,
 			failure.Disposition,
 			now,
-			lease.OperationID,
+			lease.ReleaseOperationID,
 		); err != nil {
 			return FailureResult{}, fmt.Errorf("fail operation: %w", err)
 		}
@@ -830,7 +830,7 @@ func (m *Module) HandleUnknownOutcome(
 			 WHERE id = $3`,
 			availableAt,
 			now,
-			lease.OperationID,
+			lease.ReleaseOperationID,
 		); err != nil {
 			return FailureResult{}, fmt.Errorf("schedule outcome reconciliation: %w", err)
 		}
@@ -852,7 +852,7 @@ func (m *Module) HandleUnknownOutcome(
 			failure.Code,
 			failure.Summary,
 			now,
-			lease.OperationID,
+			lease.ReleaseOperationID,
 		); err != nil {
 			return FailureResult{}, fmt.Errorf("require attention for unknown outcome: %w", err)
 		}
@@ -890,7 +890,7 @@ func (m *Module) completeSuccess(ctx context.Context, lease Lease) error {
 		     updated_at = $1, finished_at = $1
 		 WHERE id = $2`,
 		now,
-		lease.OperationID,
+		lease.ReleaseOperationID,
 	); err != nil {
 		return fmt.Errorf("succeed operation: %w", err)
 	}
@@ -935,9 +935,9 @@ func (m *Module) lockCompletion(
 		 WHERE id = $1 AND status = 'running' AND lease_owner = $2
 		   AND attempt_count = $3 AND lease_expires_at > $4
 		 FOR UPDATE`,
-		lease.OperationID,
+		lease.ReleaseOperationID,
 		lease.WorkerID,
-		lease.AttemptNumber,
+		lease.ReleaseAttemptNumber,
 		now,
 	); err != nil {
 		_ = tx.Rollback()
@@ -974,7 +974,7 @@ func completeAttempt(
 		errorSummary,
 		disposition,
 		now,
-		lease.AttemptID,
+		lease.ReleaseAttemptID,
 	)
 	if err != nil {
 		return fmt.Errorf("complete operation attempt: %w", err)
@@ -995,20 +995,20 @@ func recordCompletion(
 	tx *sqlx.Tx,
 	action string,
 	lease Lease,
-	status OperationStatus,
+	status ReleaseOperationStatus,
 	failure *Failure,
 	now time.Time,
 ) error {
 	// 执行结束后的新业务意图与 Attempt、状态、审计一起提交，不能在 Runner 返回后补写。
 	if status == StatusPending {
-		if err := scheduleDispatch(ctx, tx, lease.OperationID, action, now); err != nil {
+		if err := scheduleDispatch(ctx, tx, lease.ReleaseOperationID, action, now); err != nil {
 			return err
 		}
-	} else if err := obsoleteDispatches(ctx, tx, lease.OperationID, now); err != nil {
+	} else if err := obsoleteDispatches(ctx, tx, lease.ReleaseOperationID, now); err != nil {
 		return err
 	}
 	summary := map[string]any{
-		"attemptNumber": lease.AttemptNumber,
+		"attemptNumber": lease.ReleaseAttemptNumber,
 		"workerId":      lease.WorkerID,
 		"status":        status,
 	}
@@ -1021,7 +1021,7 @@ func recordCompletion(
 		ActorKind:  audit.ActorKindSystem,
 		Action:     action,
 		TargetType: "operation",
-		TargetID:   lease.OperationID,
+		TargetID:   lease.ReleaseOperationID,
 		Summary:    summary,
 		CreatedAt:  now,
 	})

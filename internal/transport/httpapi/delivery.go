@@ -11,8 +11,8 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"go.opentelemetry.io/otel/propagation"
 )
 
@@ -65,8 +65,8 @@ func (s *Server) CreateRelease(
 	observability.SetRequestProjectID(ctx, acceptance.Release.TargetSnapshot.ProjectID)
 
 	return api.CreateRelease201JSONResponse{
-		Release:   releaseResponse(acceptance.Release),
-		Operation: operationResponse(acceptance.Operation),
+		Release:          releaseResponse(acceptance.Release),
+		ReleaseOperation: releaseOperationResponse(acceptance.ReleaseOperation),
 	}, nil
 }
 
@@ -161,15 +161,15 @@ func (s *Server) ListReleaseHistory(
 	for _, item := range page.Items {
 		items = append(items, api.ReleaseHistoryItem{
 			Release: releaseResponse(item.Release),
-			Operation: api.OperationSummary{
-				Id:           item.Operation.ID,
-				Status:       api.OperationSummaryStatus(item.Operation.Status),
-				AttemptCount: item.Operation.AttemptCount,
-				ErrorCode:    item.Operation.ErrorCode,
-				ErrorSummary: item.Operation.ErrorSummary,
-				QueuedAt:     item.Operation.QueuedAt,
-				StartedAt:    item.Operation.StartedAt,
-				FinishedAt:   item.Operation.FinishedAt,
+			ReleaseOperation: api.ReleaseOperationSummary{
+				Id:           item.ReleaseOperation.ID,
+				Status:       api.ReleaseOperationSummaryStatus(item.ReleaseOperation.Status),
+				AttemptCount: item.ReleaseOperation.AttemptCount,
+				ErrorCode:    item.ReleaseOperation.ErrorCode,
+				ErrorSummary: item.ReleaseOperation.ErrorSummary,
+				QueuedAt:     item.ReleaseOperation.QueuedAt,
+				StartedAt:    item.ReleaseOperation.StartedAt,
+				FinishedAt:   item.ReleaseOperation.FinishedAt,
 			},
 		})
 	}
@@ -213,25 +213,25 @@ func (s *Server) RollbackRelease(
 	}
 	observability.SetRequestProjectID(ctx, acceptance.Release.TargetSnapshot.ProjectID)
 	return api.RollbackRelease201JSONResponse{
-		Release: releaseResponse(acceptance.Release), Operation: operationResponse(acceptance.Operation),
+		Release: releaseResponse(acceptance.Release), ReleaseOperation: releaseOperationResponse(acceptance.ReleaseOperation),
 	}, nil
 }
 
-func (s *Server) GetOperation(
+func (s *Server) GetReleaseOperation(
 	ctx context.Context,
-	request api.GetOperationRequestObject,
-) (api.GetOperationResponseObject, error) {
-	operationRecord, err := s.operations.Get(httpRequestContext(ctx), request.OperationId)
+	request api.GetReleaseOperationRequestObject,
+) (api.GetReleaseOperationResponseObject, error) {
+	releaseOperationRecord, err := s.releaseOperations.Get(httpRequestContext(ctx), request.ReleaseOperationId)
 	if err != nil {
-		if errors.Is(err, operation.ErrNotFound) {
-			return api.GetOperation404JSONResponse{
-				Code:    "operation_not_found",
+		if errors.Is(err, releaseoperation.ErrNotFound) {
+			return api.GetReleaseOperation404JSONResponse{
+				Code:    "release_operation_not_found",
 				Message: "operation not found",
 			}, nil
 		}
 		return nil, err
 	}
-	release, err := s.delivery.GetRelease(httpRequestContext(ctx), operationRecord.ReleaseID)
+	release, err := s.delivery.GetRelease(httpRequestContext(ctx), releaseOperationRecord.ReleaseID)
 	if err != nil {
 		return nil, err
 	}
@@ -243,15 +243,15 @@ func (s *Server) GetOperation(
 		projectauth.PermissionRead,
 	); err != nil {
 		if errors.Is(err, projectauth.ErrNotMember) {
-			return api.GetOperation404JSONResponse{
-				Code:    "operation_not_found",
+			return api.GetReleaseOperation404JSONResponse{
+				Code:    "release_operation_not_found",
 				Message: "operation not found",
 			}, nil
 		}
 		return nil, err
 	}
 
-	return api.GetOperation200JSONResponse(operationResponse(operationRecord)), nil
+	return api.GetReleaseOperation200JSONResponse(releaseOperationResponse(releaseOperationRecord)), nil
 }
 
 func releaseResponse(release delivery.Release) api.Release {
@@ -303,20 +303,20 @@ func releaseDetailResponse(detail delivery.Detail) (api.ReleaseDetail, error) {
 	return api.ReleaseDetail{
 		Release:             releaseResponse(detail.Release),
 		SnapshotDifferences: differences,
-		Operation:           operationResponse(detail.Operation),
+		ReleaseOperation:    releaseOperationResponse(detail.ReleaseOperation),
 		AuditTimeline:       timeline,
 	}, nil
 }
 
-func operationResponse(record operation.Record) api.Operation {
-	return api.Operation{
+func releaseOperationResponse(record releaseoperation.Record) api.ReleaseOperation {
+	return api.ReleaseOperation{
 		Id:                  record.ID,
-		Type:                api.OperationType(record.Type),
+		Type:                api.ReleaseOperationType(record.Type),
 		ReleaseId:           record.ReleaseID,
 		DeploymentTargetId:  record.DeploymentTargetID,
 		CreatedBy:           record.CreatedBy,
 		IdempotencyKey:      record.IdempotencyKey,
-		Status:              api.OperationStatus(record.Status),
+		Status:              api.ReleaseOperationStatus(record.Status),
 		AttemptCount:        record.AttemptCount,
 		AutomaticRetryCount: record.AutomaticRetryCount,
 		RecoveryRequired:    record.RecoveryRequired,
@@ -333,14 +333,14 @@ func operationResponse(record operation.Record) api.Operation {
 	}
 }
 
-func operationAttemptResponses(attempts []operation.Attempt) []api.OperationAttempt {
-	responses := make([]api.OperationAttempt, 0, len(attempts))
+func operationAttemptResponses(attempts []releaseoperation.Attempt) []api.ReleaseAttempt {
+	responses := make([]api.ReleaseAttempt, 0, len(attempts))
 	for _, attempt := range attempts {
-		responses = append(responses, api.OperationAttempt{
+		responses = append(responses, api.ReleaseAttempt{
 			Id:               attempt.ID,
 			Number:           attempt.Number,
 			WorkerId:         attempt.WorkerID,
-			Status:           api.OperationAttemptStatus(attempt.Status),
+			Status:           api.ReleaseAttemptStatus(attempt.Status),
 			ErrorCode:        attempt.ErrorCode,
 			ErrorSummary:     attempt.ErrorSummary,
 			RetryDisposition: operationRetryDisposition(attempt.RetryDisposition),

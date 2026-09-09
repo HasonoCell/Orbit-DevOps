@@ -3,7 +3,7 @@ package diagnostics
 import (
 	"sort"
 
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
@@ -35,20 +35,20 @@ func deriveSignals(report Report) []Signal {
 		})
 	}
 
-	switch report.Operation.Status {
-	case operation.StatusAttentionRequired:
+	switch report.ReleaseOperation.Status {
+	case releaseoperation.StatusAttentionRequired:
 		appendSignal(
-			SignalOperationAttentionRequired,
+			SignalReleaseOperationAttentionRequired,
 			"error",
 			"发布操作需要人工处理",
-			EvidenceReference{Source: "postgresql", Kind: "Operation", ID: report.Operation.ID.String()},
+			EvidenceReference{Source: "postgresql", Kind: "ReleaseOperation", ID: report.ReleaseOperation.ID.String()},
 		)
-	case operation.StatusFailed:
+	case releaseoperation.StatusFailed:
 		appendSignal(
-			SignalOperationFailed,
+			SignalReleaseOperationFailed,
 			"error",
 			"发布操作执行失败",
-			EvidenceReference{Source: "postgresql", Kind: "Operation", ID: report.Operation.ID.String()},
+			EvidenceReference{Source: "postgresql", Kind: "ReleaseOperation", ID: report.ReleaseOperation.ID.String()},
 		)
 	}
 

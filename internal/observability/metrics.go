@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -16,8 +16,8 @@ import (
 
 type PendingCounter func(context.Context) (int, error)
 
-// OperationSnapshotReader 读取由数据库权威事实重建的 Operation 指标快照。
-type OperationSnapshotReader func(context.Context) (operation.MetricsSnapshot, error)
+// ReleaseOperationSnapshotReader 读取由数据库权威事实重建的 ReleaseOperation 指标快照。
+type ReleaseOperationSnapshotReader func(context.Context) (releaseoperation.MetricsSnapshot, error)
 
 type Metrics struct {
 	registry            *prometheus.Registry
@@ -36,7 +36,7 @@ type Metrics struct {
 	pendingOnce         sync.Once
 	operationOnce       sync.Once
 	refreshMu           sync.Mutex
-	operationSnapshot   OperationSnapshotReader
+	operationSnapshot   ReleaseOperationSnapshotReader
 }
 
 func NewMetrics(pending PendingCounter) *Metrics {
@@ -56,19 +56,19 @@ func NewMetrics(pending PendingCounter) *Metrics {
 		operationDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "orbitops",
 			Name:      "operation_duration_seconds",
-			Help:      "OrbitOps Operation 尝试耗时。",
+			Help:      "OrbitOps ReleaseOperation 尝试耗时。",
 			Buckets:   prometheus.ExponentialBuckets(0.1, 2, 12),
 		}, []string{"status", "category"}),
 		operationPhase: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "orbitops",
 			Name:      "operation_phase_duration_seconds",
-			Help:      "Operation 领取、执行、恢复与端到端阶段耗时。",
+			Help:      "ReleaseOperation 领取、执行、恢复与端到端阶段耗时。",
 			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 18),
 		}, []string{"phase"}),
 		operationTerminal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "orbitops",
 			Name:      "operation_terminal_total",
-			Help:      "OrbitOps Operation 终态分类总数。",
+			Help:      "OrbitOps ReleaseOperation 终态分类总数。",
 		}, []string{"status", "category"}),
 		kubernetesReadFail: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "orbitops",
@@ -76,13 +76,13 @@ func NewMetrics(pending PendingCounter) *Metrics {
 			Help:      "OrbitOps Kubernetes 回读失败总数。",
 		}),
 		operationStatus: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "operation_status", Help: "按状态统计的 Operation 当前数量。",
+			Namespace: "orbitops", Name: "operation_status", Help: "按状态统计的 ReleaseOperation 当前数量。",
 		}, []string{"status"}),
 		pendingState: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "pending_operation_state", Help: "按可领取性统计的 pending Operation 数量。",
+			Namespace: "orbitops", Name: "pending_operation_state", Help: "按可领取性统计的 pending ReleaseOperation 数量。",
 		}, []string{"availability"}),
 		operationEvents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "operation_events", Help: "PostgreSQL 审计中持久化的 Operation 事件累计数量。",
+			Namespace: "orbitops", Name: "operation_events", Help: "PostgreSQL 审计中持久化的 ReleaseOperation 事件累计数量。",
 		}, []string{"event"}),
 		attemptErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "orbitops", Name: "attempt_errors", Help: "按稳定错误代码统计的 Attempt 累计数量。",
@@ -114,8 +114,8 @@ func NewMetrics(pending PendingCounter) *Metrics {
 	return metrics
 }
 
-// RegisterOperations 注册数据库快照读取器；同一个 Metrics 实例只绑定一个运行时。
-func (m *Metrics) RegisterOperations(reader OperationSnapshotReader) {
+// RegisterReleaseOperations 注册数据库快照读取器；同一个 Metrics 实例只绑定一个运行时。
+func (m *Metrics) RegisterReleaseOperations(reader ReleaseOperationSnapshotReader) {
 	if reader == nil {
 		return
 	}
@@ -130,7 +130,7 @@ func (m *Metrics) RegisterPending(pending PendingCounter) {
 		m.registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Namespace: "orbitops",
 			Name:      "pending_operations",
-			Help:      "当前等待 Worker 领取的 Operation 数量。",
+			Help:      "当前等待 Worker 领取的 ReleaseOperation 数量。",
 		}, func() float64 {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
@@ -146,7 +146,7 @@ func (m *Metrics) RegisterPending(pending PendingCounter) {
 func (m *Metrics) Handler() http.Handler {
 	handler := promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		m.refreshOperationMetrics(request.Context())
+		m.refreshReleaseOperationMetrics(request.Context())
 		handler.ServeHTTP(response, request)
 	})
 }
@@ -161,13 +161,13 @@ func (m *Metrics) RecordHTTPRequest(method string, route string, status int, dur
 	m.httpDuration.WithLabelValues(method, route).Observe(duration.Seconds())
 }
 
-func (m *Metrics) RecordOperation(status string, category string, duration time.Duration) {
+func (m *Metrics) RecordReleaseOperation(status string, category string, duration time.Duration) {
 	m.operationDuration.WithLabelValues(status, category).Observe(duration.Seconds())
 	m.operationTerminal.WithLabelValues(status, category).Inc()
 }
 
-// RecordOperationPhase 记录固定阶段集合的耗时，调用方不得把动态值作为 phase。
-func (m *Metrics) RecordOperationPhase(phase string, duration time.Duration) {
+// RecordReleaseOperationPhase 记录固定阶段集合的耗时，调用方不得把动态值作为 phase。
+func (m *Metrics) RecordReleaseOperationPhase(phase string, duration time.Duration) {
 	m.operationPhase.WithLabelValues(phase).Observe(duration.Seconds())
 }
 
@@ -185,7 +185,7 @@ func (m *Metrics) RecordIdempotencyConflict(commandType string) {
 	m.idempotencyConflict.WithLabelValues(commandType).Inc()
 }
 
-func (m *Metrics) refreshOperationMetrics(ctx context.Context) {
+func (m *Metrics) refreshReleaseOperationMetrics(ctx context.Context) {
 	if m.operationSnapshot == nil {
 		return
 	}

@@ -96,16 +96,16 @@ func (e DiagnosticContainerState) Valid() bool {
 
 // Defines values for DiagnosticSignalCode.
 const (
-	DeploymentMissing             DiagnosticSignalCode = "deployment_missing"
-	OperationAttentionRequired    DiagnosticSignalCode = "operation_attention_required"
-	OperationFailed               DiagnosticSignalCode = "operation_failed"
-	PodRestarting                 DiagnosticSignalCode = "pod_restarting"
-	PodWaiting                    DiagnosticSignalCode = "pod_waiting"
-	ResourceOwnershipConflict     DiagnosticSignalCode = "resource_ownership_conflict"
-	RolloutIncomplete             DiagnosticSignalCode = "rollout_incomplete"
-	RuntimeObservationUnavailable DiagnosticSignalCode = "runtime_observation_unavailable"
-	RuntimeReleaseDifferent       DiagnosticSignalCode = "runtime_release_different"
-	WarningEventObserved          DiagnosticSignalCode = "warning_event_observed"
+	DeploymentMissing                 DiagnosticSignalCode = "deployment_missing"
+	OperationFailed                   DiagnosticSignalCode = "operation_failed"
+	PodRestarting                     DiagnosticSignalCode = "pod_restarting"
+	PodWaiting                        DiagnosticSignalCode = "pod_waiting"
+	ReleaseOperationAttentionRequired DiagnosticSignalCode = "release_operation_attention_required"
+	ResourceOwnershipConflict         DiagnosticSignalCode = "resource_ownership_conflict"
+	RolloutIncomplete                 DiagnosticSignalCode = "rollout_incomplete"
+	RuntimeObservationUnavailable     DiagnosticSignalCode = "runtime_observation_unavailable"
+	RuntimeReleaseDifferent           DiagnosticSignalCode = "runtime_release_different"
+	WarningEventObserved              DiagnosticSignalCode = "warning_event_observed"
 )
 
 // Valid indicates whether the value is a known member of the DiagnosticSignalCode enum.
@@ -113,13 +113,13 @@ func (e DiagnosticSignalCode) Valid() bool {
 	switch e {
 	case DeploymentMissing:
 		return true
-	case OperationAttentionRequired:
-		return true
 	case OperationFailed:
 		return true
 	case PodRestarting:
 		return true
 	case PodWaiting:
+		return true
+	case ReleaseOperationAttentionRequired:
 		return true
 	case ResourceOwnershipConflict:
 		return true
@@ -193,114 +193,6 @@ func (e ObservationMetadataStatus) Valid() bool {
 	}
 }
 
-// Defines values for OperationStatus.
-const (
-	OperationStatusAttentionRequired OperationStatus = "attention_required"
-	OperationStatusCancelRequested   OperationStatus = "cancel_requested"
-	OperationStatusCanceled          OperationStatus = "canceled"
-	OperationStatusFailed            OperationStatus = "failed"
-	OperationStatusPending           OperationStatus = "pending"
-	OperationStatusRunning           OperationStatus = "running"
-	OperationStatusSucceeded         OperationStatus = "succeeded"
-)
-
-// Valid indicates whether the value is a known member of the OperationStatus enum.
-func (e OperationStatus) Valid() bool {
-	switch e {
-	case OperationStatusAttentionRequired:
-		return true
-	case OperationStatusCancelRequested:
-		return true
-	case OperationStatusCanceled:
-		return true
-	case OperationStatusFailed:
-		return true
-	case OperationStatusPending:
-		return true
-	case OperationStatusRunning:
-		return true
-	case OperationStatusSucceeded:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for OperationType.
-const (
-	ReleaseDeploy OperationType = "release.deploy"
-)
-
-// Valid indicates whether the value is a known member of the OperationType enum.
-func (e OperationType) Valid() bool {
-	switch e {
-	case ReleaseDeploy:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for OperationAttemptStatus.
-const (
-	OperationAttemptStatusCanceled       OperationAttemptStatus = "canceled"
-	OperationAttemptStatusFailed         OperationAttemptStatus = "failed"
-	OperationAttemptStatusOutcomeUnknown OperationAttemptStatus = "outcome_unknown"
-	OperationAttemptStatusRunning        OperationAttemptStatus = "running"
-	OperationAttemptStatusSucceeded      OperationAttemptStatus = "succeeded"
-)
-
-// Valid indicates whether the value is a known member of the OperationAttemptStatus enum.
-func (e OperationAttemptStatus) Valid() bool {
-	switch e {
-	case OperationAttemptStatusCanceled:
-		return true
-	case OperationAttemptStatusFailed:
-		return true
-	case OperationAttemptStatusOutcomeUnknown:
-		return true
-	case OperationAttemptStatusRunning:
-		return true
-	case OperationAttemptStatusSucceeded:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for OperationSummaryStatus.
-const (
-	OperationSummaryStatusAttentionRequired OperationSummaryStatus = "attention_required"
-	OperationSummaryStatusCancelRequested   OperationSummaryStatus = "cancel_requested"
-	OperationSummaryStatusCanceled          OperationSummaryStatus = "canceled"
-	OperationSummaryStatusFailed            OperationSummaryStatus = "failed"
-	OperationSummaryStatusPending           OperationSummaryStatus = "pending"
-	OperationSummaryStatusRunning           OperationSummaryStatus = "running"
-	OperationSummaryStatusSucceeded         OperationSummaryStatus = "succeeded"
-)
-
-// Valid indicates whether the value is a known member of the OperationSummaryStatus enum.
-func (e OperationSummaryStatus) Valid() bool {
-	switch e {
-	case OperationSummaryStatusAttentionRequired:
-		return true
-	case OperationSummaryStatusCancelRequested:
-		return true
-	case OperationSummaryStatusCanceled:
-		return true
-	case OperationSummaryStatusFailed:
-		return true
-	case OperationSummaryStatusPending:
-		return true
-	case OperationSummaryStatusRunning:
-		return true
-	case OperationSummaryStatusSucceeded:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for ProjectRole.
 const (
 	Developer ProjectRole = "developer"
@@ -316,6 +208,33 @@ func (e ProjectRole) Valid() bool {
 	case Owner:
 		return true
 	case Viewer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReleaseAttemptStatus.
+const (
+	ReleaseAttemptStatusCanceled       ReleaseAttemptStatus = "canceled"
+	ReleaseAttemptStatusFailed         ReleaseAttemptStatus = "failed"
+	ReleaseAttemptStatusOutcomeUnknown ReleaseAttemptStatus = "outcome_unknown"
+	ReleaseAttemptStatusRunning        ReleaseAttemptStatus = "running"
+	ReleaseAttemptStatusSucceeded      ReleaseAttemptStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ReleaseAttemptStatus enum.
+func (e ReleaseAttemptStatus) Valid() bool {
+	switch e {
+	case ReleaseAttemptStatusCanceled:
+		return true
+	case ReleaseAttemptStatusFailed:
+		return true
+	case ReleaseAttemptStatusOutcomeUnknown:
+		return true
+	case ReleaseAttemptStatusRunning:
+		return true
+	case ReleaseAttemptStatusSucceeded:
 		return true
 	default:
 		return false
@@ -340,6 +259,87 @@ func (e ReleaseDiagnosticReportRuntimeReleaseRelation) Valid() bool {
 	case ReleaseDiagnosticReportRuntimeReleaseRelationMatches:
 		return true
 	case ReleaseDiagnosticReportRuntimeReleaseRelationUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReleaseOperationStatus.
+const (
+	ReleaseOperationStatusAttentionRequired ReleaseOperationStatus = "attention_required"
+	ReleaseOperationStatusCancelRequested   ReleaseOperationStatus = "cancel_requested"
+	ReleaseOperationStatusCanceled          ReleaseOperationStatus = "canceled"
+	ReleaseOperationStatusFailed            ReleaseOperationStatus = "failed"
+	ReleaseOperationStatusPending           ReleaseOperationStatus = "pending"
+	ReleaseOperationStatusRunning           ReleaseOperationStatus = "running"
+	ReleaseOperationStatusSucceeded         ReleaseOperationStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ReleaseOperationStatus enum.
+func (e ReleaseOperationStatus) Valid() bool {
+	switch e {
+	case ReleaseOperationStatusAttentionRequired:
+		return true
+	case ReleaseOperationStatusCancelRequested:
+		return true
+	case ReleaseOperationStatusCanceled:
+		return true
+	case ReleaseOperationStatusFailed:
+		return true
+	case ReleaseOperationStatusPending:
+		return true
+	case ReleaseOperationStatusRunning:
+		return true
+	case ReleaseOperationStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReleaseOperationType.
+const (
+	ReleaseDeploy ReleaseOperationType = "release.deploy"
+)
+
+// Valid indicates whether the value is a known member of the ReleaseOperationType enum.
+func (e ReleaseOperationType) Valid() bool {
+	switch e {
+	case ReleaseDeploy:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReleaseOperationSummaryStatus.
+const (
+	ReleaseOperationSummaryStatusAttentionRequired ReleaseOperationSummaryStatus = "attention_required"
+	ReleaseOperationSummaryStatusCancelRequested   ReleaseOperationSummaryStatus = "cancel_requested"
+	ReleaseOperationSummaryStatusCanceled          ReleaseOperationSummaryStatus = "canceled"
+	ReleaseOperationSummaryStatusFailed            ReleaseOperationSummaryStatus = "failed"
+	ReleaseOperationSummaryStatusPending           ReleaseOperationSummaryStatus = "pending"
+	ReleaseOperationSummaryStatusRunning           ReleaseOperationSummaryStatus = "running"
+	ReleaseOperationSummaryStatusSucceeded         ReleaseOperationSummaryStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ReleaseOperationSummaryStatus enum.
+func (e ReleaseOperationSummaryStatus) Valid() bool {
+	switch e {
+	case ReleaseOperationSummaryStatusAttentionRequired:
+		return true
+	case ReleaseOperationSummaryStatusCancelRequested:
+		return true
+	case ReleaseOperationSummaryStatusCanceled:
+		return true
+	case ReleaseOperationSummaryStatusFailed:
+		return true
+	case ReleaseOperationSummaryStatusPending:
+		return true
+	case ReleaseOperationSummaryStatusRunning:
+		return true
+	case ReleaseOperationSummaryStatusSucceeded:
 		return true
 	default:
 		return false
@@ -610,8 +610,8 @@ type EventObservation struct {
 	Metadata ObservationMetadata `json:"metadata"`
 }
 
-// ForceFailOperationRequest defines model for ForceFailOperationRequest.
-type ForceFailOperationRequest struct {
+// ForceFailReleaseOperationRequest defines model for ForceFailReleaseOperationRequest.
+type ForceFailReleaseOperationRequest struct {
 	Reason string `json:"reason"`
 }
 
@@ -628,67 +628,6 @@ type ObservationMetadataSource string
 
 // ObservationMetadataStatus defines model for ObservationMetadata.Status.
 type ObservationMetadataStatus string
-
-// Operation defines model for Operation.
-type Operation struct {
-	AttemptCount        int                `json:"attemptCount"`
-	Attempts            []OperationAttempt `json:"attempts"`
-	AutomaticRetryCount int                `json:"automaticRetryCount"`
-	AvailableAt         time.Time          `json:"availableAt"`
-	CreatedAt           time.Time          `json:"createdAt"`
-	CreatedBy           string             `json:"createdBy"`
-	DeploymentTargetId  openapi_types.UUID `json:"deploymentTargetId"`
-	ErrorCode           *string            `json:"errorCode,omitempty"`
-	ErrorSummary        *string            `json:"errorSummary,omitempty"`
-	FinishedAt          *time.Time         `json:"finishedAt,omitempty"`
-	Id                  openapi_types.UUID `json:"id"`
-	IdempotencyKey      string             `json:"idempotencyKey"`
-	QueuedAt            time.Time          `json:"queuedAt"`
-	RecoveryRequired    bool               `json:"recoveryRequired"`
-	ReleaseId           openapi_types.UUID `json:"releaseId"`
-	RetryDisposition    *RetryDisposition  `json:"retryDisposition,omitempty"`
-	StartedAt           *time.Time         `json:"startedAt,omitempty"`
-	Status              OperationStatus    `json:"status"`
-	Type                OperationType      `json:"type"`
-	UpdatedAt           time.Time          `json:"updatedAt"`
-}
-
-// OperationStatus defines model for Operation.Status.
-type OperationStatus string
-
-// OperationType defines model for Operation.Type.
-type OperationType string
-
-// OperationAttempt defines model for OperationAttempt.
-type OperationAttempt struct {
-	ErrorCode        *string                `json:"errorCode,omitempty"`
-	ErrorSummary     *string                `json:"errorSummary,omitempty"`
-	FinishedAt       *time.Time             `json:"finishedAt,omitempty"`
-	Id               openapi_types.UUID     `json:"id"`
-	Number           int                    `json:"number"`
-	RetryDisposition *RetryDisposition      `json:"retryDisposition,omitempty"`
-	StartedAt        time.Time              `json:"startedAt"`
-	Status           OperationAttemptStatus `json:"status"`
-	WorkerId         string                 `json:"workerId"`
-}
-
-// OperationAttemptStatus defines model for OperationAttempt.Status.
-type OperationAttemptStatus string
-
-// OperationSummary defines model for OperationSummary.
-type OperationSummary struct {
-	AttemptCount int                    `json:"attemptCount"`
-	ErrorCode    *string                `json:"errorCode,omitempty"`
-	ErrorSummary *string                `json:"errorSummary,omitempty"`
-	FinishedAt   *time.Time             `json:"finishedAt,omitempty"`
-	Id           openapi_types.UUID     `json:"id"`
-	QueuedAt     time.Time              `json:"queuedAt"`
-	StartedAt    *time.Time             `json:"startedAt,omitempty"`
-	Status       OperationSummaryStatus `json:"status"`
-}
-
-// OperationSummaryStatus defines model for OperationSummary.Status.
-type OperationSummaryStatus string
 
 // Project defines model for Project.
 type Project struct {
@@ -725,15 +664,31 @@ type Release struct {
 
 // ReleaseAcceptance defines model for ReleaseAcceptance.
 type ReleaseAcceptance struct {
-	Operation Operation `json:"operation"`
-	Release   Release   `json:"release"`
+	Release          Release          `json:"release"`
+	ReleaseOperation ReleaseOperation `json:"releaseOperation"`
 }
+
+// ReleaseAttempt defines model for ReleaseAttempt.
+type ReleaseAttempt struct {
+	ErrorCode        *string              `json:"errorCode,omitempty"`
+	ErrorSummary     *string              `json:"errorSummary,omitempty"`
+	FinishedAt       *time.Time           `json:"finishedAt,omitempty"`
+	Id               openapi_types.UUID   `json:"id"`
+	Number           int                  `json:"number"`
+	RetryDisposition *RetryDisposition    `json:"retryDisposition,omitempty"`
+	StartedAt        time.Time            `json:"startedAt"`
+	Status           ReleaseAttemptStatus `json:"status"`
+	WorkerId         string               `json:"workerId"`
+}
+
+// ReleaseAttemptStatus defines model for ReleaseAttempt.Status.
+type ReleaseAttemptStatus string
 
 // ReleaseDetail defines model for ReleaseDetail.
 type ReleaseDetail struct {
 	AuditTimeline       []AuditRecord        `json:"auditTimeline"`
-	Operation           Operation            `json:"operation"`
 	Release             Release              `json:"release"`
+	ReleaseOperation    ReleaseOperation     `json:"releaseOperation"`
 	SnapshotDifferences []SnapshotDifference `json:"snapshotDifferences"`
 }
 
@@ -741,8 +696,8 @@ type ReleaseDetail struct {
 type ReleaseDiagnosticReport struct {
 	EventObservation       EventObservation                              `json:"eventObservation"`
 	GeneratedAt            time.Time                                     `json:"generatedAt"`
-	Operation              Operation                                     `json:"operation"`
 	Release                Release                                       `json:"release"`
+	ReleaseOperation       ReleaseOperation                              `json:"releaseOperation"`
 	RuntimeReleaseRelation ReleaseDiagnosticReportRuntimeReleaseRelation `json:"runtimeReleaseRelation"`
 	Signals                []DiagnosticSignal                            `json:"signals"`
 	TargetDifferences      []SnapshotDifference                          `json:"targetDifferences"`
@@ -754,8 +709,8 @@ type ReleaseDiagnosticReportRuntimeReleaseRelation string
 
 // ReleaseHistoryItem defines model for ReleaseHistoryItem.
 type ReleaseHistoryItem struct {
-	Operation OperationSummary `json:"operation"`
-	Release   Release          `json:"release"`
+	Release          Release                 `json:"release"`
+	ReleaseOperation ReleaseOperationSummary `json:"releaseOperation"`
 }
 
 // ReleaseHistoryPage defines model for ReleaseHistoryPage.
@@ -763,6 +718,51 @@ type ReleaseHistoryPage struct {
 	Items      []ReleaseHistoryItem `json:"items"`
 	NextCursor *string              `json:"nextCursor,omitempty"`
 }
+
+// ReleaseOperation defines model for ReleaseOperation.
+type ReleaseOperation struct {
+	AttemptCount        int                    `json:"attemptCount"`
+	Attempts            []ReleaseAttempt       `json:"attempts"`
+	AutomaticRetryCount int                    `json:"automaticRetryCount"`
+	AvailableAt         time.Time              `json:"availableAt"`
+	CreatedAt           time.Time              `json:"createdAt"`
+	CreatedBy           string                 `json:"createdBy"`
+	DeploymentTargetId  openapi_types.UUID     `json:"deploymentTargetId"`
+	ErrorCode           *string                `json:"errorCode,omitempty"`
+	ErrorSummary        *string                `json:"errorSummary,omitempty"`
+	FinishedAt          *time.Time             `json:"finishedAt,omitempty"`
+	Id                  openapi_types.UUID     `json:"id"`
+	IdempotencyKey      string                 `json:"idempotencyKey"`
+	QueuedAt            time.Time              `json:"queuedAt"`
+	RecoveryRequired    bool                   `json:"recoveryRequired"`
+	ReleaseId           openapi_types.UUID     `json:"releaseId"`
+	RetryDisposition    *RetryDisposition      `json:"retryDisposition,omitempty"`
+	StartedAt           *time.Time             `json:"startedAt,omitempty"`
+	Status              ReleaseOperationStatus `json:"status"`
+	Type                ReleaseOperationType   `json:"type"`
+	UpdatedAt           time.Time              `json:"updatedAt"`
+}
+
+// ReleaseOperationStatus defines model for ReleaseOperation.Status.
+type ReleaseOperationStatus string
+
+// ReleaseOperationType defines model for ReleaseOperation.Type.
+type ReleaseOperationType string
+
+// ReleaseOperationSummary defines model for ReleaseOperationSummary.
+type ReleaseOperationSummary struct {
+	AttemptCount int                           `json:"attemptCount"`
+	ErrorCode    *string                       `json:"errorCode,omitempty"`
+	ErrorSummary *string                       `json:"errorSummary,omitempty"`
+	FinishedAt   *time.Time                    `json:"finishedAt,omitempty"`
+	Id           openapi_types.UUID            `json:"id"`
+	QueuedAt     time.Time                     `json:"queuedAt"`
+	StartedAt    *time.Time                    `json:"startedAt,omitempty"`
+	Status       ReleaseOperationSummaryStatus `json:"status"`
+}
+
+// ReleaseOperationSummaryStatus defines model for ReleaseOperationSummary.Status.
+type ReleaseOperationSummaryStatus string
 
 // ReleaseTargetSnapshot defines model for ReleaseTargetSnapshot.
 type ReleaseTargetSnapshot struct {
@@ -856,30 +856,6 @@ type CreateReleaseParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
-// CancelOperationParams defines parameters for CancelOperation.
-type CancelOperationParams struct {
-	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
-	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
-}
-
-// ForceFailOperationParams defines parameters for ForceFailOperation.
-type ForceFailOperationParams struct {
-	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
-	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
-}
-
-// ReconcileOperationParams defines parameters for ReconcileOperation.
-type ReconcileOperationParams struct {
-	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
-	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
-}
-
-// RetryOperationParams defines parameters for RetryOperation.
-type RetryOperationParams struct {
-	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
-	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
-}
-
 // CreateProjectParams defines parameters for CreateProject.
 type CreateProjectParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
@@ -910,6 +886,30 @@ type UpdateProjectMemberParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// CancelReleaseOperationParams defines parameters for CancelReleaseOperation.
+type CancelReleaseOperationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ForceFailReleaseOperationParams defines parameters for ForceFailReleaseOperation.
+type ForceFailReleaseOperationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ReconcileReleaseOperationParams defines parameters for ReconcileReleaseOperation.
+type ReconcileReleaseOperationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// RetryReleaseOperationParams defines parameters for RetryReleaseOperation.
+type RetryReleaseOperationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // RollbackReleaseParams defines parameters for RollbackRelease.
 type RollbackReleaseParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
@@ -933,9 +933,6 @@ type UpdateDeploymentTargetJSONRequestBody = UpdateDeploymentTargetRequest
 // CreateReleaseJSONRequestBody defines body for CreateRelease for application/json ContentType.
 type CreateReleaseJSONRequestBody = CreateReleaseRequest
 
-// ForceFailOperationJSONRequestBody defines body for ForceFailOperation for application/json ContentType.
-type ForceFailOperationJSONRequestBody = ForceFailOperationRequest
-
 // CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
 type CreateProjectJSONRequestBody = CreateProjectRequest
 
@@ -947,6 +944,9 @@ type AddProjectMemberJSONRequestBody = AddProjectMemberRequest
 
 // UpdateProjectMemberJSONRequestBody defines body for UpdateProjectMember for application/json ContentType.
 type UpdateProjectMemberJSONRequestBody = UpdateProjectMemberRequest
+
+// ForceFailReleaseOperationJSONRequestBody defines body for ForceFailReleaseOperation for application/json ContentType.
+type ForceFailReleaseOperationJSONRequestBody = ForceFailReleaseOperationRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -968,21 +968,6 @@ type ServerInterface interface {
 	// CreateRelease 创建发布并接纳异步操作
 	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
 	CreateRelease(c *gin.Context, deploymentTargetId openapi_types.UUID, params CreateReleaseParams)
-	// GetOperation 查询异步操作
-	// (GET /api/v1/operations/{operationId})
-	GetOperation(c *gin.Context, operationId openapi_types.UUID)
-	// CancelOperation 取消排队中或运行中的操作
-	// (POST /api/v1/operations/{operationId}/cancel)
-	CancelOperation(c *gin.Context, operationId openapi_types.UUID, params CancelOperationParams)
-	// ForceFailOperation 人工结束无法自动判断的操作
-	// (POST /api/v1/operations/{operationId}/fail)
-	ForceFailOperation(c *gin.Context, operationId openapi_types.UUID, params ForceFailOperationParams)
-	// ReconcileOperation 只读核验需要人工关注的操作
-	// (POST /api/v1/operations/{operationId}/reconcile)
-	ReconcileOperation(c *gin.Context, operationId openapi_types.UUID, params ReconcileOperationParams)
-	// RetryOperation 重新排队一个确定失败或已安全确认的操作
-	// (POST /api/v1/operations/{operationId}/retry)
-	RetryOperation(c *gin.Context, operationId openapi_types.UUID, params RetryOperationParams)
 	// CreateProject 创建项目
 	// (POST /api/v1/projects)
 	CreateProject(c *gin.Context, params CreateProjectParams)
@@ -1004,6 +989,21 @@ type ServerInterface interface {
 	// UpdateProjectMember 修改项目成员角色
 	// (PUT /api/v1/projects/{projectId}/members/{actorId})
 	UpdateProjectMember(c *gin.Context, projectId openapi_types.UUID, actorId string, params UpdateProjectMemberParams)
+	// GetReleaseOperation 查询异步操作
+	// (GET /api/v1/release-operations/{releaseOperationId})
+	GetReleaseOperation(c *gin.Context, releaseOperationId openapi_types.UUID)
+	// CancelReleaseOperation 取消排队中或运行中的操作
+	// (POST /api/v1/release-operations/{releaseOperationId}/cancel)
+	CancelReleaseOperation(c *gin.Context, releaseOperationId openapi_types.UUID, params CancelReleaseOperationParams)
+	// ForceFailReleaseOperation 人工结束无法自动判断的操作
+	// (POST /api/v1/release-operations/{releaseOperationId}/fail)
+	ForceFailReleaseOperation(c *gin.Context, releaseOperationId openapi_types.UUID, params ForceFailReleaseOperationParams)
+	// ReconcileReleaseOperation 只读核验需要人工关注的操作
+	// (POST /api/v1/release-operations/{releaseOperationId}/reconcile)
+	ReconcileReleaseOperation(c *gin.Context, releaseOperationId openapi_types.UUID, params ReconcileReleaseOperationParams)
+	// RetryReleaseOperation 重新排队一个确定失败或已安全确认的操作
+	// (POST /api/v1/release-operations/{releaseOperationId}/retry)
+	RetryReleaseOperation(c *gin.Context, releaseOperationId openapi_types.UUID, params RetryReleaseOperationParams)
 	// GetRelease 查询发布
 	// (GET /api/v1/releases/{releaseId})
 	GetRelease(c *gin.Context, releaseId openapi_types.UUID)
@@ -1275,239 +1275,6 @@ func (siw *ServerInterfaceWrapper) CreateRelease(c *gin.Context) {
 	}
 
 	siw.Handler.CreateRelease(c, deploymentTargetId, params)
-}
-
-// GetOperation operation middleware
-func (siw *ServerInterfaceWrapper) GetOperation(c *gin.Context) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "operationId" -------------
-	var operationId openapi_types.UUID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "operationId", c.Param("operationId"), &operationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operationId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetOperation(c, operationId)
-}
-
-// CancelOperation operation middleware
-func (siw *ServerInterfaceWrapper) CancelOperation(c *gin.Context) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "operationId" -------------
-	var operationId openapi_types.UUID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "operationId", c.Param("operationId"), &operationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operationId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params CancelOperationParams
-
-	headers := c.Request.Header
-
-	// ------------- Required header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKey
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
-			return
-		}
-
-		params.IdempotencyKey = IdempotencyKey
-
-	} else {
-		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.CancelOperation(c, operationId, params)
-}
-
-// ForceFailOperation operation middleware
-func (siw *ServerInterfaceWrapper) ForceFailOperation(c *gin.Context) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "operationId" -------------
-	var operationId openapi_types.UUID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "operationId", c.Param("operationId"), &operationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operationId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ForceFailOperationParams
-
-	headers := c.Request.Header
-
-	// ------------- Required header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKey
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
-			return
-		}
-
-		params.IdempotencyKey = IdempotencyKey
-
-	} else {
-		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ForceFailOperation(c, operationId, params)
-}
-
-// ReconcileOperation operation middleware
-func (siw *ServerInterfaceWrapper) ReconcileOperation(c *gin.Context) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "operationId" -------------
-	var operationId openapi_types.UUID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "operationId", c.Param("operationId"), &operationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operationId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ReconcileOperationParams
-
-	headers := c.Request.Header
-
-	// ------------- Required header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKey
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
-			return
-		}
-
-		params.IdempotencyKey = IdempotencyKey
-
-	} else {
-		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ReconcileOperation(c, operationId, params)
-}
-
-// RetryOperation operation middleware
-func (siw *ServerInterfaceWrapper) RetryOperation(c *gin.Context) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "operationId" -------------
-	var operationId openapi_types.UUID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "operationId", c.Param("operationId"), &operationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operationId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params RetryOperationParams
-
-	headers := c.Request.Header
-
-	// ------------- Required header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKey
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
-			return
-		}
-
-		params.IdempotencyKey = IdempotencyKey
-
-	} else {
-		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.RetryOperation(c, operationId, params)
 }
 
 // CreateProject operation middleware
@@ -1829,6 +1596,239 @@ func (siw *ServerInterfaceWrapper) UpdateProjectMember(c *gin.Context) {
 	siw.Handler.UpdateProjectMember(c, projectId, actorId, params)
 }
 
+// GetReleaseOperation operation middleware
+func (siw *ServerInterfaceWrapper) GetReleaseOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "releaseOperationId" -------------
+	var releaseOperationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "releaseOperationId", c.Param("releaseOperationId"), &releaseOperationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter releaseOperationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetReleaseOperation(c, releaseOperationId)
+}
+
+// CancelReleaseOperation operation middleware
+func (siw *ServerInterfaceWrapper) CancelReleaseOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "releaseOperationId" -------------
+	var releaseOperationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "releaseOperationId", c.Param("releaseOperationId"), &releaseOperationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter releaseOperationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelReleaseOperationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelReleaseOperation(c, releaseOperationId, params)
+}
+
+// ForceFailReleaseOperation operation middleware
+func (siw *ServerInterfaceWrapper) ForceFailReleaseOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "releaseOperationId" -------------
+	var releaseOperationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "releaseOperationId", c.Param("releaseOperationId"), &releaseOperationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter releaseOperationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ForceFailReleaseOperationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ForceFailReleaseOperation(c, releaseOperationId, params)
+}
+
+// ReconcileReleaseOperation operation middleware
+func (siw *ServerInterfaceWrapper) ReconcileReleaseOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "releaseOperationId" -------------
+	var releaseOperationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "releaseOperationId", c.Param("releaseOperationId"), &releaseOperationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter releaseOperationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReconcileReleaseOperationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ReconcileReleaseOperation(c, releaseOperationId, params)
+}
+
+// RetryReleaseOperation operation middleware
+func (siw *ServerInterfaceWrapper) RetryReleaseOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "releaseOperationId" -------------
+	var releaseOperationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "releaseOperationId", c.Param("releaseOperationId"), &releaseOperationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter releaseOperationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RetryReleaseOperationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RetryReleaseOperation(c, releaseOperationId, params)
+}
+
 // GetRelease operation middleware
 func (siw *ServerInterfaceWrapper) GetRelease(c *gin.Context) {
 
@@ -2035,11 +2035,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/v1/releases/:releaseId/diagnostics", wrapper.GetReleaseDiagnostics)
 	router.GET(options.BaseURL+"/api/v1/releases/:releaseId/runtime-logs", wrapper.GetReleaseRuntimeLogs)
 	router.POST(options.BaseURL+"/api/v1/releases/:releaseId/rollback", wrapper.RollbackRelease)
-	router.GET(options.BaseURL+"/api/v1/operations/:operationId", wrapper.GetOperation)
-	router.POST(options.BaseURL+"/api/v1/operations/:operationId/retry", wrapper.RetryOperation)
-	router.POST(options.BaseURL+"/api/v1/operations/:operationId/reconcile", wrapper.ReconcileOperation)
-	router.POST(options.BaseURL+"/api/v1/operations/:operationId/fail", wrapper.ForceFailOperation)
-	router.POST(options.BaseURL+"/api/v1/operations/:operationId/cancel", wrapper.CancelOperation)
+	router.GET(options.BaseURL+"/api/v1/release-operations/:releaseOperationId", wrapper.GetReleaseOperation)
+	router.POST(options.BaseURL+"/api/v1/release-operations/:releaseOperationId/retry", wrapper.RetryReleaseOperation)
+	router.POST(options.BaseURL+"/api/v1/release-operations/:releaseOperationId/reconcile", wrapper.ReconcileReleaseOperation)
+	router.POST(options.BaseURL+"/api/v1/release-operations/:releaseOperationId/fail", wrapper.ForceFailReleaseOperation)
+	router.POST(options.BaseURL+"/api/v1/release-operations/:releaseOperationId/cancel", wrapper.CancelReleaseOperation)
 }
 
 type GetApplicationRequestObject struct {
@@ -2468,388 +2468,6 @@ type CreateReleasedefaultJSONResponse struct {
 }
 
 func (response CreateReleasedefaultJSONResponse) VisitCreateReleaseResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetOperationRequestObject struct {
-	OperationId openapi_types.UUID `json:"operationId"`
-}
-
-type GetOperationResponseObject interface {
-	VisitGetOperationResponse(w http.ResponseWriter) error
-}
-
-type GetOperation200JSONResponse Operation
-
-func (response GetOperation200JSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetOperation404JSONResponse Error
-
-func (response GetOperation404JSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetOperationdefaultJSONResponse struct {
-	Body       Error
-	StatusCode int
-}
-
-func (response GetOperationdefaultJSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CancelOperationRequestObject struct {
-	OperationId openapi_types.UUID `json:"operationId"`
-	Params      CancelOperationParams
-}
-
-type CancelOperationResponseObject interface {
-	VisitCancelOperationResponse(w http.ResponseWriter) error
-}
-
-type CancelOperation200JSONResponse Operation
-
-func (response CancelOperation200JSONResponse) VisitCancelOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CancelOperation403JSONResponse Error
-
-func (response CancelOperation403JSONResponse) VisitCancelOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CancelOperation404JSONResponse Error
-
-func (response CancelOperation404JSONResponse) VisitCancelOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CancelOperation409JSONResponse Error
-
-func (response CancelOperation409JSONResponse) VisitCancelOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CancelOperationdefaultJSONResponse struct {
-	Body       Error
-	StatusCode int
-}
-
-func (response CancelOperationdefaultJSONResponse) VisitCancelOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ForceFailOperationRequestObject struct {
-	OperationId openapi_types.UUID `json:"operationId"`
-	Params      ForceFailOperationParams
-	Body        *ForceFailOperationJSONRequestBody
-}
-
-type ForceFailOperationResponseObject interface {
-	VisitForceFailOperationResponse(w http.ResponseWriter) error
-}
-
-type ForceFailOperation200JSONResponse Operation
-
-func (response ForceFailOperation200JSONResponse) VisitForceFailOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ForceFailOperation403JSONResponse Error
-
-func (response ForceFailOperation403JSONResponse) VisitForceFailOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ForceFailOperation404JSONResponse Error
-
-func (response ForceFailOperation404JSONResponse) VisitForceFailOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ForceFailOperation409JSONResponse Error
-
-func (response ForceFailOperation409JSONResponse) VisitForceFailOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ForceFailOperationdefaultJSONResponse struct {
-	Body       Error
-	StatusCode int
-}
-
-func (response ForceFailOperationdefaultJSONResponse) VisitForceFailOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReconcileOperationRequestObject struct {
-	OperationId openapi_types.UUID `json:"operationId"`
-	Params      ReconcileOperationParams
-}
-
-type ReconcileOperationResponseObject interface {
-	VisitReconcileOperationResponse(w http.ResponseWriter) error
-}
-
-type ReconcileOperation200JSONResponse Operation
-
-func (response ReconcileOperation200JSONResponse) VisitReconcileOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReconcileOperation403JSONResponse Error
-
-func (response ReconcileOperation403JSONResponse) VisitReconcileOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReconcileOperation404JSONResponse Error
-
-func (response ReconcileOperation404JSONResponse) VisitReconcileOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReconcileOperation409JSONResponse Error
-
-func (response ReconcileOperation409JSONResponse) VisitReconcileOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReconcileOperationdefaultJSONResponse struct {
-	Body       Error
-	StatusCode int
-}
-
-func (response ReconcileOperationdefaultJSONResponse) VisitReconcileOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RetryOperationRequestObject struct {
-	OperationId openapi_types.UUID `json:"operationId"`
-	Params      RetryOperationParams
-}
-
-type RetryOperationResponseObject interface {
-	VisitRetryOperationResponse(w http.ResponseWriter) error
-}
-
-type RetryOperation200JSONResponse Operation
-
-func (response RetryOperation200JSONResponse) VisitRetryOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RetryOperation403JSONResponse Error
-
-func (response RetryOperation403JSONResponse) VisitRetryOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RetryOperation404JSONResponse Error
-
-func (response RetryOperation404JSONResponse) VisitRetryOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RetryOperation409JSONResponse Error
-
-func (response RetryOperation409JSONResponse) VisitRetryOperationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RetryOperationdefaultJSONResponse struct {
-	Body       Error
-	StatusCode int
-}
-
-func (response RetryOperationdefaultJSONResponse) VisitRetryOperationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3396,6 +3014,388 @@ func (response UpdateProjectMemberdefaultJSONResponse) VisitUpdateProjectMemberR
 	return err
 }
 
+type GetReleaseOperationRequestObject struct {
+	ReleaseOperationId openapi_types.UUID `json:"releaseOperationId"`
+}
+
+type GetReleaseOperationResponseObject interface {
+	VisitGetReleaseOperationResponse(w http.ResponseWriter) error
+}
+
+type GetReleaseOperation200JSONResponse ReleaseOperation
+
+func (response GetReleaseOperation200JSONResponse) VisitGetReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReleaseOperation404JSONResponse Error
+
+func (response GetReleaseOperation404JSONResponse) VisitGetReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReleaseOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetReleaseOperationdefaultJSONResponse) VisitGetReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelReleaseOperationRequestObject struct {
+	ReleaseOperationId openapi_types.UUID `json:"releaseOperationId"`
+	Params             CancelReleaseOperationParams
+}
+
+type CancelReleaseOperationResponseObject interface {
+	VisitCancelReleaseOperationResponse(w http.ResponseWriter) error
+}
+
+type CancelReleaseOperation200JSONResponse ReleaseOperation
+
+func (response CancelReleaseOperation200JSONResponse) VisitCancelReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelReleaseOperation403JSONResponse Error
+
+func (response CancelReleaseOperation403JSONResponse) VisitCancelReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelReleaseOperation404JSONResponse Error
+
+func (response CancelReleaseOperation404JSONResponse) VisitCancelReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelReleaseOperation409JSONResponse Error
+
+func (response CancelReleaseOperation409JSONResponse) VisitCancelReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelReleaseOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CancelReleaseOperationdefaultJSONResponse) VisitCancelReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ForceFailReleaseOperationRequestObject struct {
+	ReleaseOperationId openapi_types.UUID `json:"releaseOperationId"`
+	Params             ForceFailReleaseOperationParams
+	Body               *ForceFailReleaseOperationJSONRequestBody
+}
+
+type ForceFailReleaseOperationResponseObject interface {
+	VisitForceFailReleaseOperationResponse(w http.ResponseWriter) error
+}
+
+type ForceFailReleaseOperation200JSONResponse ReleaseOperation
+
+func (response ForceFailReleaseOperation200JSONResponse) VisitForceFailReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ForceFailReleaseOperation403JSONResponse Error
+
+func (response ForceFailReleaseOperation403JSONResponse) VisitForceFailReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ForceFailReleaseOperation404JSONResponse Error
+
+func (response ForceFailReleaseOperation404JSONResponse) VisitForceFailReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ForceFailReleaseOperation409JSONResponse Error
+
+func (response ForceFailReleaseOperation409JSONResponse) VisitForceFailReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ForceFailReleaseOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ForceFailReleaseOperationdefaultJSONResponse) VisitForceFailReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileReleaseOperationRequestObject struct {
+	ReleaseOperationId openapi_types.UUID `json:"releaseOperationId"`
+	Params             ReconcileReleaseOperationParams
+}
+
+type ReconcileReleaseOperationResponseObject interface {
+	VisitReconcileReleaseOperationResponse(w http.ResponseWriter) error
+}
+
+type ReconcileReleaseOperation200JSONResponse ReleaseOperation
+
+func (response ReconcileReleaseOperation200JSONResponse) VisitReconcileReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileReleaseOperation403JSONResponse Error
+
+func (response ReconcileReleaseOperation403JSONResponse) VisitReconcileReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileReleaseOperation404JSONResponse Error
+
+func (response ReconcileReleaseOperation404JSONResponse) VisitReconcileReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileReleaseOperation409JSONResponse Error
+
+func (response ReconcileReleaseOperation409JSONResponse) VisitReconcileReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileReleaseOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ReconcileReleaseOperationdefaultJSONResponse) VisitReconcileReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryReleaseOperationRequestObject struct {
+	ReleaseOperationId openapi_types.UUID `json:"releaseOperationId"`
+	Params             RetryReleaseOperationParams
+}
+
+type RetryReleaseOperationResponseObject interface {
+	VisitRetryReleaseOperationResponse(w http.ResponseWriter) error
+}
+
+type RetryReleaseOperation200JSONResponse ReleaseOperation
+
+func (response RetryReleaseOperation200JSONResponse) VisitRetryReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryReleaseOperation403JSONResponse Error
+
+func (response RetryReleaseOperation403JSONResponse) VisitRetryReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryReleaseOperation404JSONResponse Error
+
+func (response RetryReleaseOperation404JSONResponse) VisitRetryReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryReleaseOperation409JSONResponse Error
+
+func (response RetryReleaseOperation409JSONResponse) VisitRetryReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryReleaseOperationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RetryReleaseOperationdefaultJSONResponse) VisitRetryReleaseOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetReleaseRequestObject struct {
 	ReleaseId openapi_types.UUID `json:"releaseId"`
 }
@@ -3700,21 +3700,6 @@ type StrictServerInterface interface {
 	// CreateRelease 创建发布并接纳异步操作
 	// (POST /api/v1/deployment-targets/{deploymentTargetId}/releases)
 	CreateRelease(ctx context.Context, request CreateReleaseRequestObject) (CreateReleaseResponseObject, error)
-	// GetOperation 查询异步操作
-	// (GET /api/v1/operations/{operationId})
-	GetOperation(ctx context.Context, request GetOperationRequestObject) (GetOperationResponseObject, error)
-	// CancelOperation 取消排队中或运行中的操作
-	// (POST /api/v1/operations/{operationId}/cancel)
-	CancelOperation(ctx context.Context, request CancelOperationRequestObject) (CancelOperationResponseObject, error)
-	// ForceFailOperation 人工结束无法自动判断的操作
-	// (POST /api/v1/operations/{operationId}/fail)
-	ForceFailOperation(ctx context.Context, request ForceFailOperationRequestObject) (ForceFailOperationResponseObject, error)
-	// ReconcileOperation 只读核验需要人工关注的操作
-	// (POST /api/v1/operations/{operationId}/reconcile)
-	ReconcileOperation(ctx context.Context, request ReconcileOperationRequestObject) (ReconcileOperationResponseObject, error)
-	// RetryOperation 重新排队一个确定失败或已安全确认的操作
-	// (POST /api/v1/operations/{operationId}/retry)
-	RetryOperation(ctx context.Context, request RetryOperationRequestObject) (RetryOperationResponseObject, error)
 	// CreateProject 创建项目
 	// (POST /api/v1/projects)
 	CreateProject(ctx context.Context, request CreateProjectRequestObject) (CreateProjectResponseObject, error)
@@ -3736,6 +3721,21 @@ type StrictServerInterface interface {
 	// UpdateProjectMember 修改项目成员角色
 	// (PUT /api/v1/projects/{projectId}/members/{actorId})
 	UpdateProjectMember(ctx context.Context, request UpdateProjectMemberRequestObject) (UpdateProjectMemberResponseObject, error)
+	// GetReleaseOperation 查询异步操作
+	// (GET /api/v1/release-operations/{releaseOperationId})
+	GetReleaseOperation(ctx context.Context, request GetReleaseOperationRequestObject) (GetReleaseOperationResponseObject, error)
+	// CancelReleaseOperation 取消排队中或运行中的操作
+	// (POST /api/v1/release-operations/{releaseOperationId}/cancel)
+	CancelReleaseOperation(ctx context.Context, request CancelReleaseOperationRequestObject) (CancelReleaseOperationResponseObject, error)
+	// ForceFailReleaseOperation 人工结束无法自动判断的操作
+	// (POST /api/v1/release-operations/{releaseOperationId}/fail)
+	ForceFailReleaseOperation(ctx context.Context, request ForceFailReleaseOperationRequestObject) (ForceFailReleaseOperationResponseObject, error)
+	// ReconcileReleaseOperation 只读核验需要人工关注的操作
+	// (POST /api/v1/release-operations/{releaseOperationId}/reconcile)
+	ReconcileReleaseOperation(ctx context.Context, request ReconcileReleaseOperationRequestObject) (ReconcileReleaseOperationResponseObject, error)
+	// RetryReleaseOperation 重新排队一个确定失败或已安全确认的操作
+	// (POST /api/v1/release-operations/{releaseOperationId}/retry)
+	RetryReleaseOperation(ctx context.Context, request RetryReleaseOperationRequestObject) (RetryReleaseOperationResponseObject, error)
 	// GetRelease 查询发布
 	// (GET /api/v1/releases/{releaseId})
 	GetRelease(ctx context.Context, request GetReleaseRequestObject) (GetReleaseResponseObject, error)
@@ -3988,147 +3988,6 @@ func (sh *strictHandler) CreateRelease(ctx *gin.Context, deploymentTargetId open
 	}
 }
 
-// GetOperation operation middleware
-func (sh *strictHandler) GetOperation(ctx *gin.Context, operationId openapi_types.UUID) {
-	var request GetOperationRequestObject
-
-	request.OperationId = operationId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetOperation(ctx, request.(GetOperationRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetOperation")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		sh.options.HandlerErrorFunc(ctx, err)
-	} else if validResponse, ok := response.(GetOperationResponseObject); ok {
-		if err := validResponse.VisitGetOperationResponse(ctx.Writer); err != nil {
-			sh.options.ResponseErrorHandlerFunc(ctx, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// CancelOperation operation middleware
-func (sh *strictHandler) CancelOperation(ctx *gin.Context, operationId openapi_types.UUID, params CancelOperationParams) {
-	var request CancelOperationRequestObject
-
-	request.OperationId = operationId
-	request.Params = params
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.CancelOperation(ctx, request.(CancelOperationRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CancelOperation")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		sh.options.HandlerErrorFunc(ctx, err)
-	} else if validResponse, ok := response.(CancelOperationResponseObject); ok {
-		if err := validResponse.VisitCancelOperationResponse(ctx.Writer); err != nil {
-			sh.options.ResponseErrorHandlerFunc(ctx, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ForceFailOperation operation middleware
-func (sh *strictHandler) ForceFailOperation(ctx *gin.Context, operationId openapi_types.UUID, params ForceFailOperationParams) {
-	var request ForceFailOperationRequestObject
-
-	request.OperationId = operationId
-	request.Params = params
-
-	var body ForceFailOperationJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(ctx, err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ForceFailOperation(ctx, request.(ForceFailOperationRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ForceFailOperation")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		sh.options.HandlerErrorFunc(ctx, err)
-	} else if validResponse, ok := response.(ForceFailOperationResponseObject); ok {
-		if err := validResponse.VisitForceFailOperationResponse(ctx.Writer); err != nil {
-			sh.options.ResponseErrorHandlerFunc(ctx, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ReconcileOperation operation middleware
-func (sh *strictHandler) ReconcileOperation(ctx *gin.Context, operationId openapi_types.UUID, params ReconcileOperationParams) {
-	var request ReconcileOperationRequestObject
-
-	request.OperationId = operationId
-	request.Params = params
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ReconcileOperation(ctx, request.(ReconcileOperationRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ReconcileOperation")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		sh.options.HandlerErrorFunc(ctx, err)
-	} else if validResponse, ok := response.(ReconcileOperationResponseObject); ok {
-		if err := validResponse.VisitReconcileOperationResponse(ctx.Writer); err != nil {
-			sh.options.ResponseErrorHandlerFunc(ctx, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// RetryOperation operation middleware
-func (sh *strictHandler) RetryOperation(ctx *gin.Context, operationId openapi_types.UUID, params RetryOperationParams) {
-	var request RetryOperationRequestObject
-
-	request.OperationId = operationId
-	request.Params = params
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.RetryOperation(ctx, request.(RetryOperationRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "RetryOperation")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		sh.options.HandlerErrorFunc(ctx, err)
-	} else if validResponse, ok := response.(RetryOperationResponseObject); ok {
-		if err := validResponse.VisitRetryOperationResponse(ctx.Writer); err != nil {
-			sh.options.ResponseErrorHandlerFunc(ctx, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
 // CreateProject operation middleware
 func (sh *strictHandler) CreateProject(ctx *gin.Context, params CreateProjectParams) {
 	var request CreateProjectRequestObject
@@ -4345,6 +4204,147 @@ func (sh *strictHandler) UpdateProjectMember(ctx *gin.Context, projectId openapi
 	}
 }
 
+// GetReleaseOperation operation middleware
+func (sh *strictHandler) GetReleaseOperation(ctx *gin.Context, releaseOperationId openapi_types.UUID) {
+	var request GetReleaseOperationRequestObject
+
+	request.ReleaseOperationId = releaseOperationId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetReleaseOperation(ctx, request.(GetReleaseOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetReleaseOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetReleaseOperationResponseObject); ok {
+		if err := validResponse.VisitGetReleaseOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelReleaseOperation operation middleware
+func (sh *strictHandler) CancelReleaseOperation(ctx *gin.Context, releaseOperationId openapi_types.UUID, params CancelReleaseOperationParams) {
+	var request CancelReleaseOperationRequestObject
+
+	request.ReleaseOperationId = releaseOperationId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelReleaseOperation(ctx, request.(CancelReleaseOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelReleaseOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CancelReleaseOperationResponseObject); ok {
+		if err := validResponse.VisitCancelReleaseOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ForceFailReleaseOperation operation middleware
+func (sh *strictHandler) ForceFailReleaseOperation(ctx *gin.Context, releaseOperationId openapi_types.UUID, params ForceFailReleaseOperationParams) {
+	var request ForceFailReleaseOperationRequestObject
+
+	request.ReleaseOperationId = releaseOperationId
+	request.Params = params
+
+	var body ForceFailReleaseOperationJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ForceFailReleaseOperation(ctx, request.(ForceFailReleaseOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ForceFailReleaseOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ForceFailReleaseOperationResponseObject); ok {
+		if err := validResponse.VisitForceFailReleaseOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReconcileReleaseOperation operation middleware
+func (sh *strictHandler) ReconcileReleaseOperation(ctx *gin.Context, releaseOperationId openapi_types.UUID, params ReconcileReleaseOperationParams) {
+	var request ReconcileReleaseOperationRequestObject
+
+	request.ReleaseOperationId = releaseOperationId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ReconcileReleaseOperation(ctx, request.(ReconcileReleaseOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReconcileReleaseOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ReconcileReleaseOperationResponseObject); ok {
+		if err := validResponse.VisitReconcileReleaseOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryReleaseOperation operation middleware
+func (sh *strictHandler) RetryReleaseOperation(ctx *gin.Context, releaseOperationId openapi_types.UUID, params RetryReleaseOperationParams) {
+	var request RetryReleaseOperationRequestObject
+
+	request.ReleaseOperationId = releaseOperationId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryReleaseOperation(ctx, request.(RetryReleaseOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryReleaseOperation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(RetryReleaseOperationResponseObject); ok {
+		if err := validResponse.VisitRetryReleaseOperationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetRelease operation middleware
 func (sh *strictHandler) GetRelease(ctx *gin.Context, releaseId openapi_types.UUID) {
 	var request GetReleaseRequestObject
@@ -4456,85 +4456,85 @@ func (sh *strictHandler) GetReleaseRuntimeLogs(ctx *gin.Context, releaseId opena
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

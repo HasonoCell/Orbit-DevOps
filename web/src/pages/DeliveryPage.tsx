@@ -25,11 +25,11 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
   createDelivery,
-  getOperation,
+  getReleaseOperation,
   getReleaseDiagnostics,
   type DeliveryAcceptance,
   type DeliveryInput,
-  type Operation,
+  type ReleaseOperation,
   type ReleaseDiagnosticReport,
 } from "../api/client";
 
@@ -71,8 +71,8 @@ type WorkspaceProps = {
   onCloseMobileNav: () => void;
   onSubmit: FormEventHandler<HTMLFormElement>;
   onToggleMobileNav: () => void;
-  operation?: Operation;
-  operationFetching: boolean;
+  releaseOperation?: ReleaseOperation;
+  releaseOperationFetching: boolean;
   pending: boolean;
   diagnosticError: Error | null;
   diagnosticReport?: ReleaseDiagnosticReport;
@@ -105,33 +105,33 @@ export function DeliveryPage() {
     },
     onSuccess: (result) => setAcceptance(result),
   });
-  const operationQuery = useQuery({
-    queryKey: ["operation", acceptance?.operation.id],
-    queryFn: () => getOperation(acceptance!.operation.id),
+  const releaseOperationQuery = useQuery({
+    queryKey: ["release-operation", acceptance?.releaseOperation.id],
+    queryFn: () => getReleaseOperation(acceptance!.releaseOperation.id),
     enabled: acceptance !== undefined,
-    initialData: acceptance?.operation,
+    initialData: acceptance?.releaseOperation,
     refetchInterval: (query) => (isTerminal(query.state.data?.status) ? false : 500),
   });
-  const operation = operationQuery.data ?? acceptance?.operation;
+  const releaseOperation = releaseOperationQuery.data ?? acceptance?.releaseOperation;
   const diagnosticQuery = useQuery({
     queryKey: ["release-diagnostics", acceptance?.release.id],
     queryFn: () => getReleaseDiagnostics(acceptance!.release.id),
     enabled: acceptance !== undefined,
     // 完整诊断需要同时读取 PostgreSQL 和多类 Kubernetes 资源，因此只做低频刷新。
-    refetchInterval: acceptance === undefined || isTerminal(operation?.status) ? false : 4_000,
+    refetchInterval: acceptance === undefined || isTerminal(releaseOperation?.status) ? false : 4_000,
   });
   const terminalRefresh = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!acceptance || !isTerminal(operation?.status)) {
+    if (!acceptance || !isTerminal(releaseOperation?.status)) {
       return;
     }
-    // Operation 首次进入终态时再取一次证据，随后停止自动轮询。
-    if (terminalRefresh.current !== acceptance.operation.id) {
-      terminalRefresh.current = acceptance.operation.id;
+    // ReleaseOperation 首次进入终态时再取一次证据，随后停止自动轮询。
+    if (terminalRefresh.current !== acceptance.releaseOperation.id) {
+      terminalRefresh.current = acceptance.releaseOperation.id;
       void diagnosticQuery.refetch();
     }
-  }, [acceptance, diagnosticQuery.refetch, operation?.status]);
+  }, [acceptance, diagnosticQuery.refetch, releaseOperation?.status]);
 
   return (
     <Workspace
@@ -142,8 +142,8 @@ export function DeliveryPage() {
       onCloseMobileNav={() => setMobileNavOpen(false)}
       onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}
       onToggleMobileNav={() => setMobileNavOpen((open) => !open)}
-      operation={operation}
-      operationFetching={operationQuery.isFetching}
+      releaseOperation={releaseOperation}
+      releaseOperationFetching={releaseOperationQuery.isFetching}
       pending={createMutation.isPending}
       diagnosticError={diagnosticQuery.error}
       diagnosticReport={diagnosticQuery.data}
@@ -256,8 +256,8 @@ function Workspace(props: WorkspaceProps) {
             </form>
 
             <aside className="a-observation">
-              <EditorHeader index="02" title="实时状态" description="Operation 与 Kubernetes 观测" />
-              <OperationPanel operation={props.operation} fetching={props.operationFetching} />
+              <EditorHeader index="02" title="实时状态" description="ReleaseOperation 与 Kubernetes 观测" />
+              <ReleaseOperationPanel releaseOperation={props.releaseOperation} fetching={props.releaseOperationFetching} />
               <RuntimePanel report={props.diagnosticReport} error={props.diagnosticError} />
               <IdentityPanel acceptance={props.acceptance} />
             </aside>
@@ -315,14 +315,14 @@ function MutationError({ error }: { error?: Error }) {
   return <div className="mutation-error" role="alert">{error.message}</div>;
 }
 
-function OperationPanel({ operation, fetching }: { operation?: Operation; fetching: boolean }) {
-  const status = operation?.status ?? "idle";
+function ReleaseOperationPanel({ releaseOperation, fetching }: { releaseOperation?: ReleaseOperation; fetching: boolean }) {
+  const status = releaseOperation?.status ?? "idle";
   return (
     <section className="observation-block" aria-label="发布操作">
-      <div className="block-heading"><span><Activity /> Operation</span><StatusBadge status={status} pulse={fetching && !isTerminal(status)} /></div>
-      <div className="operation-id"><span>操作 ID</span><code>{operation?.id ?? "等待创建"}</code></div>
-      <div className="attempt-line"><span>Attempt</span><strong>{operation?.attemptCount ?? 0}</strong><span>Worker</span><strong>{operation?.attempts.at(-1)?.workerId ?? "—"}</strong></div>
-      {operation?.errorCode && <div className="error-summary"><b>{operation.errorCode}</b><p>{operation.errorSummary}</p></div>}
+      <div className="block-heading"><span><Activity /> ReleaseOperation</span><StatusBadge status={status} pulse={fetching && !isTerminal(status)} /></div>
+      <div className="releaseOperation-id"><span>操作 ID</span><code>{releaseOperation?.id ?? "等待创建"}</code></div>
+      <div className="attempt-line"><span>Attempt</span><strong>{releaseOperation?.attemptCount ?? 0}</strong><span>Worker</span><strong>{releaseOperation?.attempts.at(-1)?.workerId ?? "—"}</strong></div>
+      {releaseOperation?.errorCode && <div className="error-summary"><b>{releaseOperation.errorCode}</b><p>{releaseOperation.errorSummary}</p></div>}
     </section>
   );
 }
@@ -353,7 +353,7 @@ function IdentityPanel({ acceptance }: { acceptance?: DeliveryAcceptance }) {
 }
 
 function StatusBadge({ status, pulse = false }: { status: string; pulse?: boolean }) {
-  return <span className={`status status-${status}`} data-testid="operation-status"><i className={pulse ? "pulse" : ""} />{statusText(status)}</span>;
+  return <span className={`status status-${status}`} data-testid="release-operation-status"><i className={pulse ? "pulse" : ""} />{statusText(status)}</span>;
 }
 
 function Metric({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {

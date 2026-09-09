@@ -117,7 +117,7 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		"/api/v1/deployment-targets/" + target.ID + "/releases",
 		"/api/v1/releases/" + acceptance.Release.ID,
 		"/api/v1/releases/" + acceptance.Release.ID + "/diagnostics",
-		"/api/v1/operations/" + acceptance.Operation.ID,
+		"/api/v1/release-operations/" + acceptance.ReleaseOperation.ID,
 	} {
 		response := requestJSON(t, viewerServer, http.MethodGet, path, "", "")
 		if response.StatusCode != http.StatusOK {
@@ -188,7 +188,7 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		t,
 		viewerServer,
 		http.MethodPost,
-		"/api/v1/operations/"+acceptance.Operation.ID+"/cancel",
+		"/api/v1/release-operations/"+acceptance.ReleaseOperation.ID+"/cancel",
 		"viewer-cancel-operation",
 		"",
 	)
@@ -199,18 +199,18 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		t,
 		outsiderServer,
 		http.MethodPost,
-		"/api/v1/operations/"+acceptance.Operation.ID+"/cancel",
+		"/api/v1/release-operations/"+acceptance.ReleaseOperation.ID+"/cancel",
 		"outsider-cancel-operation",
 		"",
 	)
 	defer outsiderCancel.Body.Close()
-	assertError(t, outsiderCancel, http.StatusNotFound, "operation_not_found")
+	assertError(t, outsiderCancel, http.StatusNotFound, "release_operation_not_found")
 
 	developerCancel := requestJSON(
 		t,
 		developerServer,
 		http.MethodPost,
-		"/api/v1/operations/"+acceptance.Operation.ID+"/cancel",
+		"/api/v1/release-operations/"+acceptance.ReleaseOperation.ID+"/cancel",
 		"developer-cancel-operation",
 		"",
 	)
@@ -283,7 +283,7 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		"/api/v1/deployment-targets/" + target.ID,
 		"/api/v1/deployment-targets/" + target.ID + "/releases",
 		"/api/v1/releases/" + acceptance.Release.ID,
-		"/api/v1/operations/" + acceptance.Operation.ID,
+		"/api/v1/release-operations/" + acceptance.ReleaseOperation.ID,
 	} {
 		response := requestJSON(t, outsiderServer, http.MethodGet, path, "", "")
 		if response.StatusCode != http.StatusNotFound {

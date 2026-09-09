@@ -1,4 +1,4 @@
-package operation
+package releaseoperation
 
 import (
 	"context"
@@ -41,9 +41,9 @@ func (m *Module) PrepareDispatches(ctx context.Context, batchID uuid.UUID) (Disp
 		return result, err
 	}
 	var items []struct {
-		ID      uuid.UUID       `db:"id"`
-		Status  OperationStatus `db:"status"`
-		Expires *time.Time      `db:"lease_expires_at"`
+		ID      uuid.UUID              `db:"id"`
+		Status  ReleaseOperationStatus `db:"status"`
+		Expires *time.Time             `db:"lease_expires_at"`
 	}
 	// 离线批次按统一顺序锁业务行，之后才修改 Outbox。历史快照和业务时间不变。
 	err = tx.SelectContext(ctx, &items, `SELECT id, status, lease_expires_at FROM operations ORDER BY id FOR UPDATE`)

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
@@ -33,11 +33,11 @@ func TestKindS2RollbackAndQueueReentry(t *testing.T) {
 	if err != nil || len(items) != 1 {
 		t.Fatal(err)
 	}
-	claim, err := environment.operations.ClaimDispatch(ctx, items[0].DispatchRef, operation.ClaimRequest{WorkerID: "before-rollback", LeaseDuration: 5 * time.Second})
+	claim, err := environment.operations.ClaimDispatch(ctx, items[0].DispatchRef, releaseoperation.ClaimRequest{WorkerID: "before-rollback", LeaseDuration: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := environment.operations.Fail(ctx, claim.Lease, operation.Failure{Code: "kubernetes_unavailable", Summary: "回退前退避", Disposition: operation.Retryable}); err != nil {
+	if _, err := environment.operations.Fail(ctx, claim.Lease, releaseoperation.Failure{Code: "kubernetes_unavailable", Summary: "回退前退避", Disposition: releaseoperation.Retryable}); err != nil {
 		t.Fatal(err)
 	}
 	// 首先停 Q1 受理入口，期间没有 Q1 Worker；保留加法 Schema 与 Outbox。
@@ -56,10 +56,10 @@ func TestKindS2RollbackAndQueueReentry(t *testing.T) {
 	cleanupResources(t, client, uuid.MustParse(legacy.TargetID))
 	stopWorker := startCompatibilityProcess(t, workerBinary, common)
 	awaitCompatibilityHealth(t, "http://"+workerAddress+"/healthz")
-	eventuallyOperationStatus(t, environment, accepted.OperationID, operation.StatusSucceeded, 30*time.Second)
-	eventuallyOperationStatus(t, environment, legacy.OperationID, operation.StatusSucceeded, 30*time.Second)
-	current := environment.getOperation(t, accepted.OperationID)
-	if current.AttemptCount != 2 || current.Attempts[0].Status != operation.AttemptFailed {
+	eventuallyReleaseOperationStatus(t, environment, accepted.ReleaseOperationID, releaseoperation.StatusSucceeded, 30*time.Second)
+	eventuallyReleaseOperationStatus(t, environment, legacy.ReleaseOperationID, releaseoperation.StatusSucceeded, 30*time.Second)
+	current := environment.getReleaseOperation(t, accepted.ReleaseOperationID)
+	if current.AttemptCount != 2 || current.Attempts[0].Status != releaseoperation.AttemptFailed {
 		t.Fatalf("S2 rewrote Q1 history: %+v", current)
 	}
 	stopWorker()
@@ -80,8 +80,8 @@ func TestKindS2RollbackAndQueueReentry(t *testing.T) {
 	if processed, err := environment.runner.RunOnce(ctx); err != nil || !processed {
 		t.Fatalf("Q1 reentry: %v %v", processed, err)
 	}
-	recovered, err := environment.operations.Get(ctx, uuid.MustParse(backlog.OperationID))
-	if err != nil || recovered.Status != operation.StatusSucceeded || recovered.AttemptCount != 1 {
+	recovered, err := environment.operations.Get(ctx, uuid.MustParse(backlog.ReleaseOperationID))
+	if err != nil || recovered.Status != releaseoperation.StatusSucceeded || recovered.AttemptCount != 1 {
 		t.Fatalf("legacy backlog not recovered: %+v %v", recovered, err)
 	}
 }

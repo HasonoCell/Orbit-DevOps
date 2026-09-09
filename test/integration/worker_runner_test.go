@@ -12,8 +12,8 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 )
 
@@ -23,30 +23,30 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 		publishError      error
 		waitForTimeout    bool
 		operationTimeout  time.Duration
-		wantStatus        operation.OperationStatus
-		wantAttemptStatus operation.AttemptStatus
+		wantStatus        releaseoperation.ReleaseOperationStatus
+		wantAttemptStatus releaseoperation.AttemptStatus
 		wantErrorCode     string
 	}{
 		{
 			name:              "successful rollout",
 			operationTimeout:  2 * time.Second,
-			wantStatus:        operation.StatusSucceeded,
-			wantAttemptStatus: operation.AttemptSucceeded,
+			wantStatus:        releaseoperation.StatusSucceeded,
+			wantAttemptStatus: releaseoperation.AttemptSucceeded,
 		},
 		{
 			name:              "image pull failure",
 			publishError:      worker.NewFailure("image_pull_failed", "container image could not be pulled"),
 			operationTimeout:  2 * time.Second,
-			wantStatus:        operation.StatusFailed,
-			wantAttemptStatus: operation.AttemptFailed,
+			wantStatus:        releaseoperation.StatusFailed,
+			wantAttemptStatus: releaseoperation.AttemptFailed,
 			wantErrorCode:     "image_pull_failed",
 		},
 		{
 			name:              "rollout timeout",
 			waitForTimeout:    true,
 			operationTimeout:  100 * time.Millisecond,
-			wantStatus:        operation.StatusFailed,
-			wantAttemptStatus: operation.AttemptFailed,
+			wantStatus:        releaseoperation.StatusFailed,
+			wantAttemptStatus: releaseoperation.AttemptFailed,
 			wantErrorCode:     "rollout_timeout",
 		},
 	}
@@ -56,7 +56,7 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 			environment := newTestEnvironment(t)
 			acceptance := createRelease(t, environment, "worker-terminal-state")
 			db := openTestDatabase(t, environment.databaseURL)
-			operations := operation.New(db)
+			operations := releaseoperation.New(db)
 			releases := delivery.New(db, operations, projectauth.New(db))
 			publisher := &recordingPublisher{
 				err:            testCase.publishError,
@@ -64,10 +64,10 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 			}
 			metrics := observability.NewMetrics(operations.CountPending)
 			runner, err := worker.New(worker.Config{
-				WorkerID:         "worker-terminal-test",
-				LeaseDuration:    3 * time.Second,
-				OperationTimeout: testCase.operationTimeout,
-				Recorder:         metrics,
+				WorkerID:                "worker-terminal-test",
+				LeaseDuration:           3 * time.Second,
+				ReleaseOperationTimeout: testCase.operationTimeout,
+				Recorder:                metrics,
 			}, operations, releases, publisher)
 			if err != nil {
 				t.Fatalf("create worker: %v", err)
@@ -84,11 +84,11 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 				t.Fatalf("publish requests = %d, want 1", len(publisher.requests))
 			}
 			publishRequest := publisher.requests[0]
-			if publishRequest.OperationID.String() != acceptance.Operation.ID {
+			if publishRequest.ReleaseOperationID.String() != acceptance.ReleaseOperation.ID {
 				t.Errorf(
 					"publish operation id = %s, want %s",
-					publishRequest.OperationID,
-					acceptance.Operation.ID,
+					publishRequest.ReleaseOperationID,
+					acceptance.ReleaseOperation.ID,
 				)
 			}
 			if publishRequest.ReleaseID.String() != acceptance.Release.ID {
@@ -113,12 +113,12 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 				)
 			}
 
-			response := environment.get(t, "/api/v1/operations/"+acceptance.Operation.ID)
+			response := environment.get(t, "/api/v1/release-operations/"+acceptance.ReleaseOperation.ID)
 			defer response.Body.Close()
 			if response.StatusCode != http.StatusOK {
 				t.Fatalf("get operation status = %d, want %d", response.StatusCode, http.StatusOK)
 			}
-			current := decodeOperation(t, response)
+			current := decodeReleaseOperation(t, response)
 			if current.Status != testCase.wantStatus {
 				t.Errorf("operation status = %q, want %q", current.Status, testCase.wantStatus)
 			}
@@ -151,9 +151,9 @@ func TestWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 					t.Errorf("attempt error code = %v, want %q", attempt.ErrorCode, testCase.wantErrorCode)
 				}
 				if current.RetryDisposition == nil ||
-					*current.RetryDisposition != operation.NonRetryable ||
+					*current.RetryDisposition != releaseoperation.NonRetryable ||
 					attempt.RetryDisposition == nil ||
-					*attempt.RetryDisposition != operation.NonRetryable {
+					*attempt.RetryDisposition != releaseoperation.NonRetryable {
 					t.Errorf(
 						"retry dispositions = operation %v, attempt %v; want non_retryable",
 						current.RetryDisposition,
@@ -185,16 +185,16 @@ func TestWorkerRenewsLeaseDuringDelivery(t *testing.T) {
 	environment := newTestEnvironment(t)
 	acceptance := createRelease(t, environment, "worker-heartbeat")
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(db)
+	operations := releaseoperation.New(db)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	publisher := &blockingPublisher{
 		started: make(chan struct{}),
 		release: make(chan struct{}),
 	}
 	primary, err := worker.New(worker.Config{
-		WorkerID:         "worker-heartbeat-primary",
-		LeaseDuration:    300 * time.Millisecond,
-		OperationTimeout: 2 * time.Second,
+		WorkerID:                "worker-heartbeat-primary",
+		LeaseDuration:           300 * time.Millisecond,
+		ReleaseOperationTimeout: 2 * time.Second,
 	}, operations, releases, publisher)
 	if err != nil {
 		t.Fatalf("create primary worker: %v", err)
@@ -218,9 +218,9 @@ func TestWorkerRenewsLeaseDuringDelivery(t *testing.T) {
 
 	competingPublisher := &recordingPublisher{}
 	competing, err := worker.New(worker.Config{
-		WorkerID:         "worker-heartbeat-competing",
-		LeaseDuration:    time.Second,
-		OperationTimeout: time.Second,
+		WorkerID:                "worker-heartbeat-competing",
+		LeaseDuration:           time.Second,
+		ReleaseOperationTimeout: time.Second,
 	}, operations, releases, competingPublisher)
 	if err != nil {
 		t.Fatalf("create competing worker: %v", err)
@@ -246,11 +246,11 @@ func TestWorkerRenewsLeaseDuringDelivery(t *testing.T) {
 		t.Fatal("primary worker did not finish")
 	}
 
-	response := environment.get(t, "/api/v1/operations/"+acceptance.Operation.ID)
+	response := environment.get(t, "/api/v1/release-operations/"+acceptance.ReleaseOperation.ID)
 	defer response.Body.Close()
-	current := decodeOperation(t, response)
-	if current.Status != operation.StatusSucceeded {
-		t.Errorf("operation status = %q, want %q", current.Status, operation.StatusSucceeded)
+	current := decodeReleaseOperation(t, response)
+	if current.Status != releaseoperation.StatusSucceeded {
+		t.Errorf("operation status = %q, want %q", current.Status, releaseoperation.StatusSucceeded)
 	}
 	if current.AttemptCount != 1 {
 		t.Errorf("attemptCount = %d, want 1", current.AttemptCount)

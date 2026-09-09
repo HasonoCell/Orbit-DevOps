@@ -132,8 +132,8 @@ func TestReleaseReportDistinguishesAnOlderRunningRelease(t *testing.T) {
 	if report.Release.ID != uuid.MustParse(requested.Release.ID) {
 		t.Fatalf("report release = %s, want %s", report.Release.ID, requested.Release.ID)
 	}
-	if report.Operation.ID != uuid.MustParse(requested.Operation.ID) {
-		t.Fatalf("report operation = %s, want %s", report.Operation.ID, requested.Operation.ID)
+	if report.ReleaseOperation.ID != uuid.MustParse(requested.ReleaseOperation.ID) {
+		t.Fatalf("report operation = %s, want %s", report.ReleaseOperation.ID, requested.ReleaseOperation.ID)
 	}
 	if report.RuntimeReleaseRelation != diagnostics.RuntimeReleaseDifferent {
 		t.Fatalf(
@@ -161,8 +161,8 @@ func TestReleaseReportRetainsControlPlaneEvidenceWhenKubernetesIsUnavailable(t *
 	if err != nil {
 		t.Fatalf("get unavailable runtime report: %v", err)
 	}
-	if report.Operation.ID != uuid.MustParse(acceptance.Operation.ID) {
-		t.Fatalf("operation ID = %s, want %s", report.Operation.ID, acceptance.Operation.ID)
+	if report.ReleaseOperation.ID != uuid.MustParse(acceptance.ReleaseOperation.ID) {
+		t.Fatalf("operation ID = %s, want %s", report.ReleaseOperation.ID, acceptance.ReleaseOperation.ID)
 	}
 	if report.Workload.Metadata.Status != diagnostics.ObservationUnavailable {
 		t.Fatalf("workload status = %q, want unavailable", report.Workload.Metadata.Status)

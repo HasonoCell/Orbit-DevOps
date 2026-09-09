@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -41,7 +41,7 @@ type targetRecord struct {
 
 type Module struct {
 	db         *sqlx.DB
-	operations *operation.Module
+	operations *releaseoperation.Module
 	authorizer *projectauth.Module
 	source     RuntimeSource
 	now        func() time.Time
@@ -54,7 +54,7 @@ func New(db *sqlx.DB, authorizer *projectauth.Module, source RuntimeSource) *Mod
 	}
 	return &Module{
 		db:         db,
-		operations: operation.New(db),
+		operations: releaseoperation.New(db),
 		authorizer: authorizer,
 		source:     source,
 		now:        func() time.Time { return time.Now().UTC() },
@@ -159,7 +159,7 @@ func (m *Module) GetReleaseReport(
 	relation := relateRuntimeRelease(release.ID, observation.Workload)
 	report := Report{
 		Release:                release,
-		Operation:              operationRecord,
+		ReleaseOperation:       operationRecord,
 		TargetDifferences:      compareTarget(release.TargetSnapshot, current),
 		RuntimeReleaseRelation: relation,
 		Workload:               observation.Workload,
@@ -170,26 +170,26 @@ func (m *Module) GetReleaseReport(
 	return report, nil
 }
 
-// loadControlPlane 把 Release、Operation、Attempt 和当前目标读取固定在同一个可重复读快照中。
+// loadControlPlane 把 Release、ReleaseOperation、Attempt 和当前目标读取固定在同一个可重复读快照中。
 func (m *Module) loadControlPlane(
 	ctx context.Context,
 	query GetReleaseReportQuery,
-) (delivery.Release, targetRecord, operation.Record, error) {
+) (delivery.Release, targetRecord, releaseoperation.Record, error) {
 	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelRepeatableRead,
 		ReadOnly:  true,
 	})
 	if err != nil {
-		return delivery.Release{}, targetRecord{}, operation.Record{}, fmt.Errorf("begin diagnostic query: %w", err)
+		return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, fmt.Errorf("begin diagnostic query: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	var release delivery.Release
 	if err := tx.GetContext(ctx, &release, releaseSelect+` WHERE id = $1`, query.ReleaseID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return delivery.Release{}, targetRecord{}, operation.Record{}, ErrReleaseNotFound
+			return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, ErrReleaseNotFound
 		}
-		return delivery.Release{}, targetRecord{}, operation.Record{}, fmt.Errorf("load diagnostic release: %w", err)
+		return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, fmt.Errorf("load diagnostic release: %w", err)
 	}
 	if err := m.authorizer.RequireInTransaction(
 		ctx,
@@ -200,21 +200,21 @@ func (m *Module) loadControlPlane(
 	); err != nil {
 		// Release 查询需要隐藏项目存在性，非成员与不存在统一表现为不可见。
 		if errors.Is(err, projectauth.ErrNotMember) || errors.Is(err, projectauth.ErrForbidden) {
-			return delivery.Release{}, targetRecord{}, operation.Record{}, ErrReleaseNotFound
+			return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, ErrReleaseNotFound
 		}
-		return delivery.Release{}, targetRecord{}, operation.Record{}, err
+		return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, err
 	}
 
 	operationRecord, err := m.operations.GetByReleaseInTransaction(ctx, tx, release.ID)
 	if err != nil {
-		return delivery.Release{}, targetRecord{}, operation.Record{}, err
+		return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, err
 	}
 	var current targetRecord
 	if err := tx.GetContext(ctx, &current, targetSelect, release.DeploymentTargetID); err != nil {
-		return delivery.Release{}, targetRecord{}, operation.Record{}, fmt.Errorf("load current target for diagnostics: %w", err)
+		return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, fmt.Errorf("load current target for diagnostics: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return delivery.Release{}, targetRecord{}, operation.Record{}, fmt.Errorf("commit diagnostic query: %w", err)
+		return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, fmt.Errorf("commit diagnostic query: %w", err)
 	}
 	return release, current, operationRecord, nil
 }

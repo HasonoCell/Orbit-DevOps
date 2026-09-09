@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/dispatch"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/google/uuid"
@@ -25,7 +25,7 @@ func TestQueueFIFOAndAttentionReleaseAcrossWorkers(t *testing.T) {
 	otherTarget := createDeploymentTargetWithSuffix(t, environment, "independent")
 	other := createReleaseForTarget(t, environment, otherTarget.ID, "independent")
 	publisher := publisherFunc(func(_ context.Context, request worker.PublishRequest) error {
-		if request.OperationID.String() == first.Operation.ID {
+		if request.ReleaseOperationID.String() == first.ReleaseOperation.ID {
 			return worker.NewUnknownOutcome("delivery_outcome_unknown", "需要人工确认", false)
 		}
 		return nil
@@ -33,8 +33,8 @@ func TestQueueFIFOAndAttentionReleaseAcrossWorkers(t *testing.T) {
 	service, operations := newQueueWithPublisher(t, environment, address, publisher)
 	secondService, _ := newQueueWithPublisher(t, environment, address, publisher)
 	db := openTestDatabase(t, environment.databaseURL)
-	var tail operation.DispatchRef
-	if err := db.Get(&tail, `SELECT id,operation_id,sequence,protocol_version FROM operation_dispatches WHERE operation_id=$1`, second.Operation.ID); err != nil {
+	var tail releaseoperation.DispatchRef
+	if err := db.Get(&tail, `SELECT id,operation_id,sequence,protocol_version FROM operation_dispatches WHERE operation_id=$1`, second.ReleaseOperation.ID); err != nil {
 		t.Fatal(err)
 	}
 	client := asynq.NewClient(asynq.RedisClientOpt{Addr: address})
@@ -47,13 +47,13 @@ func TestQueueFIFOAndAttentionReleaseAcrossWorkers(t *testing.T) {
 	}
 	startQueueTest(t, service)
 	startQueueTest(t, secondService)
-	awaitQueuedStatus(t, operations, first.Operation.ID, operation.StatusAttentionRequired)
-	current := awaitQueuedStatus(t, operations, other.Operation.ID, operation.StatusSucceeded)
+	awaitQueuedStatus(t, operations, first.ReleaseOperation.ID, releaseoperation.StatusAttentionRequired)
+	current := awaitQueuedStatus(t, operations, other.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 	if current.AttemptCount != 1 {
 		t.Fatalf("duplicate independent attempts: %d", current.AttemptCount)
 	}
-	current, err := operations.Get(context.Background(), tail.OperationID)
-	if err != nil || current.Status != operation.StatusPending || current.AttemptCount != 0 {
+	current, err := operations.Get(context.Background(), tail.ReleaseOperationID)
+	if err != nil || current.Status != releaseoperation.StatusPending || current.AttemptCount != 0 {
 		t.Fatalf("tail bypassed attention head: %+v %v", current, err)
 	}
 	// 后继的乱序物理消息已经全部确认；解除前序后必须靠持久化意图恢复，而非剩余消息碰巧到达。
@@ -65,15 +65,15 @@ func TestQueueFIFOAndAttentionReleaseAcrossWorkers(t *testing.T) {
 	})
 	addMember(t, environment.server, target.ProjectID, "queue-developer", "developer", "queue-member")
 	developer := environment.serverForActor(t, "queue-developer")
-	denied := requestJSON(t, developer, http.MethodPost, "/api/v1/operations/"+first.Operation.ID+"/fail", "queue-denied", `{"reason":"不能越权结束未知发布"}`)
+	denied := requestJSON(t, developer, http.MethodPost, "/api/v1/release-operations/"+first.ReleaseOperation.ID+"/fail", "queue-denied", `{"reason":"不能越权结束未知发布"}`)
 	defer denied.Body.Close()
 	assertError(t, denied, http.StatusForbidden, "project_permission_denied")
-	resolved := environment.postJSON(t, "/api/v1/operations/"+first.Operation.ID+"/fail", "queue-owner-resolve", `{"reason":"已核验外部状态，允许后继推进"}`)
+	resolved := environment.postJSON(t, "/api/v1/release-operations/"+first.ReleaseOperation.ID+"/fail", "queue-owner-resolve", `{"reason":"已核验外部状态，允许后继推进"}`)
 	resolved.Body.Close()
 	if resolved.StatusCode != http.StatusOK {
 		t.Fatalf("owner resolution: %d", resolved.StatusCode)
 	}
-	current = awaitQueuedStatus(t, operations, second.Operation.ID, operation.StatusSucceeded)
+	current = awaitQueuedStatus(t, operations, second.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 	if current.AttemptCount != 1 {
 		t.Fatalf("tail duplicate attempts: %d", current.AttemptCount)
 	}
@@ -109,12 +109,12 @@ func TestQueueCancellationAndLostCancellation(t *testing.T) {
 					t.Fatal("running cancellation not entered")
 				}
 			} else if mode == "lost" {
-				claim, err := operations.ClaimDispatch(ctx, items[0].DispatchRef, operation.ClaimRequest{WorkerID: "lost-cancel-worker", LeaseDuration: 500 * time.Millisecond})
-				if err != nil || claim.Outcome != operation.ClaimOutcomeClaimed {
+				claim, err := operations.ClaimDispatch(ctx, items[0].DispatchRef, releaseoperation.ClaimRequest{WorkerID: "lost-cancel-worker", LeaseDuration: 500 * time.Millisecond})
+				if err != nil || claim.Outcome != releaseoperation.ClaimOutcomeClaimed {
 					t.Fatalf("lost claim: %+v %v", claim, err)
 				}
 			}
-			response := environment.postJSON(t, "/api/v1/operations/"+accepted.Operation.ID+"/cancel", "queue-cancel-"+mode, "")
+			response := environment.postJSON(t, "/api/v1/release-operations/"+accepted.ReleaseOperation.ID+"/cancel", "queue-cancel-"+mode, "")
 			response.Body.Close()
 			if response.StatusCode != http.StatusOK {
 				t.Fatalf("cancel: %d", response.StatusCode)
@@ -134,11 +134,11 @@ func TestQueueCancellationAndLostCancellation(t *testing.T) {
 				}
 				startQueueTest(t, service)
 			}
-			want := operation.StatusCanceled
+			want := releaseoperation.StatusCanceled
 			if mode == "lost" {
-				want = operation.StatusAttentionRequired
+				want = releaseoperation.StatusAttentionRequired
 			}
-			current := awaitQueuedStatus(t, operations, accepted.Operation.ID, want)
+			current := awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, want)
 			attempts := 1
 			if mode == "pending" {
 				attempts = 0
@@ -162,25 +162,25 @@ func TestDispatchRetryIntentFailureRollsBackBusinessState(t *testing.T) {
 	environment := newTestEnvironment(t)
 	accepted := createRelease(t, environment, "retry-outbox-failure")
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(db)
+	operations := releaseoperation.New(db)
 	ctx := context.Background()
 	items, err := operations.ReserveDispatches(ctx, 10, time.Second)
 	if err != nil || len(items) != 1 {
 		t.Fatal(err)
 	}
-	claim, err := operations.ClaimDispatch(ctx, items[0].DispatchRef, operation.ClaimRequest{WorkerID: "atomic-retry", LeaseDuration: 5 * time.Second})
+	claim, err := operations.ClaimDispatch(ctx, items[0].DispatchRef, releaseoperation.ClaimRequest{WorkerID: "atomic-retry", LeaseDuration: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`ALTER TABLE operation_dispatches ADD CONSTRAINT test_retry_failure CHECK (false) NOT VALID`); err != nil {
 		t.Fatal(err)
 	}
-	failure := operation.Failure{Code: "kubernetes_unavailable", Summary: "retryable", Disposition: operation.Retryable}
+	failure := releaseoperation.Failure{Code: "kubernetes_unavailable", Summary: "retryable", Disposition: releaseoperation.Retryable}
 	if _, err := operations.Fail(ctx, claim.Lease, failure); err == nil {
 		t.Fatal("retry outbox failure ignored")
 	}
-	current, err := operations.Get(ctx, uuid.MustParse(accepted.Operation.ID))
-	if err != nil || current.Status != operation.StatusRunning || current.AutomaticRetryCount != 0 || current.Attempts[0].Status != operation.AttemptRunning {
+	current, err := operations.Get(ctx, uuid.MustParse(accepted.ReleaseOperation.ID))
+	if err != nil || current.Status != releaseoperation.StatusRunning || current.AutomaticRetryCount != 0 || current.Attempts[0].Status != releaseoperation.AttemptRunning {
 		t.Fatalf("partial retry: %+v %v", current, err)
 	}
 	if _, err := db.Exec(`ALTER TABLE operation_dispatches DROP CONSTRAINT test_retry_failure`); err != nil {

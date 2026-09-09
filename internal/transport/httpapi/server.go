@@ -9,24 +9,24 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/propagation"
 )
 
 type Server struct {
-	projects     *project.Module
-	catalog      *catalog.Module
-	delivery     *delivery.Module
-	diagnostics  *diagnostics.Module
-	operations   *operation.Module
-	authorizer   *projectauth.Module
-	recovery     worker.RecoveryPublisher
-	localActorID string
-	propagator   propagation.TextMapPropagator
+	projects          *project.Module
+	catalog           *catalog.Module
+	delivery          *delivery.Module
+	diagnostics       *diagnostics.Module
+	releaseOperations *releaseoperation.Module
+	authorizer        *projectauth.Module
+	recovery          worker.RecoveryPublisher
+	localActorID      string
+	propagator        propagation.TextMapPropagator
 }
 
 func (s *Server) GetProject(
@@ -75,22 +75,22 @@ func NewServer(
 	catalogModule *catalog.Module,
 	deliveryModule *delivery.Module,
 	diagnosticModule *diagnostics.Module,
-	operationModule *operation.Module,
+	releaseOperationModule *releaseoperation.Module,
 	authorizer *projectauth.Module,
 	recovery worker.RecoveryPublisher,
 	localActorID string,
 	propagator propagation.TextMapPropagator,
 ) *Server {
 	return &Server{
-		projects:     projects,
-		catalog:      catalogModule,
-		delivery:     deliveryModule,
-		diagnostics:  diagnosticModule,
-		operations:   operationModule,
-		authorizer:   authorizer,
-		recovery:     recovery,
-		localActorID: localActorID,
-		propagator:   propagator,
+		projects:          projects,
+		catalog:           catalogModule,
+		delivery:          deliveryModule,
+		diagnostics:       diagnosticModule,
+		releaseOperations: releaseOperationModule,
+		authorizer:        authorizer,
+		recovery:          recovery,
+		localActorID:      localActorID,
+		propagator:        propagator,
 	}
 }
 

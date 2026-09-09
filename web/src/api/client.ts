@@ -19,7 +19,7 @@ export type Project = components["schemas"]["Project"];
 export type Application = components["schemas"]["Application"];
 export type DeploymentTarget = components["schemas"]["DeploymentTarget"];
 export type ReleaseAcceptance = components["schemas"]["ReleaseAcceptance"];
-export type Operation = components["schemas"]["Operation"];
+export type ReleaseOperation = components["schemas"]["ReleaseOperation"];
 export type ReleaseDiagnosticReport = components["schemas"]["ReleaseDiagnosticReport"];
 
 export type DeliveryAcceptance = {
@@ -27,7 +27,7 @@ export type DeliveryAcceptance = {
   application: Application;
   target: DeploymentTarget;
   release: ReleaseAcceptance["release"];
-  operation: ReleaseAcceptance["operation"];
+  releaseOperation: ReleaseAcceptance["releaseOperation"];
 };
 
 export async function createDelivery(
@@ -86,13 +86,13 @@ export async function createDelivery(
     application,
     target,
     release: acceptance.release,
-    operation: acceptance.operation,
+    releaseOperation: acceptance.releaseOperation,
   };
 }
 
-export async function getOperation(operationId: string): Promise<Operation> {
-  const result = await client.GET("/api/v1/operations/{operationId}", {
-    params: { path: { operationId } },
+export async function getReleaseOperation(releaseOperationId: string): Promise<ReleaseOperation> {
+  const result = await client.GET("/api/v1/release-operations/{releaseOperationId}", {
+    params: { path: { releaseOperationId } },
   });
   return requireData(result.data, result.error, "查询操作状态");
 }

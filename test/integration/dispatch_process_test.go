@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/HasonoCell/OrbitOps/internal/dispatch"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/hibiken/asynq"
@@ -34,8 +34,8 @@ func TestQueueRecoversAcrossProcessInterruptions(t *testing.T) {
 			if scenario.mode == "after_enqueue" {
 				// 真实入队已成功但确认尚未提交，重复制同一消息模拟租约到期后的补发。
 				db := openTestDatabase(t, environment.databaseURL)
-				var ref operation.DispatchRef
-				if err := db.Get(&ref, `SELECT id,operation_id,sequence,protocol_version FROM operation_dispatches WHERE operation_id=$1 AND published_at IS NULL`, accepted.Operation.ID); err != nil {
+				var ref releaseoperation.DispatchRef
+				if err := db.Get(&ref, `SELECT id,operation_id,sequence,protocol_version FROM operation_dispatches WHERE operation_id=$1 AND published_at IS NULL`, accepted.ReleaseOperation.ID); err != nil {
 					t.Fatal(err)
 				}
 				payload, _ := json.Marshal(ref)
@@ -48,12 +48,12 @@ func TestQueueRecoversAcrossProcessInterruptions(t *testing.T) {
 			publisher := &recoveryRecordingPublisher{observation: worker.RecoveryObservation{Action: scenario.action}}
 			service, operations := newQueueWithPublisher(t, environment, address, publisher)
 			stop := startQueueTest(t, service)
-			current := awaitQueuedStatus(t, operations, accepted.Operation.ID, operation.StatusSucceeded)
+			current := awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 			stop()
 			if current.AttemptCount != scenario.attempts {
 				t.Fatalf("attempt count %d, want %d", current.AttemptCount, scenario.attempts)
 			}
-			if scenario.attempts == 2 && current.Attempts[0].Status != operation.AttemptOutcomeUnknown {
+			if scenario.attempts == 2 && current.Attempts[0].Status != releaseoperation.AttemptOutcomeUnknown {
 				t.Fatalf("unknown attempt overwritten: %+v", current.Attempts)
 			}
 			wantInspect := scenario.attempts - 1

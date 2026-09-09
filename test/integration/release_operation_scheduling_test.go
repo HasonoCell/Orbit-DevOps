@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
-func TestOperationSchedulingSerializesEachTargetAndAllowsOtherTargets(t *testing.T) {
+func TestReleaseOperationSchedulingSerializesEachTargetAndAllowsOtherTargets(t *testing.T) {
 	environment := newTestEnvironment(t)
 	firstTarget := createDeploymentTarget(t, environment)
 	secondTarget := createDeploymentTargetWithSuffix(t, environment, "parallel")
@@ -19,21 +19,21 @@ func TestOperationSchedulingSerializesEachTargetAndAllowsOtherTargets(t *testing
 	second := createReleaseForTarget(t, environment, firstTarget.ID, "target-second")
 	parallel := createReleaseForTarget(t, environment, secondTarget.ID, "target-parallel")
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(db)
+	operations := releaseoperation.New(db)
 
-	firstLease := claimOperation(t, operations, "worker-first")
-	if firstLease.OperationID.String() != first.Operation.ID {
-		t.Fatalf("first claim = %s, want %s", firstLease.OperationID, first.Operation.ID)
+	firstLease := claimReleaseOperation(t, operations, "worker-first")
+	if firstLease.ReleaseOperationID.String() != first.ReleaseOperation.ID {
+		t.Fatalf("first claim = %s, want %s", firstLease.ReleaseOperationID, first.ReleaseOperation.ID)
 	}
-	parallelLease := claimOperation(t, operations, "worker-parallel")
-	if parallelLease.OperationID.String() != parallel.Operation.ID {
-		t.Fatalf("parallel claim = %s, want %s", parallelLease.OperationID, parallel.Operation.ID)
+	parallelLease := claimReleaseOperation(t, operations, "worker-parallel")
+	if parallelLease.ReleaseOperationID.String() != parallel.ReleaseOperation.ID {
+		t.Fatalf("parallel claim = %s, want %s", parallelLease.ReleaseOperationID, parallel.ReleaseOperation.ID)
 	}
 	if parallelLease.DeploymentTargetID == firstLease.DeploymentTargetID {
 		t.Fatal("scheduler claimed two active operations for the same deployment target")
 	}
 
-	if _, claimed, err := operations.ClaimNext(context.Background(), operation.ClaimRequest{
+	if _, claimed, err := operations.ClaimNext(context.Background(), releaseoperation.ClaimRequest{
 		WorkerID: "worker-blocked", LeaseDuration: time.Second,
 	}); err != nil {
 		t.Fatalf("claim blocked target: %v", err)
@@ -44,9 +44,9 @@ func TestOperationSchedulingSerializesEachTargetAndAllowsOtherTargets(t *testing
 	if err := operations.Succeed(context.Background(), firstLease); err != nil {
 		t.Fatalf("complete target head: %v", err)
 	}
-	secondLease := claimOperation(t, operations, "worker-second")
-	if secondLease.OperationID.String() != second.Operation.ID {
-		t.Fatalf("second claim = %s, want %s", secondLease.OperationID, second.Operation.ID)
+	secondLease := claimReleaseOperation(t, operations, "worker-second")
+	if secondLease.ReleaseOperationID.String() != second.ReleaseOperation.ID {
+		t.Fatalf("second claim = %s, want %s", secondLease.ReleaseOperationID, second.ReleaseOperation.ID)
 	}
 }
 
@@ -55,29 +55,29 @@ func TestRetryableFailurePreservesQueuePositionAndWaitsForBackoff(t *testing.T) 
 	acceptance := createRelease(t, environment, "automatic-retry")
 	db := openTestDatabase(t, environment.databaseURL)
 	now := time.Now().UTC().Add(time.Minute)
-	operations := operation.New(
+	operations := releaseoperation.New(
 		db,
-		operation.WithClock(func() time.Time { return now }),
-		operation.WithAutomaticRetryPolicy(2, func(int) time.Duration { return time.Minute }),
+		releaseoperation.WithClock(func() time.Time { return now }),
+		releaseoperation.WithAutomaticRetryPolicy(2, func(int) time.Duration { return time.Minute }),
 	)
-	before, err := operations.Get(context.Background(), mustOperationID(t, acceptance.Operation.ID))
+	before, err := operations.Get(context.Background(), mustReleaseOperationID(t, acceptance.ReleaseOperation.ID))
 	if err != nil {
 		t.Fatalf("get accepted operation: %v", err)
 	}
-	firstLease := claimOperation(t, operations, "worker-retry-one")
-	result, err := operations.Fail(context.Background(), firstLease, operation.Failure{
+	firstLease := claimReleaseOperation(t, operations, "worker-retry-one")
+	result, err := operations.Fail(context.Background(), firstLease, releaseoperation.Failure{
 		Code:        "kubernetes_unavailable",
 		Summary:     "Kubernetes API is temporarily unavailable",
-		Disposition: operation.Retryable,
+		Disposition: releaseoperation.Retryable,
 	})
 	if err != nil {
 		t.Fatalf("schedule retry: %v", err)
 	}
-	if !result.RetryScheduled || result.Status != operation.StatusPending || result.AvailableAt == nil {
+	if !result.RetryScheduled || result.Status != releaseoperation.StatusPending || result.AvailableAt == nil {
 		t.Fatalf("failure result = %#v, want pending automatic retry", result)
 	}
 
-	duringBackoff, err := operations.Get(context.Background(), firstLease.OperationID)
+	duringBackoff, err := operations.Get(context.Background(), firstLease.ReleaseOperationID)
 	if err != nil {
 		t.Fatalf("get retrying operation: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestRetryableFailurePreservesQueuePositionAndWaitsForBackoff(t *testing.T) 
 			duringBackoff.AttemptCount,
 		)
 	}
-	if _, claimed, err := operations.ClaimNext(context.Background(), operation.ClaimRequest{
+	if _, claimed, err := operations.ClaimNext(context.Background(), releaseoperation.ClaimRequest{
 		WorkerID: "worker-too-early", LeaseDuration: time.Second,
 	}); err != nil {
 		t.Fatalf("claim during backoff: %v", err)
@@ -100,8 +100,8 @@ func TestRetryableFailurePreservesQueuePositionAndWaitsForBackoff(t *testing.T) 
 	}
 
 	now = now.Add(time.Minute)
-	secondLease := claimOperation(t, operations, "worker-retry-two")
-	if secondLease.OperationID != firstLease.OperationID || secondLease.AttemptNumber != 2 {
+	secondLease := claimReleaseOperation(t, operations, "worker-retry-two")
+	if secondLease.ReleaseOperationID != firstLease.ReleaseOperationID || secondLease.ReleaseAttemptNumber != 2 {
 		t.Fatalf("retry lease = %#v, want same operation with attempt 2", secondLease)
 	}
 	if err := operations.Succeed(context.Background(), secondLease); err != nil {
@@ -114,43 +114,43 @@ func TestRetryableFailureStopsAfterAutomaticRetryBudget(t *testing.T) {
 	acceptance := createRelease(t, environment, "retry-budget")
 	db := openTestDatabase(t, environment.databaseURL)
 	now := time.Now().UTC().Add(time.Minute)
-	operations := operation.New(
+	operations := releaseoperation.New(
 		db,
-		operation.WithClock(func() time.Time { return now }),
-		operation.WithAutomaticRetryPolicy(1, func(int) time.Duration { return 0 }),
+		releaseoperation.WithClock(func() time.Time { return now }),
+		releaseoperation.WithAutomaticRetryPolicy(1, func(int) time.Duration { return 0 }),
 	)
-	failure := operation.Failure{
+	failure := releaseoperation.Failure{
 		Code:        "kubernetes_unavailable",
 		Summary:     "Kubernetes API is temporarily unavailable",
-		Disposition: operation.Retryable,
+		Disposition: releaseoperation.Retryable,
 	}
-	firstLease := claimOperation(t, operations, "worker-budget-one")
+	firstLease := claimReleaseOperation(t, operations, "worker-budget-one")
 	firstResult, err := operations.Fail(context.Background(), firstLease, failure)
 	if err != nil || !firstResult.RetryScheduled {
 		t.Fatalf("first failure result = %#v, error = %v; want retry", firstResult, err)
 	}
-	secondLease := claimOperation(t, operations, "worker-budget-two")
+	secondLease := claimReleaseOperation(t, operations, "worker-budget-two")
 	secondResult, err := operations.Fail(context.Background(), secondLease, failure)
 	if err != nil {
 		t.Fatalf("exhaust retry budget: %v", err)
 	}
-	if secondResult.RetryScheduled || secondResult.Status != operation.StatusFailed {
+	if secondResult.RetryScheduled || secondResult.Status != releaseoperation.StatusFailed {
 		t.Fatalf("second failure result = %#v, want terminal failure", secondResult)
 	}
 
-	current, err := operations.Get(context.Background(), mustOperationID(t, acceptance.Operation.ID))
+	current, err := operations.Get(context.Background(), mustReleaseOperationID(t, acceptance.ReleaseOperation.ID))
 	if err != nil {
 		t.Fatalf("get exhausted operation: %v", err)
 	}
 	if current.AutomaticRetryCount != 1 || current.AttemptCount != 2 ||
-		current.RetryDisposition == nil || *current.RetryDisposition != operation.Retryable {
+		current.RetryDisposition == nil || *current.RetryDisposition != releaseoperation.Retryable {
 		t.Errorf("exhausted operation = %#v", current)
 	}
 }
 
-func claimOperation(t *testing.T, operations *operation.Module, workerID string) operation.Lease {
+func claimReleaseOperation(t *testing.T, operations *releaseoperation.Module, workerID string) releaseoperation.Lease {
 	t.Helper()
-	lease, claimed, err := operations.ClaimNext(context.Background(), operation.ClaimRequest{
+	lease, claimed, err := operations.ClaimNext(context.Background(), releaseoperation.ClaimRequest{
 		WorkerID: workerID, LeaseDuration: time.Second,
 	})
 	if err != nil {
@@ -162,7 +162,7 @@ func claimOperation(t *testing.T, operations *operation.Module, workerID string)
 	return lease
 }
 
-func mustOperationID(t *testing.T, value string) uuid.UUID {
+func mustReleaseOperationID(t *testing.T, value string) uuid.UUID {
 	t.Helper()
 	id, err := uuid.Parse(value)
 	if err != nil {

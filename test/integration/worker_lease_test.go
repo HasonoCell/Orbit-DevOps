@@ -6,20 +6,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 )
 
-func TestOperationLeaseHasOneOwnerAndRecoversAfterExpiry(t *testing.T) {
+func TestReleaseOperationLeaseHasOneOwnerAndRecoversAfterExpiry(t *testing.T) {
 	environment := newTestEnvironment(t)
 	acceptance := createRelease(t, environment, "lease-recovery")
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(db)
+	operations := releaseoperation.New(db)
 
 	firstLease, claimed, err := operations.ClaimNext(
 		context.Background(),
-		operation.ClaimRequest{
+		releaseoperation.ClaimRequest{
 			WorkerID:      "worker-one",
 			LeaseDuration: 100 * time.Millisecond,
 		},
@@ -30,20 +30,20 @@ func TestOperationLeaseHasOneOwnerAndRecoversAfterExpiry(t *testing.T) {
 	if !claimed {
 		t.Fatal("first claim = false, want true")
 	}
-	if firstLease.OperationID.String() != acceptance.Operation.ID {
+	if firstLease.ReleaseOperationID.String() != acceptance.ReleaseOperation.ID {
 		t.Errorf(
 			"first operation id = %s, want %s",
-			firstLease.OperationID,
-			acceptance.Operation.ID,
+			firstLease.ReleaseOperationID,
+			acceptance.ReleaseOperation.ID,
 		)
 	}
-	if firstLease.AttemptNumber != 1 {
-		t.Errorf("first attempt number = %d, want 1", firstLease.AttemptNumber)
+	if firstLease.ReleaseAttemptNumber != 1 {
+		t.Errorf("first attempt number = %d, want 1", firstLease.ReleaseAttemptNumber)
 	}
 
 	_, claimed, err = operations.ClaimNext(
 		context.Background(),
-		operation.ClaimRequest{
+		releaseoperation.ClaimRequest{
 			WorkerID:      "worker-two",
 			LeaseDuration: time.Second,
 		},
@@ -58,7 +58,7 @@ func TestOperationLeaseHasOneOwnerAndRecoversAfterExpiry(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	secondLease, claimed, err := operations.ClaimNext(
 		context.Background(),
-		operation.ClaimRequest{
+		releaseoperation.ClaimRequest{
 			WorkerID:      "worker-two",
 			LeaseDuration: time.Second,
 		},
@@ -69,38 +69,38 @@ func TestOperationLeaseHasOneOwnerAndRecoversAfterExpiry(t *testing.T) {
 	if !claimed {
 		t.Fatal("recovery claim = false, want true")
 	}
-	if secondLease.OperationID != firstLease.OperationID {
-		t.Errorf("recovered operation id = %s, want %s", secondLease.OperationID, firstLease.OperationID)
+	if secondLease.ReleaseOperationID != firstLease.ReleaseOperationID {
+		t.Errorf("recovered operation id = %s, want %s", secondLease.ReleaseOperationID, firstLease.ReleaseOperationID)
 	}
-	if secondLease.AttemptNumber != 2 {
-		t.Errorf("recovery attempt number = %d, want 2", secondLease.AttemptNumber)
+	if secondLease.ReleaseAttemptNumber != 2 {
+		t.Errorf("recovery attempt number = %d, want 2", secondLease.ReleaseAttemptNumber)
 	}
 	if !secondLease.Recovery {
 		t.Error("recovery lease was not marked as recovery")
 	}
-	if err := operations.Succeed(context.Background(), firstLease); !errors.Is(err, operation.ErrLeaseLost) {
+	if err := operations.Succeed(context.Background(), firstLease); !errors.Is(err, releaseoperation.ErrLeaseLost) {
 		t.Errorf("stale worker completion error = %v, want ErrLeaseLost", err)
 	}
 
-	current, err := operations.Get(context.Background(), secondLease.OperationID)
+	current, err := operations.Get(context.Background(), secondLease.ReleaseOperationID)
 	if err != nil {
 		t.Fatalf("get recovered operation: %v", err)
 	}
-	if current.Status != operation.StatusRunning {
-		t.Errorf("status = %q, want %q", current.Status, operation.StatusRunning)
+	if current.Status != releaseoperation.StatusRunning {
+		t.Errorf("status = %q, want %q", current.Status, releaseoperation.StatusRunning)
 	}
 	if len(current.Attempts) != 2 {
 		t.Fatalf("attempt count = %d, want 2", len(current.Attempts))
 	}
-	if current.Attempts[0].Status != operation.AttemptOutcomeUnknown {
-		t.Errorf("first attempt status = %q, want %q", current.Attempts[0].Status, operation.AttemptOutcomeUnknown)
+	if current.Attempts[0].Status != releaseoperation.AttemptOutcomeUnknown {
+		t.Errorf("first attempt status = %q, want %q", current.Attempts[0].Status, releaseoperation.AttemptOutcomeUnknown)
 	}
 	if current.Attempts[0].ErrorCode == nil ||
-		*current.Attempts[0].ErrorCode != operation.FailureLeaseExpired {
+		*current.Attempts[0].ErrorCode != releaseoperation.FailureLeaseExpired {
 		t.Errorf("first attempt error code = %v, want lease expiry", current.Attempts[0].ErrorCode)
 	}
-	if current.Attempts[1].Status != operation.AttemptRunning {
-		t.Errorf("second attempt status = %q, want %q", current.Attempts[1].Status, operation.AttemptRunning)
+	if current.Attempts[1].Status != releaseoperation.AttemptRunning {
+		t.Errorf("second attempt status = %q, want %q", current.Attempts[1].Status, releaseoperation.AttemptRunning)
 	}
 }
 

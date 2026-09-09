@@ -14,10 +14,10 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/platform/database"
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/transport/httpapi"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/gin-gonic/gin"
@@ -100,8 +100,8 @@ func NewWithDependencies(
 		ClusterRef: config.LocalClusterRef,
 		Namespace:  config.LocalNamespace,
 	}, authorizer)
-	operationModule := operation.New(db, operation.WithAuthorizer(authorizer))
-	deliveryModule := delivery.New(db, operationModule, authorizer)
+	releaseOperationModule := releaseoperation.New(db, releaseoperation.WithAuthorizer(authorizer))
+	deliveryModule := delivery.New(db, releaseOperationModule, authorizer)
 	diagnosticModule := diagnostics.New(db, authorizer, dependencies.RuntimeSource)
 	logger := dependencies.Logger
 	if logger == nil {
@@ -109,11 +109,11 @@ func NewWithDependencies(
 	}
 	metrics := dependencies.Metrics
 	if metrics == nil {
-		metrics = observability.NewMetrics(operationModule.CountPending)
+		metrics = observability.NewMetrics(releaseOperationModule.CountPending)
 	} else {
-		metrics.RegisterPending(operationModule.CountPending)
+		metrics.RegisterPending(releaseOperationModule.CountPending)
 	}
-	metrics.RegisterOperations(operationModule.ReadMetricsSnapshot)
+	metrics.RegisterReleaseOperations(releaseOperationModule.ReadMetricsSnapshot)
 	tracer := dependencies.Tracer
 	if tracer == nil {
 		tracer = otel.Tracer("github.com/HasonoCell/OrbitOps/internal/app")
@@ -130,7 +130,7 @@ func NewWithDependencies(
 		catalogModule,
 		deliveryModule,
 		diagnosticModule,
-		operationModule,
+		releaseOperationModule,
 		authorizer,
 		dependencies.RecoveryPublisher,
 		config.LocalActorID,

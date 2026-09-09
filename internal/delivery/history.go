@@ -11,26 +11,26 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/audit"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
 const maximumReleaseHistoryPageSize = 100
 
-type OperationSummary struct {
-	ID           uuid.UUID                 `db:"operation_id"`
-	Status       operation.OperationStatus `db:"operation_status"`
-	AttemptCount int                       `db:"operation_attempt_count"`
-	ErrorCode    *string                   `db:"operation_error_code"`
-	ErrorSummary *string                   `db:"operation_error_summary"`
-	QueuedAt     time.Time                 `db:"operation_queued_at"`
-	StartedAt    *time.Time                `db:"operation_started_at"`
-	FinishedAt   *time.Time                `db:"operation_finished_at"`
+type ReleaseOperationSummary struct {
+	ID           uuid.UUID                               `db:"operation_id"`
+	Status       releaseoperation.ReleaseOperationStatus `db:"operation_status"`
+	AttemptCount int                                     `db:"operation_attempt_count"`
+	ErrorCode    *string                                 `db:"operation_error_code"`
+	ErrorSummary *string                                 `db:"operation_error_summary"`
+	QueuedAt     time.Time                               `db:"operation_queued_at"`
+	StartedAt    *time.Time                              `db:"operation_started_at"`
+	FinishedAt   *time.Time                              `db:"operation_finished_at"`
 }
 
 type HistoryItem struct {
 	Release
-	Operation OperationSummary
+	ReleaseOperation ReleaseOperationSummary
 }
 
 type HistoryPage struct {
@@ -53,7 +53,7 @@ type SnapshotDifference struct {
 type Detail struct {
 	Release             Release
 	SnapshotDifferences []SnapshotDifference
-	Operation           operation.Record
+	ReleaseOperation    releaseoperation.Record
 	AuditTimeline       []audit.Record
 }
 
@@ -64,7 +64,7 @@ type historyCursor struct {
 
 type historyRow struct {
 	Release
-	OperationSummary
+	ReleaseOperationSummary
 }
 
 // ListHistory 使用不可变 `(created_at, id)` 游标稳定遍历指定 DeploymentTarget 的发布历史。
@@ -128,7 +128,7 @@ func (m *Module) ListHistory(ctx context.Context, query ListHistoryQuery) (Histo
 	}
 	items := make([]HistoryItem, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, HistoryItem{Release: row.Release, Operation: row.OperationSummary})
+		items = append(items, HistoryItem{Release: row.Release, ReleaseOperation: row.ReleaseOperationSummary})
 	}
 	page := HistoryPage{Items: items}
 	if hasMore {
@@ -141,7 +141,7 @@ func (m *Module) ListHistory(ctx context.Context, query ListHistoryQuery) (Histo
 	return page, nil
 }
 
-// GetDetail 在同一个可重复读快照中组合 Release、Operation、快照差异与审计时间线。
+// GetDetail 在同一个可重复读快照中组合 Release、ReleaseOperation、快照差异与审计时间线。
 func (m *Module) GetDetail(ctx context.Context, releaseID uuid.UUID) (Detail, error) {
 	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelRepeatableRead,
@@ -159,7 +159,7 @@ func (m *Module) GetDetail(ctx context.Context, releaseID uuid.UUID) (Detail, er
 		}
 		return Detail{}, fmt.Errorf("get release detail: %w", err)
 	}
-	operationRecord, err := m.operations.GetByReleaseInTransaction(ctx, tx, releaseID)
+	releaseOperationRecord, err := m.releaseOperations.GetByReleaseInTransaction(ctx, tx, releaseID)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -178,7 +178,7 @@ func (m *Module) GetDetail(ctx context.Context, releaseID uuid.UUID) (Detail, er
 	); err != nil {
 		return Detail{}, fmt.Errorf("load current target for release detail: %w", err)
 	}
-	timeline, err := audit.ListReleaseTimeline(ctx, tx, release.ID, operationRecord.ID)
+	timeline, err := audit.ListReleaseTimeline(ctx, tx, release.ID, releaseOperationRecord.ID)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -188,7 +188,7 @@ func (m *Module) GetDetail(ctx context.Context, releaseID uuid.UUID) (Detail, er
 	return Detail{
 		Release:             release,
 		SnapshotDifferences: compareTargetSnapshot(release.TargetSnapshot, current),
-		Operation:           operationRecord,
+		ReleaseOperation:    releaseOperationRecord,
 		AuditTimeline:       timeline,
 	}, nil
 }

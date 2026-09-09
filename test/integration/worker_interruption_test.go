@@ -13,8 +13,8 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/dispatch"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/jmoiron/sqlx"
 )
@@ -73,7 +73,7 @@ func TestWorkerRecoversAcrossRealProcessInterruptions(t *testing.T) {
 			// 子进程被终止后必须等租约自然过期，新的 Worker 才能通过数据库围栏接管。
 			time.Sleep(350 * time.Millisecond)
 			db := openTestDatabase(t, environment.databaseURL)
-			operations := operation.New(db)
+			operations := releaseoperation.New(db)
 			publisher := &recoveryRecordingPublisher{
 				observation: worker.RecoveryObservation{Action: testCase.recoveryAction},
 			}
@@ -83,15 +83,15 @@ func TestWorkerRecoversAcrossRealProcessInterruptions(t *testing.T) {
 				t.Fatalf("recover interrupted Worker = %v, error = %v", processed, err)
 			}
 
-			current, err := operations.Get(context.Background(), mustOperationID(t, acceptance.Operation.ID))
+			current, err := operations.Get(context.Background(), mustReleaseOperationID(t, acceptance.ReleaseOperation.ID))
 			if err != nil {
 				t.Fatalf("get recovered operation: %v", err)
 			}
-			if current.Status != operation.StatusSucceeded || current.AttemptCount != 2 {
+			if current.Status != releaseoperation.StatusSucceeded || current.AttemptCount != 2 {
 				t.Fatalf("recovered operation = %#v, want succeeded with two Attempts", current)
 			}
-			if current.Attempts[0].Status != operation.AttemptOutcomeUnknown ||
-				current.Attempts[1].Status != operation.AttemptSucceeded {
+			if current.Attempts[0].Status != releaseoperation.AttemptOutcomeUnknown ||
+				current.Attempts[1].Status != releaseoperation.AttemptSucceeded {
 				t.Fatalf("interruption attempt history = %#v", current.Attempts)
 			}
 			if publisher.inspectCalls != 1 || publisher.publishCalls != testCase.wantPublishCalls ||
@@ -130,13 +130,13 @@ func TestWorkerInterruptionHelper(t *testing.T) {
 	}
 	defer db.Close()
 
-	operations := operation.New(db)
+	operations := releaseoperation.New(db)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	publisher := processInterruptionPublisher{mode: mode, marker: marker}
 	runner, err := worker.New(worker.Config{
-		WorkerID:         "worker-interruption-child",
-		LeaseDuration:    200 * time.Millisecond,
-		OperationTimeout: 30 * time.Second,
+		WorkerID:                "worker-interruption-child",
+		LeaseDuration:           200 * time.Millisecond,
+		ReleaseOperationTimeout: 30 * time.Second,
 		DeliveryHook: func(checkpoint worker.DeliveryCheckpoint, _ worker.PublishRequest) {
 			if (mode == "before_publish" && checkpoint == worker.DeliveryBeforePublish) ||
 				(mode == "before_commit" && checkpoint == worker.DeliveryBeforeCommit) {
@@ -149,7 +149,7 @@ func TestWorkerInterruptionHelper(t *testing.T) {
 	}
 	if address := os.Getenv("ORBITOPS_TEST_INTERRUPTION_REDIS_ADDRESS"); address != "" {
 		config := queueConfig(address)
-		config.AfterEnqueue = func(operation.Dispatch) {
+		config.AfterEnqueue = func(releaseoperation.Dispatch) {
 			if mode == "after_enqueue" {
 				os.Exit(91)
 			}
@@ -231,7 +231,7 @@ func (p processInterruptionPublisher) Publish(ctx context.Context, _ worker.Publ
 	return nil
 }
 
-func labeledCount(counts []operation.LabeledCount, label string) int {
+func labeledCount(counts []releaseoperation.LabeledCount, label string) int {
 	for _, count := range counts {
 		if count.Label == label {
 			return count.Count

@@ -11,8 +11,8 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/audit"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/distribution/reference"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -71,8 +71,8 @@ type Release struct {
 }
 
 type Acceptance struct {
-	Release   Release
-	Operation operation.Record
+	Release          Release
+	ReleaseOperation releaseoperation.Record
 }
 
 type CreateReleaseCommand struct {
@@ -95,21 +95,21 @@ type targetRecord struct {
 }
 
 type Module struct {
-	db         *sqlx.DB
-	operations *operation.Module
-	authorizer *projectauth.Module
+	db                *sqlx.DB
+	releaseOperations *releaseoperation.Module
+	authorizer        *projectauth.Module
 }
 
 // New 创建交付模块，并将发布命令接入统一项目授权。
 func New(
 	db *sqlx.DB,
-	operations *operation.Module,
+	releaseOperations *releaseoperation.Module,
 	authorizer *projectauth.Module,
 ) *Module {
-	return &Module{db: db, operations: operations, authorizer: authorizer}
+	return &Module{db: db, releaseOperations: releaseOperations, authorizer: authorizer}
 }
 
-// CreateRelease 原子完成授权、幂等接纳、快照冻结和 Operation 创建。
+// CreateRelease 原子完成授权、幂等接纳、快照冻结和 ReleaseOperation 创建。
 func (m *Module) CreateRelease(
 	ctx context.Context,
 	command CreateReleaseCommand,
@@ -218,10 +218,10 @@ func (m *Module) CreateRelease(
 		return Acceptance{}, fmt.Errorf("insert release: %w", err)
 	}
 
-	createdOperation, err := m.operations.CreatePending(
+	createdReleaseOperation, err := m.releaseOperations.CreatePending(
 		ctx,
 		tx,
-		operation.CreatePendingCommand{
+		releaseoperation.CreatePendingCommand{
 			ID:                 uuid.New(),
 			ReleaseID:          release.ID,
 			DeploymentTargetID: release.DeploymentTargetID,
@@ -247,7 +247,7 @@ func (m *Module) CreateRelease(
 			Summary: map[string]string{
 				"deploymentTargetId": command.DeploymentTargetID.String(),
 				"idempotencyKey":     command.IdempotencyKey,
-				"operationId":        createdOperation.ID.String(),
+				"operationId":        createdReleaseOperation.ID.String(),
 			},
 			CreatedAt: createdAt,
 		},
@@ -259,7 +259,7 @@ func (m *Module) CreateRelease(
 		return Acceptance{}, fmt.Errorf("commit create release: %w", err)
 	}
 
-	return Acceptance{Release: release, Operation: createdOperation}, nil
+	return Acceptance{Release: release, ReleaseOperation: createdReleaseOperation}, nil
 }
 
 // GetRelease 读取不可变发布；用户可见性由调用入口统一判断。
@@ -317,7 +317,7 @@ func (m *Module) replayReleaseCreate(
 		return Acceptance{}, fmt.Errorf("load idempotent release result: %w", err)
 	}
 
-	existingOperation, err := m.operations.GetByReleaseInTransaction(ctx, tx, releaseID)
+	existingReleaseOperation, err := m.releaseOperations.GetByReleaseInTransaction(ctx, tx, releaseID)
 	if err != nil {
 		return Acceptance{}, fmt.Errorf("load idempotent operation result: %w", err)
 	}
@@ -326,7 +326,7 @@ func (m *Module) replayReleaseCreate(
 		return Acceptance{}, fmt.Errorf("commit release replay: %w", err)
 	}
 
-	return Acceptance{Release: release, Operation: existingOperation}, nil
+	return Acceptance{Release: release, ReleaseOperation: existingReleaseOperation}, nil
 }
 
 func validateImageReference(imageReference string) error {

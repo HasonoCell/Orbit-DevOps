@@ -506,8 +506,8 @@ func TestRuntimeLogsRefusesOwnedPodOutsideTheDiagnosticProjection(t *testing.T) 
 
 func publishRequest() worker.PublishRequest {
 	return worker.PublishRequest{
-		OperationID:        uuid.New(),
-		AttemptID:          uuid.New(),
+		ReleaseOperationID: uuid.New(),
+		ReleaseAttemptID:   uuid.New(),
 		ReleaseID:          uuid.New(),
 		ProjectID:          uuid.New(),
 		ApplicationID:      uuid.New(),

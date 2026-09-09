@@ -35,14 +35,14 @@ type Worker struct {
 	WorkerID                string
 	PollInterval            time.Duration
 	LeaseDuration           time.Duration
-	OperationTimeout        time.Duration
+	ReleaseOperationTimeout time.Duration
 	MaximumAutomaticRetries int
 	RetryBaseDelay          time.Duration
 	Kubernetes              Kubernetes
 	Queue                   Queue
 }
 
-// Queue 只配置消息运输；业务租约、重试预算仍由 Worker 与 Operation 管理。
+// Queue 只配置消息运输；业务租约、重试预算仍由 Worker 与 ReleaseOperation 管理。
 type Queue struct {
 	RedisAddress     string
 	RedisUsername    string
@@ -156,7 +156,7 @@ func LoadWorker() (Worker, error) {
 		WorkerID:                value("ORBITOPS_WORKER_ID", hostname),
 		PollInterval:            pollInterval,
 		LeaseDuration:           leaseDuration,
-		OperationTimeout:        operationTimeout,
+		ReleaseOperationTimeout: operationTimeout,
 		MaximumAutomaticRetries: maximumAutomaticRetries,
 		RetryBaseDelay:          retryBaseDelay,
 		Kubernetes:              kubernetes,

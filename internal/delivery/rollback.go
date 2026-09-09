@@ -9,8 +9,8 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/audit"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
@@ -102,7 +102,7 @@ func (m *Module) Rollback(ctx context.Context, command RollbackCommand) (Accepta
 	); err != nil {
 		return Acceptance{}, fmt.Errorf("insert rollback release: %w", err)
 	}
-	createdOperation, err := m.operations.CreatePending(ctx, tx, operation.CreatePendingCommand{
+	createdReleaseOperation, err := m.releaseOperations.CreatePending(ctx, tx, releaseoperation.CreatePendingCommand{
 		ID:                 uuid.New(),
 		ReleaseID:          release.ID,
 		DeploymentTargetID: release.DeploymentTargetID,
@@ -123,7 +123,7 @@ func (m *Module) Rollback(ctx context.Context, command RollbackCommand) (Accepta
 		Summary: map[string]string{
 			"deploymentTargetId":  release.DeploymentTargetID.String(),
 			"idempotencyKey":      command.IdempotencyKey,
-			"operationId":         createdOperation.ID.String(),
+			"operationId":         createdReleaseOperation.ID.String(),
 			"rollbackOfReleaseId": source.ID.String(),
 		},
 		CreatedAt: createdAt,
@@ -133,5 +133,5 @@ func (m *Module) Rollback(ctx context.Context, command RollbackCommand) (Accepta
 	if err := tx.Commit(); err != nil {
 		return Acceptance{}, fmt.Errorf("commit release rollback: %w", err)
 	}
-	return Acceptance{Release: release, Operation: createdOperation}, nil
+	return Acceptance{Release: release, ReleaseOperation: createdReleaseOperation}, nil
 }

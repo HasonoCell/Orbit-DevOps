@@ -3,7 +3,7 @@ package diagnostics
 import (
 	"testing"
 
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
@@ -71,7 +71,7 @@ func TestDeriveSignalsUsesDeterministicSeverityAndCodeOrder(t *testing.T) {
 	t.Parallel()
 
 	report := Report{
-		Operation: operation.Record{ID: uuid.New(), Status: operation.StatusFailed},
+		ReleaseOperation: releaseoperation.Record{ID: uuid.New(), Status: releaseoperation.StatusFailed},
 		Workload: WorkloadObservation{Metadata: ObservationMetadata{
 			Status: ObservationUnavailable,
 		}},
@@ -79,7 +79,7 @@ func TestDeriveSignalsUsesDeterministicSeverityAndCodeOrder(t *testing.T) {
 	}
 
 	signals := deriveSignals(report)
-	want := []SignalCode{SignalOperationFailed, SignalRuntimeObservationUnavailable}
+	want := []SignalCode{SignalReleaseOperationFailed, SignalRuntimeObservationUnavailable}
 	if len(signals) != len(want) {
 		t.Fatalf("signal count = %d, want %d: %#v", len(signals), len(want), signals)
 	}
@@ -94,7 +94,7 @@ func TestDeriveSignalsExplainsIncompleteKubernetesEvidence(t *testing.T) {
 	t.Parallel()
 
 	report := Report{
-		Operation: operation.Record{ID: uuid.New(), Status: operation.StatusRunning},
+		ReleaseOperation: releaseoperation.Record{ID: uuid.New(), Status: releaseoperation.StatusRunning},
 		Workload: WorkloadObservation{
 			Metadata: ObservationMetadata{
 				Status: ObservationPartial, ErrorCategories: []string{"ownership_conflict"},

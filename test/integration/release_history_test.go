@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
@@ -20,21 +20,21 @@ func TestReleaseHistoryCursorAndDetailRemainExplainable(t *testing.T) {
 	second := createReleaseForTarget(t, environment, target.ID, "history-second")
 	third := createReleaseForTarget(t, environment, target.ID, "history-third")
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(db)
+	operations := releaseoperation.New(db)
 
-	firstLease := claimOperation(t, operations, "worker-history-first")
-	if firstLease.OperationID.String() != first.Operation.ID {
-		t.Fatalf("first history claim = %s, want %s", firstLease.OperationID, first.Operation.ID)
+	firstLease := claimReleaseOperation(t, operations, "worker-history-first")
+	if firstLease.ReleaseOperationID.String() != first.ReleaseOperation.ID {
+		t.Fatalf("first history claim = %s, want %s", firstLease.ReleaseOperationID, first.ReleaseOperation.ID)
 	}
 	if err := operations.Succeed(context.Background(), firstLease); err != nil {
 		t.Fatalf("complete first history operation: %v", err)
 	}
-	secondLease := claimOperation(t, operations, "worker-history-second")
-	if secondLease.OperationID.String() != second.Operation.ID {
-		t.Fatalf("second history claim = %s, want %s", secondLease.OperationID, second.Operation.ID)
+	secondLease := claimReleaseOperation(t, operations, "worker-history-second")
+	if secondLease.ReleaseOperationID.String() != second.ReleaseOperation.ID {
+		t.Fatalf("second history claim = %s, want %s", secondLease.ReleaseOperationID, second.ReleaseOperation.ID)
 	}
-	if _, err := operations.Fail(context.Background(), secondLease, operation.Failure{
-		Code: "image_invalid", Summary: "image cannot be deployed", Disposition: operation.NonRetryable,
+	if _, err := operations.Fail(context.Background(), secondLease, releaseoperation.Failure{
+		Code: "image_invalid", Summary: "image cannot be deployed", Disposition: releaseoperation.NonRetryable,
 	}); err != nil {
 		t.Fatalf("fail second history operation: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestReleaseHistoryCursorAndDetailRemainExplainable(t *testing.T) {
 		t,
 		environment.server,
 		http.MethodPost,
-		"/api/v1/operations/"+third.Operation.ID+"/cancel",
+		"/api/v1/release-operations/"+third.ReleaseOperation.ID+"/cancel",
 		"cancel-third-history-operation",
 		"",
 	)
@@ -64,9 +64,9 @@ func TestReleaseHistoryCursorAndDetailRemainExplainable(t *testing.T) {
 		t.Fatalf("first history page = %#v", firstPage)
 	}
 	if firstPage.Items[0].Release.ID != third.Release.ID ||
-		firstPage.Items[0].Operation.Status != operation.StatusCanceled ||
+		firstPage.Items[0].ReleaseOperation.Status != releaseoperation.StatusCanceled ||
 		firstPage.Items[1].Release.ID != second.Release.ID ||
-		firstPage.Items[1].Operation.Status != operation.StatusFailed {
+		firstPage.Items[1].ReleaseOperation.Status != releaseoperation.StatusFailed {
 		t.Fatalf("first history page order/status = %#v", firstPage.Items)
 	}
 
@@ -110,10 +110,10 @@ func TestReleaseHistoryCursorAndDetailRemainExplainable(t *testing.T) {
 		t.Fatalf("release detail status = %d", detailResponse.StatusCode)
 	}
 	detail := decodeReleaseDetail(t, detailResponse)
-	if detail.Operation.ID != first.Operation.ID || detail.Operation.Status != operation.StatusSucceeded ||
-		len(detail.Operation.Attempts) != 1 ||
-		detail.Operation.Attempts[0].Status != operation.AttemptSucceeded {
-		t.Fatalf("release detail operation = %#v", detail.Operation)
+	if detail.ReleaseOperation.ID != first.ReleaseOperation.ID || detail.ReleaseOperation.Status != releaseoperation.StatusSucceeded ||
+		len(detail.ReleaseOperation.Attempts) != 1 ||
+		detail.ReleaseOperation.Attempts[0].Status != releaseoperation.AttemptSucceeded {
+		t.Fatalf("release detail operation = %#v", detail.ReleaseOperation)
 	}
 	differences := map[string]snapshotDifferenceDocument{}
 	for _, difference := range detail.SnapshotDifferences {
@@ -128,7 +128,7 @@ func TestReleaseHistoryCursorAndDetailRemainExplainable(t *testing.T) {
 	actions := map[string]bool{}
 	for _, record := range detail.AuditTimeline {
 		actions[record.Action] = true
-		if record.TargetID != first.Release.ID && record.TargetID != first.Operation.ID {
+		if record.TargetID != first.Release.ID && record.TargetID != first.ReleaseOperation.ID {
 			t.Errorf("unrelated audit target %s in release timeline", record.TargetID)
 		}
 	}
@@ -180,9 +180,9 @@ func TestRollbackCopiesSourceSnapshotAndIsIdempotent(t *testing.T) {
 	if created.Release.TargetSnapshot.Replicas == 4 || created.Release.TargetSnapshot.ContainerPort == 7070 {
 		t.Fatal("rollback mixed current target configuration into source snapshot")
 	}
-	if created.Operation.ReleaseID != created.Release.ID ||
-		created.Operation.Status != operation.StatusPending {
-		t.Fatalf("rollback operation = %#v", created.Operation)
+	if created.ReleaseOperation.ReleaseID != created.Release.ID ||
+		created.ReleaseOperation.Status != releaseoperation.StatusPending {
+		t.Fatalf("rollback operation = %#v", created.ReleaseOperation)
 	}
 
 	replayResponse := rollback(source.Release.ID, "rollback-source-release")
@@ -191,7 +191,7 @@ func TestRollbackCopiesSourceSnapshotAndIsIdempotent(t *testing.T) {
 		t.Fatalf("rollback replay status = %d", replayResponse.StatusCode)
 	}
 	replayed := decodeReleaseAcceptance(t, replayResponse)
-	if replayed.Release.ID != created.Release.ID || replayed.Operation.ID != created.Operation.ID {
+	if replayed.Release.ID != created.Release.ID || replayed.ReleaseOperation.ID != created.ReleaseOperation.ID {
 		t.Fatalf("rollback replay = %#v, want %#v", replayed, created)
 	}
 	db := openTestDatabase(t, environment.databaseURL)

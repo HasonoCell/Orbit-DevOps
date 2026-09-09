@@ -40,7 +40,7 @@ func (s *Service) ReadinessHandler() http.Handler {
 	})
 }
 
-// 指标只有固定名称/类别，不使用 Operation、Task 或地址作为标签。
+// 指标只有固定名称/类别，不使用 ReleaseOperation、Task 或地址作为标签。
 var dispatchDescriptors = []*prometheus.Desc{
 	prometheus.NewDesc("orbitops_dispatch_pending", "当前有效的待投递意图数量。", nil, nil),
 	prometheus.NewDesc("orbitops_dispatch_published", "已入队但尚未取得业务执行权的意图数量。", nil, nil),

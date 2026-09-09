@@ -40,8 +40,8 @@ func TestReleaseAcceptanceIsIdempotent(t *testing.T) {
 	if replayed.Release.ID != first.Release.ID {
 		t.Errorf("replayed release id = %q, want %q", replayed.Release.ID, first.Release.ID)
 	}
-	if replayed.Operation.ID != first.Operation.ID {
-		t.Errorf("replayed operation id = %q, want %q", replayed.Operation.ID, first.Operation.ID)
+	if replayed.ReleaseOperation.ID != first.ReleaseOperation.ID {
+		t.Errorf("replayed operation id = %q, want %q", replayed.ReleaseOperation.ID, first.ReleaseOperation.ID)
 	}
 
 	conflictBody := `{"imageReference":"registry.example/orbitops/demo@sha256:` +

@@ -5,18 +5,18 @@ const ids = {
   application: "22222222-2222-4222-8222-222222222222",
   target: "33333333-3333-4333-8333-333333333333",
   release: "44444444-4444-4444-8444-444444444444",
-  operation: "55555555-5555-4555-8555-555555555555",
-  attempt: "66666666-6666-4666-8666-666666666666",
+  releaseOperation: "55555555-5555-4555-8555-555555555555",
+  releaseAttempt: "66666666-6666-4666-8666-666666666666",
 };
 const now = "2026-08-30T12:00:00Z";
 
-test("成功发布显示 Operation 终态与 Kubernetes 就绪状态", async ({ page }) => {
+test("成功发布显示 ReleaseOperation 终态与 Kubernetes 就绪状态", async ({ page }) => {
   await mockControlPlane(page, "succeeded");
   await page.goto("/");
 
   await page.getByRole("button", { name: "创建并发布" }).click();
 
-  await expect(page.getByTestId("operation-status")).toHaveText(/已成功/);
+  await expect(page.getByTestId("release-operation-status")).toHaveText(/已成功/);
   await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("Ready");
   await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("完整");
   await expect(page.getByText(ids.release, { exact: true })).toBeVisible();
@@ -29,7 +29,7 @@ test("镜像拉取失败显示结构化失败与 Pod 原因", async ({ page }) =
   await page.getByRole("button", { name: "模拟拉取失败" }).click();
   await page.getByRole("button", { name: "创建并发布" }).click();
 
-  await expect(page.getByTestId("operation-status")).toHaveText(/已失败/);
+  await expect(page.getByTestId("release-operation-status")).toHaveText(/已失败/);
   await expect(page.getByRole("region", { name: "发布操作" })).toContainText("image_pull_failed");
   await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("ImagePullBackOff");
   await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("pod_waiting");
@@ -48,16 +48,16 @@ test("运行中的 Release 不匹配时显示明确提示", async ({ page }) => 
   await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("其他 Release");
 });
 
-test("取消后的 Operation 停止自动轮询", async ({ page }) => {
+test("取消后的 ReleaseOperation 停止自动轮询", async ({ page }) => {
   const traffic = await mockControlPlane(page, "canceled");
   await page.goto("/");
 
   await page.getByRole("button", { name: "创建并发布" }).click();
-  await expect(page.getByTestId("operation-status")).toHaveText("已取消");
+  await expect(page.getByTestId("release-operation-status")).toHaveText("已取消");
 
-  const settledPolls = traffic.operationPolls();
+  const settledPolls = traffic.releaseOperationPolls();
   await page.waitForTimeout(1_200);
-  expect(traffic.operationPolls()).toBe(settledPolls);
+  expect(traffic.releaseOperationPolls()).toBe(settledPolls);
 });
 
 test("移动端可以打开和关闭产品导航", async ({ page }) => {
@@ -79,7 +79,7 @@ async function mockControlPlane(
   terminal: "succeeded" | "failed" | "canceled",
   relation: "matches" | "different" = "matches",
 ) {
-  let operationPolls = 0;
+  let releaseOperationPolls = 0;
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
@@ -119,13 +119,13 @@ async function mockControlPlane(
     if (request.method() === "POST" && pathname === `/api/v1/deployment-targets/${ids.target}/releases`) {
       await json(route, 201, {
         release: releaseDocument(),
-        operation: operationDocument("pending"),
+        releaseOperation: releaseOperationDocument("pending"),
       });
       return;
     }
-    if (request.method() === "GET" && pathname === `/api/v1/operations/${ids.operation}`) {
-      operationPolls += 1;
-      await json(route, 200, operationDocument(operationPolls < 2 ? "running" : terminal));
+    if (request.method() === "GET" && pathname === `/api/v1/release-operations/${ids.releaseOperation}`) {
+      releaseOperationPolls += 1;
+      await json(route, 200, releaseOperationDocument(releaseOperationPolls < 2 ? "running" : terminal));
       return;
     }
     if (request.method() === "GET" && pathname === `/api/v1/releases/${ids.release}/diagnostics`) {
@@ -134,7 +134,7 @@ async function mockControlPlane(
     }
     await json(route, 404, { code: "not_found", message: pathname });
   });
-  return { operationPolls: () => operationPolls };
+  return { releaseOperationPolls: () => releaseOperationPolls };
 }
 
 function targetDocument() {
@@ -171,11 +171,11 @@ function releaseDocument() {
   };
 }
 
-function operationDocument(status: "pending" | "running" | "succeeded" | "failed" | "canceled") {
+function releaseOperationDocument(status: "pending" | "running" | "succeeded" | "failed" | "canceled") {
   const terminal = status === "succeeded" || status === "failed" || status === "canceled";
   const failed = status === "failed";
   return {
-    id: ids.operation,
+    id: ids.releaseOperation,
     type: "release.deploy",
     releaseId: ids.release,
     createdBy: "local-developer",
@@ -197,7 +197,7 @@ function operationDocument(status: "pending" | "running" | "succeeded" | "failed
         ? []
         : [
             {
-              id: ids.attempt,
+              id: ids.releaseAttempt,
               number: 1,
               workerId: "playwright-worker",
               status: terminal ? status : "running",
@@ -221,7 +221,7 @@ function diagnosticDocument(
   const succeeded = terminal === "succeeded";
   return {
     release: releaseDocument(),
-    operation: operationDocument(terminal),
+    releaseOperation: releaseOperationDocument(terminal),
     targetDifferences: [],
     runtimeReleaseRelation: relation,
     workloadObservation: {

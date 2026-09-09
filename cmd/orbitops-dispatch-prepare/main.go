@@ -9,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/platform/database"
 	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -39,7 +39,7 @@ func main() {
 	defer db.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	result, err := operation.New(db).PrepareDispatches(ctx, id)
+	result, err := releaseoperation.New(db).PrepareDispatches(ctx, id)
 	if err != nil {
 		fail("离线准备未完成；保持服务停止，排查后用同一批次重跑")
 	}

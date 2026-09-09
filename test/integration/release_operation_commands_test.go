@@ -8,21 +8,21 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/jmoiron/sqlx"
 )
 
-func TestRetryOperationReusesOperationAndMovesItToTargetTail(t *testing.T) {
+func TestRetryReleaseOperationReusesReleaseOperationAndMovesItToTargetTail(t *testing.T) {
 	environment := newTestEnvironment(t)
 	target := createDeploymentTarget(t, environment)
 	failed := createReleaseForTarget(t, environment, target.ID, "manual-retry-failed")
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(db)
-	failedLease := claimOperation(t, operations, "worker-manual-retry")
-	if _, err := operations.Fail(context.Background(), failedLease, operation.Failure{
-		Code: "image_pull_failed", Summary: "image unavailable", Disposition: operation.NonRetryable,
+	operations := releaseoperation.New(db)
+	failedLease := claimReleaseOperation(t, operations, "worker-manual-retry")
+	if _, err := operations.Fail(context.Background(), failedLease, releaseoperation.Failure{
+		Code: "image_pull_failed", Summary: "image unavailable", Disposition: releaseoperation.NonRetryable,
 	}); err != nil {
 		t.Fatalf("fail operation before retry: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestRetryOperationReusesOperationAndMovesItToTargetTail(t *testing.T) {
 		t,
 		environment.server,
 		http.MethodPost,
-		"/api/v1/operations/"+failed.Operation.ID+"/retry",
+		"/api/v1/release-operations/"+failed.ReleaseOperation.ID+"/retry",
 		"retry-failed-operation",
 		"",
 	)
@@ -40,21 +40,21 @@ func TestRetryOperationReusesOperationAndMovesItToTargetTail(t *testing.T) {
 	if retryResponse.StatusCode != http.StatusOK {
 		t.Fatalf("retry status = %d, want %d", retryResponse.StatusCode, http.StatusOK)
 	}
-	retried := decodeOperation(t, retryResponse)
-	if retried.ID != failed.Operation.ID || retried.Status != operation.StatusPending {
+	retried := decodeReleaseOperation(t, retryResponse)
+	if retried.ID != failed.ReleaseOperation.ID || retried.Status != releaseoperation.StatusPending {
 		t.Fatalf("retried operation = %#v", retried)
 	}
 	if retried.AttemptCount != 1 || len(retried.Attempts) != 1 ||
 		retried.AutomaticRetryCount != 0 {
 		t.Errorf("retry changed Attempt history or did not reset automatic budget: %#v", retried)
 	}
-	if !retried.QueuedAt.After(later.Operation.QueuedAt) ||
+	if !retried.QueuedAt.After(later.ReleaseOperation.QueuedAt) ||
 		!retried.AvailableAt.Equal(retried.QueuedAt) {
 		t.Errorf(
 			"retry scheduling = queued %s, available %s; later operation queued %s",
 			retried.QueuedAt,
 			retried.AvailableAt,
-			later.Operation.QueuedAt,
+			later.ReleaseOperation.QueuedAt,
 		)
 	}
 
@@ -62,7 +62,7 @@ func TestRetryOperationReusesOperationAndMovesItToTargetTail(t *testing.T) {
 		t,
 		environment.server,
 		http.MethodPost,
-		"/api/v1/operations/"+failed.Operation.ID+"/retry",
+		"/api/v1/release-operations/"+failed.ReleaseOperation.ID+"/retry",
 		"retry-failed-operation",
 		"",
 	)
@@ -70,37 +70,37 @@ func TestRetryOperationReusesOperationAndMovesItToTargetTail(t *testing.T) {
 	if replayResponse.StatusCode != http.StatusOK {
 		t.Fatalf("retry replay status = %d, want %d", replayResponse.StatusCode, http.StatusOK)
 	}
-	replayed := decodeOperation(t, replayResponse)
+	replayed := decodeReleaseOperation(t, replayResponse)
 	if replayed.ID != retried.ID || !replayed.QueuedAt.Equal(retried.QueuedAt) {
 		t.Errorf("retry replay = %#v, want original response %#v", replayed, retried)
 	}
-	assertAuditCount(t, db, failed.Operation.ID, "operation.retry", 1)
+	assertAuditCount(t, db, failed.ReleaseOperation.ID, "operation.retry", 1)
 
 	stateConflict := requestJSON(
 		t,
 		environment.server,
 		http.MethodPost,
-		"/api/v1/operations/"+failed.Operation.ID+"/retry",
+		"/api/v1/release-operations/"+failed.ReleaseOperation.ID+"/retry",
 		"retry-pending-operation",
 		"",
 	)
 	defer stateConflict.Body.Close()
-	assertError(t, stateConflict, http.StatusConflict, "operation_state_conflict")
+	assertError(t, stateConflict, http.StatusConflict, "release_operation_state_conflict")
 
-	laterLease := claimOperation(t, operations, "worker-target-head")
-	if laterLease.OperationID.String() != later.Operation.ID {
-		t.Fatalf("target head = %s, want later release %s", laterLease.OperationID, later.Operation.ID)
+	laterLease := claimReleaseOperation(t, operations, "worker-target-head")
+	if laterLease.ReleaseOperationID.String() != later.ReleaseOperation.ID {
+		t.Fatalf("target head = %s, want later release %s", laterLease.ReleaseOperationID, later.ReleaseOperation.ID)
 	}
 	if err := operations.Succeed(context.Background(), laterLease); err != nil {
 		t.Fatalf("complete target head: %v", err)
 	}
-	retryLease := claimOperation(t, operations, "worker-retried-tail")
-	if retryLease.OperationID.String() != failed.Operation.ID || retryLease.AttemptNumber != 2 {
+	retryLease := claimReleaseOperation(t, operations, "worker-retried-tail")
+	if retryLease.ReleaseOperationID.String() != failed.ReleaseOperation.ID || retryLease.ReleaseAttemptNumber != 2 {
 		t.Fatalf("retried tail lease = %#v", retryLease)
 	}
 }
 
-func TestCancelPendingOperationIsImmediateAndIdempotent(t *testing.T) {
+func TestCancelPendingReleaseOperationIsImmediateAndIdempotent(t *testing.T) {
 	environment := newTestEnvironment(t)
 	acceptance := createRelease(t, environment, "cancel-pending")
 	db := openTestDatabase(t, environment.databaseURL)
@@ -110,7 +110,7 @@ func TestCancelPendingOperationIsImmediateAndIdempotent(t *testing.T) {
 			t,
 			environment.server,
 			http.MethodPost,
-			"/api/v1/operations/"+acceptance.Operation.ID+"/cancel",
+			"/api/v1/release-operations/"+acceptance.ReleaseOperation.ID+"/cancel",
 			key,
 			"",
 		)
@@ -118,11 +118,11 @@ func TestCancelPendingOperationIsImmediateAndIdempotent(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("cancel status = %d, want %d", response.StatusCode, http.StatusOK)
 		}
-		return decodeOperation(t, response)
+		return decodeReleaseOperation(t, response)
 	}
 	first := cancel("cancel-pending-operation")
 	replayed := cancel("cancel-pending-operation")
-	if first.Status != operation.StatusCanceled || first.FinishedAt == nil ||
+	if first.Status != releaseoperation.StatusCanceled || first.FinishedAt == nil ||
 		first.AttemptCount != 0 || len(first.Attempts) != 0 {
 		t.Errorf("canceled pending operation = %#v", first)
 	}
@@ -130,10 +130,10 @@ func TestCancelPendingOperationIsImmediateAndIdempotent(t *testing.T) {
 		!replayed.FinishedAt.Equal(*first.FinishedAt) {
 		t.Errorf("cancel replay = %#v, want %#v", replayed, first)
 	}
-	assertAuditCount(t, db, acceptance.Operation.ID, "operation.cancel", 1)
+	assertAuditCount(t, db, acceptance.ReleaseOperation.ID, "operation.cancel", 1)
 
-	operations := operation.New(db)
-	if _, claimed, err := operations.ClaimNext(context.Background(), operation.ClaimRequest{
+	operations := releaseoperation.New(db)
+	if _, claimed, err := operations.ClaimNext(context.Background(), releaseoperation.ClaimRequest{
 		WorkerID: "worker-after-cancel", LeaseDuration: time.Second,
 	}); err != nil {
 		t.Fatalf("claim after cancel: %v", err)
@@ -142,16 +142,16 @@ func TestCancelPendingOperationIsImmediateAndIdempotent(t *testing.T) {
 	}
 }
 
-func TestWorkerAcknowledgesRunningOperationCancellation(t *testing.T) {
+func TestWorkerAcknowledgesRunningReleaseOperationCancellation(t *testing.T) {
 	environment := newTestEnvironment(t)
 	acceptance := createRelease(t, environment, "cancel-running")
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(db)
+	operations := releaseoperation.New(db)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	publisher := &blockingPublisher{started: make(chan struct{}), release: make(chan struct{})}
 	runner, err := worker.New(worker.Config{
 		WorkerID: "worker-cancel", LeaseDuration: 150 * time.Millisecond,
-		OperationTimeout: 3 * time.Second,
+		ReleaseOperationTimeout: 3 * time.Second,
 	}, operations, releases, publisher)
 	if err != nil {
 		t.Fatalf("create worker: %v", err)
@@ -174,7 +174,7 @@ func TestWorkerAcknowledgesRunningOperationCancellation(t *testing.T) {
 		t,
 		environment.server,
 		http.MethodPost,
-		"/api/v1/operations/"+acceptance.Operation.ID+"/cancel",
+		"/api/v1/release-operations/"+acceptance.ReleaseOperation.ID+"/cancel",
 		"cancel-running-operation",
 		"",
 	)
@@ -182,8 +182,8 @@ func TestWorkerAcknowledgesRunningOperationCancellation(t *testing.T) {
 	if cancelResponse.StatusCode != http.StatusOK {
 		t.Fatalf("request cancellation status = %d, want %d", cancelResponse.StatusCode, http.StatusOK)
 	}
-	requested := decodeOperation(t, cancelResponse)
-	if requested.Status != operation.StatusCancelRequested {
+	requested := decodeReleaseOperation(t, cancelResponse)
+	if requested.Status != releaseoperation.StatusCancelRequested {
 		t.Fatalf("requested status = %q, want cancel_requested", requested.Status)
 	}
 
@@ -195,22 +195,22 @@ func TestWorkerAcknowledgesRunningOperationCancellation(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("worker did not acknowledge cancellation")
 	}
-	current, err := operations.Get(context.Background(), mustOperationID(t, acceptance.Operation.ID))
+	current, err := operations.Get(context.Background(), mustReleaseOperationID(t, acceptance.ReleaseOperation.ID))
 	if err != nil {
 		t.Fatalf("get canceled operation: %v", err)
 	}
-	if current.Status != operation.StatusCanceled || current.FinishedAt == nil ||
-		len(current.Attempts) != 1 || current.Attempts[0].Status != operation.AttemptCanceled {
+	if current.Status != releaseoperation.StatusCanceled || current.FinishedAt == nil ||
+		len(current.Attempts) != 1 || current.Attempts[0].Status != releaseoperation.AttemptCanceled {
 		t.Errorf("worker-canceled operation = %#v", current)
 	}
-	assertAuditCount(t, db, acceptance.Operation.ID, "operation.cancel", 1)
-	assertAuditCount(t, db, acceptance.Operation.ID, "operation.canceled", 1)
+	assertAuditCount(t, db, acceptance.ReleaseOperation.ID, "operation.cancel", 1)
+	assertAuditCount(t, db, acceptance.ReleaseOperation.ID, "operation.canceled", 1)
 	var actorID, actorKind string
 	if err := db.QueryRowContext(
 		context.Background(),
 		`SELECT actor_id, actor_kind FROM audit_records
 		 WHERE target_type = 'operation' AND target_id = $1 AND action = 'operation.canceled'`,
-		acceptance.Operation.ID,
+		acceptance.ReleaseOperation.ID,
 	).Scan(&actorID, &actorKind); err != nil {
 		t.Fatalf("load Worker cancellation audit: %v", err)
 	}
@@ -224,8 +224,8 @@ func TestExpiredCancellationRequiresAttentionInsteadOfBlockingForever(t *testing
 	acceptance := createRelease(t, environment, "cancel-expired")
 	db := openTestDatabase(t, environment.databaseURL)
 	now := time.Now().UTC().Add(time.Minute)
-	operations := operation.New(db, operation.WithClock(func() time.Time { return now }))
-	lease, claimed, err := operations.ClaimNext(context.Background(), operation.ClaimRequest{
+	operations := releaseoperation.New(db, releaseoperation.WithClock(func() time.Time { return now }))
+	lease, claimed, err := operations.ClaimNext(context.Background(), releaseoperation.ClaimRequest{
 		WorkerID: "worker-disappeared", LeaseDuration: 100 * time.Millisecond,
 	})
 	if err != nil || !claimed {
@@ -235,7 +235,7 @@ func TestExpiredCancellationRequiresAttentionInsteadOfBlockingForever(t *testing
 		t,
 		environment.server,
 		http.MethodPost,
-		"/api/v1/operations/"+acceptance.Operation.ID+"/cancel",
+		"/api/v1/release-operations/"+acceptance.ReleaseOperation.ID+"/cancel",
 		"cancel-expired-operation",
 		"",
 	)
@@ -244,20 +244,20 @@ func TestExpiredCancellationRequiresAttentionInsteadOfBlockingForever(t *testing
 		t.Fatalf("request cancellation status = %d, want %d", cancelResponse.StatusCode, http.StatusOK)
 	}
 	now = now.Add(101 * time.Millisecond)
-	if _, claimed, err := operations.ClaimNext(context.Background(), operation.ClaimRequest{
+	if _, claimed, err := operations.ClaimNext(context.Background(), releaseoperation.ClaimRequest{
 		WorkerID: "worker-recovery", LeaseDuration: time.Second,
 	}); err != nil {
 		t.Fatalf("recover expired cancellation: %v", err)
 	} else if claimed {
 		t.Fatal("expired cancellation was incorrectly reclaimed for publishing")
 	}
-	current, err := operations.Get(context.Background(), lease.OperationID)
+	current, err := operations.Get(context.Background(), lease.ReleaseOperationID)
 	if err != nil {
 		t.Fatalf("get unknown cancellation: %v", err)
 	}
-	if current.Status != operation.StatusAttentionRequired || current.ErrorCode == nil ||
+	if current.Status != releaseoperation.StatusAttentionRequired || current.ErrorCode == nil ||
 		*current.ErrorCode != "cancellation_outcome_unknown" || len(current.Attempts) != 1 ||
-		current.Attempts[0].Status != operation.AttemptOutcomeUnknown {
+		current.Attempts[0].Status != releaseoperation.AttemptOutcomeUnknown {
 		t.Errorf("expired cancellation = %#v", current)
 	}
 }
@@ -265,7 +265,7 @@ func TestExpiredCancellationRequiresAttentionInsteadOfBlockingForever(t *testing
 func assertAuditCount(
 	t *testing.T,
 	database *sqlx.DB,
-	operationID string,
+	releaseOperationID string,
 	action string,
 	want int,
 ) {
@@ -275,7 +275,7 @@ func assertAuditCount(
 		context.Background(),
 		`SELECT count(*) FROM audit_records
 		 WHERE target_type = 'operation' AND target_id = $1 AND action = $2`,
-		operationID,
+		releaseOperationID,
 		action,
 	).Scan(&count); err != nil {
 		t.Fatalf("count %s audit records: %v", action, err)

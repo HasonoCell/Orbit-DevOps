@@ -13,8 +13,8 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/app"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -26,16 +26,16 @@ func TestHealthAndMetricsExposeControlPlaneState(t *testing.T) {
 	environment := newTestEnvironment(t)
 	delayed := createRelease(t, environment, "metrics-delayed")
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(
+	operations := releaseoperation.New(
 		db,
-		operation.WithAutomaticRetryPolicy(2, func(int) time.Duration { return time.Hour }),
+		releaseoperation.WithAutomaticRetryPolicy(2, func(int) time.Duration { return time.Hour }),
 	)
-	lease := claimOperation(t, operations, "metrics-worker")
-	if lease.OperationID.String() != delayed.Operation.ID {
-		t.Fatalf("metrics operation claim = %s, want %s", lease.OperationID, delayed.Operation.ID)
+	lease := claimReleaseOperation(t, operations, "metrics-worker")
+	if lease.ReleaseOperationID.String() != delayed.ReleaseOperation.ID {
+		t.Fatalf("metrics operation claim = %s, want %s", lease.ReleaseOperationID, delayed.ReleaseOperation.ID)
 	}
-	if _, err := operations.Fail(context.Background(), lease, operation.Failure{
-		Code: "temporary_outage", Summary: "temporary controlled failure", Disposition: operation.Retryable,
+	if _, err := operations.Fail(context.Background(), lease, releaseoperation.Failure{
+		Code: "temporary_outage", Summary: "temporary controlled failure", Disposition: releaseoperation.Retryable,
 	}); err != nil {
 		t.Fatalf("schedule delayed metrics operation: %v", err)
 	}
@@ -189,15 +189,15 @@ func TestReleaseTraceContinuesIntoWorkerAttempt(t *testing.T) {
 	}
 
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(db)
+	operations := releaseoperation.New(db)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	publisher := &traceRecordingPublisher{}
 	runner, err := worker.New(worker.Config{
-		WorkerID:         "trace-worker",
-		LeaseDuration:    time.Second,
-		OperationTimeout: time.Second,
-		Tracer:           tracer,
-		Propagator:       propagator,
+		WorkerID:                "trace-worker",
+		LeaseDuration:           time.Second,
+		ReleaseOperationTimeout: time.Second,
+		Tracer:                  tracer,
+		Propagator:              propagator,
 	}, operations, releases, publisher)
 	if err != nil {
 		t.Fatalf("create traced worker: %v", err)

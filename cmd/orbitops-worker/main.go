@@ -14,10 +14,10 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/dispatch"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/OrbitOps/internal/platform/process"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -54,9 +54,9 @@ func run(logger *slog.Logger) error {
 	if err := db.PingContext(ctx); err != nil {
 		return err
 	}
-	operations := operation.New(
+	operations := releaseoperation.New(
 		db,
-		operation.WithAutomaticRetryPolicy(
+		releaseoperation.WithAutomaticRetryPolicy(
 			config.MaximumAutomaticRetries,
 			func(retryNumber int) time.Duration {
 				// 每次重试成倍退避，避免 Kubernetes 短暂不可用时形成请求风暴。
@@ -73,7 +73,7 @@ func run(logger *slog.Logger) error {
 	)
 	releases := delivery.New(db, operations, projectauth.New(db))
 	metrics := observability.NewMetrics(operations.CountPending)
-	metrics.RegisterOperations(operations.ReadMetricsSnapshot)
+	metrics.RegisterReleaseOperations(operations.ReadMetricsSnapshot)
 	tracing := observability.NewTracing(logger)
 	defer func() {
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -98,13 +98,13 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	runner, err := worker.New(worker.Config{
-		WorkerID:         config.WorkerID,
-		LeaseDuration:    config.LeaseDuration,
-		OperationTimeout: config.OperationTimeout,
-		Logger:           logger,
-		Recorder:         metrics,
-		Tracer:           tracing.Provider.Tracer("orbitops-worker"),
-		Propagator:       tracing.Propagator,
+		WorkerID:                config.WorkerID,
+		LeaseDuration:           config.LeaseDuration,
+		ReleaseOperationTimeout: config.ReleaseOperationTimeout,
+		Logger:                  logger,
+		Recorder:                metrics,
+		Tracer:                  tracing.Provider.Tracer("orbitops-worker"),
+		Propagator:              tracing.Propagator,
 	}, operations, releases, adapter)
 	if err != nil {
 		return err

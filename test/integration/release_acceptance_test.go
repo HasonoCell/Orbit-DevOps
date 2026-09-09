@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestReleaseAcceptanceAtomicallyCreatesPendingOperation(t *testing.T) {
+func TestReleaseAcceptanceAtomicallyCreatesPendingReleaseOperation(t *testing.T) {
 	environment := newTestEnvironment(t)
 	target := createDeploymentTarget(t, environment)
 	imageReference := "registry.example/orbitops/demo@sha256:" + strings.Repeat("a", 64)
@@ -57,56 +57,56 @@ func TestReleaseAcceptanceAtomicallyCreatesPendingOperation(t *testing.T) {
 		t.Error("release createdAt is zero")
 	}
 
-	if _, err := uuid.Parse(acceptance.Operation.ID); err != nil {
-		t.Errorf("operation id = %q, want UUID: %v", acceptance.Operation.ID, err)
+	if _, err := uuid.Parse(acceptance.ReleaseOperation.ID); err != nil {
+		t.Errorf("operation id = %q, want UUID: %v", acceptance.ReleaseOperation.ID, err)
 	}
-	if acceptance.Operation.Type != "release.deploy" {
-		t.Errorf("operation type = %q, want %q", acceptance.Operation.Type, "release.deploy")
+	if acceptance.ReleaseOperation.Type != "release.deploy" {
+		t.Errorf("operation type = %q, want %q", acceptance.ReleaseOperation.Type, "release.deploy")
 	}
-	if acceptance.Operation.ReleaseID != acceptance.Release.ID {
+	if acceptance.ReleaseOperation.ReleaseID != acceptance.Release.ID {
 		t.Errorf(
 			"operation releaseId = %q, want %q",
-			acceptance.Operation.ReleaseID,
+			acceptance.ReleaseOperation.ReleaseID,
 			acceptance.Release.ID,
 		)
 	}
-	if acceptance.Operation.DeploymentTargetID != target.ID {
+	if acceptance.ReleaseOperation.DeploymentTargetID != target.ID {
 		t.Errorf(
 			"operation deploymentTargetId = %q, want %q",
-			acceptance.Operation.DeploymentTargetID,
+			acceptance.ReleaseOperation.DeploymentTargetID,
 			target.ID,
 		)
 	}
-	if acceptance.Operation.CreatedBy != "local-developer" {
-		t.Errorf("operation createdBy = %q, want %q", acceptance.Operation.CreatedBy, "local-developer")
+	if acceptance.ReleaseOperation.CreatedBy != "local-developer" {
+		t.Errorf("operation createdBy = %q, want %q", acceptance.ReleaseOperation.CreatedBy, "local-developer")
 	}
-	if acceptance.Operation.IdempotencyKey != "release-demo-v1" {
+	if acceptance.ReleaseOperation.IdempotencyKey != "release-demo-v1" {
 		t.Errorf(
 			"operation idempotencyKey = %q, want %q",
-			acceptance.Operation.IdempotencyKey,
+			acceptance.ReleaseOperation.IdempotencyKey,
 			"release-demo-v1",
 		)
 	}
-	if acceptance.Operation.Status != "pending" {
-		t.Errorf("operation status = %q, want %q", acceptance.Operation.Status, "pending")
+	if acceptance.ReleaseOperation.Status != "pending" {
+		t.Errorf("operation status = %q, want %q", acceptance.ReleaseOperation.Status, "pending")
 	}
-	if acceptance.Operation.AttemptCount != 0 {
-		t.Errorf("attemptCount = %d, want 0", acceptance.Operation.AttemptCount)
+	if acceptance.ReleaseOperation.AttemptCount != 0 {
+		t.Errorf("attemptCount = %d, want 0", acceptance.ReleaseOperation.AttemptCount)
 	}
-	if acceptance.Operation.AutomaticRetryCount != 0 {
-		t.Errorf("automaticRetryCount = %d, want 0", acceptance.Operation.AutomaticRetryCount)
+	if acceptance.ReleaseOperation.AutomaticRetryCount != 0 {
+		t.Errorf("automaticRetryCount = %d, want 0", acceptance.ReleaseOperation.AutomaticRetryCount)
 	}
-	if acceptance.Operation.RecoveryRequired {
+	if acceptance.ReleaseOperation.RecoveryRequired {
 		t.Error("new operation unexpectedly requires recovery")
 	}
-	if acceptance.Operation.QueuedAt.IsZero() || acceptance.Operation.AvailableAt.IsZero() {
+	if acceptance.ReleaseOperation.QueuedAt.IsZero() || acceptance.ReleaseOperation.AvailableAt.IsZero() {
 		t.Error("pending operation has no scheduling timestamps")
 	}
-	if acceptance.Operation.ErrorCode != nil || acceptance.Operation.ErrorSummary != nil ||
-		acceptance.Operation.RetryDisposition != nil {
+	if acceptance.ReleaseOperation.ErrorCode != nil || acceptance.ReleaseOperation.ErrorSummary != nil ||
+		acceptance.ReleaseOperation.RetryDisposition != nil {
 		t.Error("pending operation contains terminal error")
 	}
-	if acceptance.Operation.StartedAt != nil || acceptance.Operation.FinishedAt != nil {
+	if acceptance.ReleaseOperation.StartedAt != nil || acceptance.ReleaseOperation.FinishedAt != nil {
 		t.Error("pending operation contains terminal timestamps")
 	}
 
@@ -120,14 +120,14 @@ func TestReleaseAcceptanceAtomicallyCreatesPendingOperation(t *testing.T) {
 		t.Errorf("retrieved release id = %q, want %q", retrievedRelease.ID, acceptance.Release.ID)
 	}
 
-	operationResponse := environment.get(t, "/api/v1/operations/"+acceptance.Operation.ID)
-	defer operationResponse.Body.Close()
-	if operationResponse.StatusCode != http.StatusOK {
-		t.Fatalf("get operation status = %d, want %d", operationResponse.StatusCode, http.StatusOK)
+	releaseOperationResponse := environment.get(t, "/api/v1/release-operations/"+acceptance.ReleaseOperation.ID)
+	defer releaseOperationResponse.Body.Close()
+	if releaseOperationResponse.StatusCode != http.StatusOK {
+		t.Fatalf("get operation status = %d, want %d", releaseOperationResponse.StatusCode, http.StatusOK)
 	}
-	retrievedOperation := decodeOperation(t, operationResponse)
-	if retrievedOperation.ID != acceptance.Operation.ID {
-		t.Errorf("retrieved operation id = %q, want %q", retrievedOperation.ID, acceptance.Operation.ID)
+	retrievedReleaseOperation := decodeReleaseOperation(t, releaseOperationResponse)
+	if retrievedReleaseOperation.ID != acceptance.ReleaseOperation.ID {
+		t.Errorf("retrieved operation id = %q, want %q", retrievedReleaseOperation.ID, acceptance.ReleaseOperation.ID)
 	}
 }
 

@@ -1,4 +1,4 @@
-package operation
+package releaseoperation
 
 import (
 	"context"
@@ -10,7 +10,7 @@ type LabeledCount struct {
 	Count int    `db:"count"`
 }
 
-// MetricsSnapshot 汇总可以从 PostgreSQL 重新构建的低基数 Operation 事实。
+// MetricsSnapshot 汇总可以从 PostgreSQL 重新构建的低基数 ReleaseOperation 事实。
 type MetricsSnapshot struct {
 	Statuses          []LabeledCount
 	PendingAvailable  int

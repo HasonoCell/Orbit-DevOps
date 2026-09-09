@@ -725,7 +725,7 @@ paths:
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "201":
-          description: 回滚 Release 与待处理 Operation 已原子创建
+          description: 回滚 Release 与待处理 ReleaseOperation 已原子创建
           content:
             application/json:
               schema:
@@ -754,12 +754,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/operations/{operationId}:
+  /api/v1/release-operations/{releaseOperationId}:
     get:
-      operationId: getOperation
+      operationId: getReleaseOperation
       summary: 查询异步操作
       parameters:
-        - name: operationId
+        - name: releaseOperationId
           in: path
           required: true
           schema:
@@ -771,7 +771,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Operation"
+                $ref: "#/components/schemas/ReleaseOperation"
         "404":
           description: 操作不存在
           content:
@@ -784,12 +784,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/operations/{operationId}/retry:
+  /api/v1/release-operations/{releaseOperationId}/retry:
     post:
-      operationId: retryOperation
+      operationId: retryReleaseOperation
       summary: 重新排队一个确定失败或已安全确认的操作
       parameters:
-        - name: operationId
+        - name: releaseOperationId
           in: path
           required: true
           schema:
@@ -798,11 +798,11 @@ paths:
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
-          description: 原 Operation 已重新进入目标队尾
+          description: 原 ReleaseOperation 已重新进入目标队尾
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Operation"
+                $ref: "#/components/schemas/ReleaseOperation"
         "403":
           description: 当前项目角色不能重试操作
           content:
@@ -827,12 +827,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/operations/{operationId}/reconcile:
+  /api/v1/release-operations/{releaseOperationId}/reconcile:
     post:
-      operationId: reconcileOperation
+      operationId: reconcileReleaseOperation
       summary: 只读核验需要人工关注的操作
       parameters:
-        - name: operationId
+        - name: releaseOperationId
           in: path
           required: true
           schema:
@@ -845,7 +845,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Operation"
+                $ref: "#/components/schemas/ReleaseOperation"
         "403":
           description: 当前项目角色不能核验操作
           content:
@@ -870,12 +870,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/operations/{operationId}/fail:
+  /api/v1/release-operations/{releaseOperationId}/fail:
     post:
-      operationId: forceFailOperation
+      operationId: forceFailReleaseOperation
       summary: 人工结束无法自动判断的操作
       parameters:
-        - name: operationId
+        - name: releaseOperationId
           in: path
           required: true
           schema:
@@ -887,14 +887,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ForceFailOperationRequest"
+              $ref: "#/components/schemas/ForceFailReleaseOperationRequest"
       responses:
         "200":
           description: 操作已由项目 owner 标记为失败
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Operation"
+                $ref: "#/components/schemas/ReleaseOperation"
         "403":
           description: 只有项目 owner 可以人工结束未知结果
           content:
@@ -919,12 +919,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/operations/{operationId}/cancel:
+  /api/v1/release-operations/{releaseOperationId}/cancel:
     post:
-      operationId: cancelOperation
+      operationId: cancelReleaseOperation
       summary: 取消排队中或运行中的操作
       parameters:
-        - name: operationId
+        - name: releaseOperationId
           in: path
           required: true
           schema:
@@ -937,7 +937,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Operation"
+                $ref: "#/components/schemas/ReleaseOperation"
         "403":
           description: 当前项目角色不能取消操作
           content:
@@ -1276,13 +1276,13 @@ components:
       additionalProperties: false
       required:
         - release
-        - operation
+        - releaseOperation
       properties:
         release:
           $ref: "#/components/schemas/Release"
-        operation:
-          $ref: "#/components/schemas/OperationSummary"
-    OperationSummary:
+        releaseOperation:
+          $ref: "#/components/schemas/ReleaseOperationSummary"
+    ReleaseOperationSummary:
       type: object
       additionalProperties: false
       required:
@@ -1376,7 +1376,7 @@ components:
       required:
         - release
         - snapshotDifferences
-        - operation
+        - releaseOperation
         - auditTimeline
       properties:
         release:
@@ -1385,8 +1385,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SnapshotDifference"
-        operation:
-          $ref: "#/components/schemas/Operation"
+        releaseOperation:
+          $ref: "#/components/schemas/ReleaseOperation"
         auditTimeline:
           type: array
           items:
@@ -1397,7 +1397,7 @@ components:
         - retryable
         - non_retryable
         - unknown_outcome
-    ForceFailOperationRequest:
+    ForceFailReleaseOperationRequest:
       type: object
       additionalProperties: false
       required:
@@ -1407,7 +1407,7 @@ components:
           type: string
           minLength: 1
           maxLength: 512
-    Operation:
+    ReleaseOperation:
       type: object
       additionalProperties: false
       required:
@@ -1489,8 +1489,8 @@ components:
         attempts:
           type: array
           items:
-            $ref: "#/components/schemas/OperationAttempt"
-    OperationAttempt:
+            $ref: "#/components/schemas/ReleaseAttempt"
+    ReleaseAttempt:
       type: object
       additionalProperties: false
       required:
@@ -1533,7 +1533,7 @@ components:
       additionalProperties: false
       required:
         - release
-        - operation
+        - releaseOperation
         - targetDifferences
         - runtimeReleaseRelation
         - workloadObservation
@@ -1543,8 +1543,8 @@ components:
       properties:
         release:
           $ref: "#/components/schemas/Release"
-        operation:
-          $ref: "#/components/schemas/Operation"
+        releaseOperation:
+          $ref: "#/components/schemas/ReleaseOperation"
         targetDifferences:
           type: array
           items:
@@ -1867,7 +1867,7 @@ components:
         code:
           type: string
           enum:
-            - operation_attention_required
+            - release_operation_attention_required
             - operation_failed
             - runtime_observation_unavailable
             - deployment_missing
@@ -1948,12 +1948,12 @@ components:
       additionalProperties: false
       required:
         - release
-        - operation
+        - releaseOperation
       properties:
         release:
           $ref: "#/components/schemas/Release"
-        operation:
-          $ref: "#/components/schemas/Operation"
+        releaseOperation:
+          $ref: "#/components/schemas/ReleaseOperation"
     Error:
       type: object
       additionalProperties: false

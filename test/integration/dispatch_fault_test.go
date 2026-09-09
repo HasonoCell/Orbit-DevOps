@@ -16,8 +16,8 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/dispatch"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/google/uuid"
@@ -66,9 +66,9 @@ func awaitQueueCondition(t *testing.T, timeout time.Duration, condition func() b
 	t.Fatal("queue condition not reached before deadline")
 }
 
-func awaitQueuedStatus(t *testing.T, operations *operation.Module, id string, status operation.OperationStatus) operation.Record {
+func awaitQueuedStatus(t *testing.T, operations *releaseoperation.Module, id string, status releaseoperation.ReleaseOperationStatus) releaseoperation.Record {
 	t.Helper()
-	var result operation.Record
+	var result releaseoperation.Record
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		var err error
@@ -83,11 +83,11 @@ func awaitQueuedStatus(t *testing.T, operations *operation.Module, id string, st
 	return result
 }
 
-func newQueueWithPublisher(t *testing.T, environment *testEnvironment, address string, publisher worker.Publisher) (*dispatch.Service, *operation.Module) {
+func newQueueWithPublisher(t *testing.T, environment *testEnvironment, address string, publisher worker.Publisher) (*dispatch.Service, *releaseoperation.Module) {
 	t.Helper()
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(db, operation.WithAutomaticRetryPolicy(1, func(int) time.Duration { return 200 * time.Millisecond }))
-	runner, err := worker.New(worker.Config{WorkerID: uuid.NewString(), LeaseDuration: 500 * time.Millisecond, OperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db)), publisher)
+	operations := releaseoperation.New(db, releaseoperation.WithAutomaticRetryPolicy(1, func(int) time.Duration { return 200 * time.Millisecond }))
+	runner, err := worker.New(worker.Config{WorkerID: uuid.NewString(), LeaseDuration: 500 * time.Millisecond, ReleaseOperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db)), publisher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,8 +117,8 @@ func TestQueueSurvivesRedisOutageDuringAcceptance(t *testing.T) {
 		stats, err := operations.ReadDispatchMetrics(ctx)
 		return err == nil && stats.Reservations > 0
 	})
-	current, err := operations.Get(ctx, uuid.MustParse(accepted.Operation.ID))
-	if err != nil || current.Status != operation.StatusPending || current.AttemptCount != 0 {
+	current, err := operations.Get(ctx, uuid.MustParse(accepted.ReleaseOperation.ID))
+	if err != nil || current.Status != releaseoperation.StatusPending || current.AttemptCount != 0 {
 		t.Fatalf("offline acceptance: %+v %v", current, err)
 	}
 	if err := container.Start(ctx); err != nil {
@@ -129,7 +129,7 @@ func TestQueueSurvivesRedisOutageDuringAcceptance(t *testing.T) {
 	if err != nil || restartedPort.Port() != originalPort {
 		t.Fatalf("Redis restart changed fixture port: before=%s after=%s error=%v", originalPort, restartedPort, err)
 	}
-	current = awaitQueuedStatus(t, operations, accepted.Operation.ID, operation.StatusSucceeded)
+	current = awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 	if current.AttemptCount != 1 || current.AutomaticRetryCount != 0 {
 		t.Fatalf("transport spent business budget: %+v", current)
 	}
@@ -155,7 +155,7 @@ func TestQueueRepairsPublishedMessageLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 	startQueueTest(t, service)
-	current := awaitQueuedStatus(t, operations, accepted.Operation.ID, operation.StatusSucceeded)
+	current := awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 	stats, err := operations.ReadDispatchMetrics(context.Background())
 	if err != nil || stats.Redeliveries < 1 || current.AttemptCount != 1 || current.AutomaticRetryCount != 0 {
 		t.Fatalf("lost message recovery: %+v %+v %v", current, stats, err)
@@ -176,16 +176,16 @@ func TestQueuePreservesBusinessRetryAndRollback(t *testing.T) {
 	service, operations := newQueueWithPublisher(t, environment, address, publisher)
 	accepted := createRelease(t, environment, "queue-retry")
 	startQueueTest(t, service)
-	failed := awaitQueuedStatus(t, operations, accepted.Operation.ID, operation.StatusFailed)
+	failed := awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusFailed)
 	if failed.AttemptCount != 2 || failed.AutomaticRetryCount != 1 {
 		t.Fatalf("automatic budget: %+v", failed)
 	}
-	retry := environment.postJSON(t, "/api/v1/operations/"+accepted.Operation.ID+"/retry", "queue-explicit-retry", "")
+	retry := environment.postJSON(t, "/api/v1/release-operations/"+accepted.ReleaseOperation.ID+"/retry", "queue-explicit-retry", "")
 	retry.Body.Close()
 	if retry.StatusCode != http.StatusOK {
 		t.Fatalf("retry status: %d", retry.StatusCode)
 	}
-	current := awaitQueuedStatus(t, operations, accepted.Operation.ID, operation.StatusSucceeded)
+	current := awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 	if current.AttemptCount != 3 || current.AutomaticRetryCount != 0 {
 		t.Fatalf("explicit retry: %+v", current)
 	}
@@ -195,17 +195,17 @@ func TestQueuePreservesBusinessRetryAndRollback(t *testing.T) {
 		t.Fatalf("rollback: %d", response.StatusCode)
 	}
 	var rolled struct {
-		Operation struct {
+		ReleaseOperation struct {
 			ID string `json:"id"`
-		} `json:"operation"`
+		} `json:"releaseOperation"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&rolled); err != nil {
 		t.Fatal(err)
 	}
-	if rolled.Operation.ID == accepted.Operation.ID {
+	if rolled.ReleaseOperation.ID == accepted.ReleaseOperation.ID {
 		t.Fatal("rollback reused operation")
 	}
-	awaitQueuedStatus(t, operations, rolled.Operation.ID, operation.StatusSucceeded)
+	awaitQueuedStatus(t, operations, rolled.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 }
 
 type publisherFunc func(context.Context, worker.PublishRequest) error
@@ -215,7 +215,7 @@ func (f publisherFunc) Publish(ctx context.Context, request worker.PublishReques
 }
 
 // 外层退出取消不是用户取消；停止续期后保留 running，由新的恢复意图读后写接管。
-func TestQueueShutdownLeavesRecoverableOperation(t *testing.T) {
+func TestQueueShutdownLeavesRecoverableReleaseOperation(t *testing.T) {
 	environment := newTestEnvironment(t)
 	_, address := testsupport.StartRedis(t)
 	entered := make(chan struct{})
@@ -232,14 +232,14 @@ func TestQueueShutdownLeavesRecoverableOperation(t *testing.T) {
 		t.Fatal("publisher not started")
 	}
 	stop()
-	current, err := operations.Get(context.Background(), uuid.MustParse(accepted.Operation.ID))
-	if err != nil || current.Status != operation.StatusRunning || current.AttemptCount != 1 {
+	current, err := operations.Get(context.Background(), uuid.MustParse(accepted.ReleaseOperation.ID))
+	if err != nil || current.Status != releaseoperation.StatusRunning || current.AttemptCount != 1 {
 		t.Fatalf("shutdown faked cancellation: %+v %v", current, err)
 	}
 	recovering, _ := newQueueWithPublisher(t, environment, address, &recoveryRecordingPublisher{observation: worker.RecoveryObservation{Action: worker.RecoverySucceeded}})
 	startQueueTest(t, recovering)
-	current = awaitQueuedStatus(t, operations, accepted.Operation.ID, operation.StatusSucceeded)
-	if current.AttemptCount != 2 || current.Attempts[0].Status != operation.AttemptOutcomeUnknown {
+	current = awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
+	if current.AttemptCount != 2 || current.Attempts[0].Status != releaseoperation.AttemptOutcomeUnknown {
 		t.Fatalf("shutdown recovery: %+v", current)
 	}
 }
@@ -249,16 +249,16 @@ func TestQueueRejectsMalformedMessagesAndRedactsErrors(t *testing.T) {
 	environment := newTestEnvironment(t)
 	_, address := testsupport.StartRedis(t)
 	accepted := createRelease(t, environment, "bad-message")
-	operations := operation.New(openTestDatabase(t, environment.databaseURL))
-	var ref operation.DispatchRef
+	operations := releaseoperation.New(openTestDatabase(t, environment.databaseURL))
+	var ref releaseoperation.DispatchRef
 	db := openTestDatabase(t, environment.databaseURL)
-	if err := db.Get(&ref, `SELECT id,operation_id,sequence,protocol_version FROM operation_dispatches WHERE operation_id=$1`, accepted.Operation.ID); err != nil {
+	if err := db.Get(&ref, `SELECT id,operation_id,sequence,protocol_version FROM operation_dispatches WHERE operation_id=$1`, accepted.ReleaseOperation.ID); err != nil {
 		t.Fatal(err)
 	}
 	var logs bytes.Buffer
 	config := queueConfig(address)
 	config.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
-	service, err := dispatch.New(config, operations, executorFunc(func(context.Context, operation.DispatchRef) (operation.ClaimOutcome, error) {
+	service, err := dispatch.New(config, operations, executorFunc(func(context.Context, releaseoperation.DispatchRef) (releaseoperation.ClaimOutcome, error) {
 		return "", errors.New("secret-probe-not-real-credential")
 	}))
 	if err != nil {
@@ -296,7 +296,7 @@ func TestQueueRejectsMalformedMessagesAndRedactsErrors(t *testing.T) {
 	if err != nil || stats.Quarantined != 0 {
 		t.Fatalf("bad message quarantined valid intent: %+v %v", stats, err)
 	}
-	current, err := operations.Get(context.Background(), uuid.MustParse(accepted.Operation.ID))
+	current, err := operations.Get(context.Background(), uuid.MustParse(accepted.ReleaseOperation.ID))
 	if err != nil || current.AttemptCount != 0 {
 		t.Fatalf("transport error created attempt: %+v %v", current, err)
 	}
@@ -312,8 +312,8 @@ func TestQueueRejectsMalformedMessagesAndRedactsErrors(t *testing.T) {
 	}
 }
 
-type executorFunc func(context.Context, operation.DispatchRef) (operation.ClaimOutcome, error)
+type executorFunc func(context.Context, releaseoperation.DispatchRef) (releaseoperation.ClaimOutcome, error)
 
-func (f executorFunc) RunDispatch(ctx context.Context, ref operation.DispatchRef) (operation.ClaimOutcome, error) {
+func (f executorFunc) RunDispatch(ctx context.Context, ref releaseoperation.DispatchRef) (releaseoperation.ClaimOutcome, error) {
 	return f(ctx, ref)
 }

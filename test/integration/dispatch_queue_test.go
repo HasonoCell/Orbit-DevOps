@@ -7,8 +7,8 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/dispatch"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 )
@@ -19,8 +19,8 @@ func TestQueueDeliversAcceptedRelease(t *testing.T) {
 	_, address := testsupport.StartRedis(t)
 	accepted := createRelease(t, environment, "asynq-release")
 	db := openTestDatabase(t, environment.databaseURL)
-	operations := operation.New(db)
-	runner, err := worker.New(worker.Config{WorkerID: "queue-test", LeaseDuration: time.Second, OperationTimeout: time.Second},
+	operations := releaseoperation.New(db)
+	runner, err := worker.New(worker.Config{WorkerID: "queue-test", LeaseDuration: time.Second, ReleaseOperationTimeout: time.Second},
 		operations, delivery.New(db, operations, projectauth.New(db)), &recordingPublisher{})
 	if err != nil {
 		t.Fatal(err)
@@ -45,11 +45,11 @@ func TestQueueDeliversAcceptedRelease(t *testing.T) {
 	})
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		current, err := operations.Get(ctx, mustOperationID(t, accepted.Operation.ID))
+		current, err := operations.Get(ctx, mustReleaseOperationID(t, accepted.ReleaseOperation.ID))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if current.Status == operation.StatusSucceeded {
+		if current.Status == releaseoperation.StatusSucceeded {
 			if current.AttemptCount != 1 {
 				t.Fatalf("attempts = %d", current.AttemptCount)
 			}

@@ -229,7 +229,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/operations/{operationId}": {
+    "/api/v1/release-operations/{releaseOperationId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -237,7 +237,7 @@ export interface paths {
             cookie?: never;
         };
         /** 查询异步操作 */
-        get: operations["getOperation"];
+        get: operations["getReleaseOperation"];
         put?: never;
         post?: never;
         delete?: never;
@@ -246,7 +246,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/operations/{operationId}/retry": {
+    "/api/v1/release-operations/{releaseOperationId}/retry": {
         parameters: {
             query?: never;
             header?: never;
@@ -256,14 +256,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** 重新排队一个确定失败或已安全确认的操作 */
-        post: operations["retryOperation"];
+        post: operations["retryReleaseOperation"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/operations/{operationId}/reconcile": {
+    "/api/v1/release-operations/{releaseOperationId}/reconcile": {
         parameters: {
             query?: never;
             header?: never;
@@ -273,14 +273,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** 只读核验需要人工关注的操作 */
-        post: operations["reconcileOperation"];
+        post: operations["reconcileReleaseOperation"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/operations/{operationId}/fail": {
+    "/api/v1/release-operations/{releaseOperationId}/fail": {
         parameters: {
             query?: never;
             header?: never;
@@ -290,14 +290,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** 人工结束无法自动判断的操作 */
-        post: operations["forceFailOperation"];
+        post: operations["forceFailReleaseOperation"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/operations/{operationId}/cancel": {
+    "/api/v1/release-operations/{releaseOperationId}/cancel": {
         parameters: {
             query?: never;
             header?: never;
@@ -307,7 +307,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** 取消排队中或运行中的操作 */
-        post: operations["cancelOperation"];
+        post: operations["cancelReleaseOperation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -430,9 +430,9 @@ export interface components {
         };
         ReleaseHistoryItem: {
             release: components["schemas"]["Release"];
-            operation: components["schemas"]["OperationSummary"];
+            releaseOperation: components["schemas"]["ReleaseOperationSummary"];
         };
-        OperationSummary: {
+        ReleaseOperationSummary: {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
@@ -471,15 +471,15 @@ export interface components {
         ReleaseDetail: {
             release: components["schemas"]["Release"];
             snapshotDifferences: components["schemas"]["SnapshotDifference"][];
-            operation: components["schemas"]["Operation"];
+            releaseOperation: components["schemas"]["ReleaseOperation"];
             auditTimeline: components["schemas"]["AuditRecord"][];
         };
         /** @enum {string} */
         RetryDisposition: "retryable" | "non_retryable" | "unknown_outcome";
-        ForceFailOperationRequest: {
+        ForceFailReleaseOperationRequest: {
             reason: string;
         };
-        Operation: {
+        ReleaseOperation: {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
@@ -510,9 +510,9 @@ export interface components {
             startedAt?: string;
             /** Format: date-time */
             finishedAt?: string;
-            attempts: components["schemas"]["OperationAttempt"][];
+            attempts: components["schemas"]["ReleaseAttempt"][];
         };
-        OperationAttempt: {
+        ReleaseAttempt: {
             /** Format: uuid */
             id: string;
             number: number;
@@ -529,7 +529,7 @@ export interface components {
         };
         ReleaseDiagnosticReport: {
             release: components["schemas"]["Release"];
-            operation: components["schemas"]["Operation"];
+            releaseOperation: components["schemas"]["ReleaseOperation"];
             targetDifferences: components["schemas"]["SnapshotDifference"][];
             /** @enum {string} */
             runtimeReleaseRelation: "matches" | "different" | "absent" | "unknown";
@@ -641,7 +641,7 @@ export interface components {
         };
         DiagnosticSignal: {
             /** @enum {string} */
-            code: "operation_attention_required" | "operation_failed" | "runtime_observation_unavailable" | "deployment_missing" | "runtime_release_different" | "resource_ownership_conflict" | "rollout_incomplete" | "pod_waiting" | "pod_restarting" | "warning_event_observed";
+            code: "release_operation_attention_required" | "operation_failed" | "runtime_observation_unavailable" | "deployment_missing" | "runtime_release_different" | "resource_ownership_conflict" | "rollout_incomplete" | "pod_waiting" | "pod_restarting" | "warning_event_observed";
             /** @enum {string} */
             severity: "error" | "warning" | "info";
             summary: string;
@@ -669,7 +669,7 @@ export interface components {
         };
         ReleaseAcceptance: {
             release: components["schemas"]["Release"];
-            operation: components["schemas"]["Operation"];
+            releaseOperation: components["schemas"]["ReleaseOperation"];
         };
         Error: {
             code: string;
@@ -1599,7 +1599,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 回滚 Release 与待处理 Operation 已原子创建 */
+            /** @description 回滚 Release 与待处理 ReleaseOperation 已原子创建 */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -1646,12 +1646,12 @@ export interface operations {
             };
         };
     };
-    getOperation: {
+    getReleaseOperation: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                operationId: string;
+                releaseOperationId: string;
             };
             cookie?: never;
         };
@@ -1663,7 +1663,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Operation"];
+                    "application/json": components["schemas"]["ReleaseOperation"];
                 };
             };
             /** @description 操作不存在 */
@@ -1686,7 +1686,7 @@ export interface operations {
             };
         };
     };
-    retryOperation: {
+    retryReleaseOperation: {
         parameters: {
             query?: never;
             header: {
@@ -1694,19 +1694,19 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
-                operationId: string;
+                releaseOperationId: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description 原 Operation 已重新进入目标队尾 */
+            /** @description 原 ReleaseOperation 已重新进入目标队尾 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Operation"];
+                    "application/json": components["schemas"]["ReleaseOperation"];
                 };
             };
             /** @description 当前项目角色不能重试操作 */
@@ -1747,7 +1747,7 @@ export interface operations {
             };
         };
     };
-    reconcileOperation: {
+    reconcileReleaseOperation: {
         parameters: {
             query?: never;
             header: {
@@ -1755,7 +1755,7 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
-                operationId: string;
+                releaseOperationId: string;
             };
             cookie?: never;
         };
@@ -1767,7 +1767,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Operation"];
+                    "application/json": components["schemas"]["ReleaseOperation"];
                 };
             };
             /** @description 当前项目角色不能核验操作 */
@@ -1808,7 +1808,7 @@ export interface operations {
             };
         };
     };
-    forceFailOperation: {
+    forceFailReleaseOperation: {
         parameters: {
             query?: never;
             header: {
@@ -1816,13 +1816,13 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
-                operationId: string;
+                releaseOperationId: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ForceFailOperationRequest"];
+                "application/json": components["schemas"]["ForceFailReleaseOperationRequest"];
             };
         };
         responses: {
@@ -1832,7 +1832,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Operation"];
+                    "application/json": components["schemas"]["ReleaseOperation"];
                 };
             };
             /** @description 只有项目 owner 可以人工结束未知结果 */
@@ -1873,7 +1873,7 @@ export interface operations {
             };
         };
     };
-    cancelOperation: {
+    cancelReleaseOperation: {
         parameters: {
             query?: never;
             header: {
@@ -1881,7 +1881,7 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
-                operationId: string;
+                releaseOperationId: string;
             };
             cookie?: never;
         };
@@ -1893,7 +1893,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Operation"];
+                    "application/json": components["schemas"]["ReleaseOperation"];
                 };
             };
             /** @description 当前项目角色不能取消操作 */

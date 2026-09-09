@@ -1,4 +1,4 @@
-package operation
+package releaseoperation
 
 import (
 	"context"
@@ -22,7 +22,7 @@ var (
 	ErrStaleObservation      = errors.New("operation changed after external observation")
 )
 
-// Authorizer 把项目角色校验保持在 Operation 状态事务内，避免授权与写入之间出现竞态。
+// Authorizer 把项目角色校验保持在 ReleaseOperation 状态事务内，避免授权与写入之间出现竞态。
 type Authorizer interface {
 	RequireInTransaction(
 		ctx context.Context,
@@ -34,7 +34,7 @@ type Authorizer interface {
 }
 
 type RetryCommand struct {
-	OperationID        uuid.UUID
+	ReleaseOperationID uuid.UUID
 	ActorID            string
 	IdempotencyKey     string
 	AttentionConfirmed bool
@@ -42,12 +42,12 @@ type RetryCommand struct {
 }
 
 type CancelCommand struct {
-	OperationID    uuid.UUID
-	ActorID        string
-	IdempotencyKey string
+	ReleaseOperationID uuid.UUID
+	ActorID            string
+	IdempotencyKey     string
 }
 
-// Retry 将确定失败的同一个 Operation 放回目标队尾，并保留其全部 Attempt 历史。
+// Retry 将确定失败的同一个 ReleaseOperation 放回目标队尾，并保留其全部 Attempt 历史。
 func (m *Module) Retry(ctx context.Context, command RetryCommand) (Record, error) {
 	permission := projectauth.PermissionDevelop
 	expectedStatus := StatusFailed
@@ -57,14 +57,14 @@ func (m *Module) Retry(ctx context.Context, command RetryCommand) (Record, error
 	}
 	return m.executeUserCommand(
 		ctx,
-		command.OperationID,
+		command.ReleaseOperationID,
 		command.ActorID,
 		command.IdempotencyKey,
 		"operation.retry",
 		permission,
 		struct {
-			OperationID uuid.UUID `json:"operationId"`
-		}{command.OperationID},
+			ReleaseOperationID uuid.UUID `json:"operationId"`
+		}{command.ReleaseOperationID},
 		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
 			if current.Status != expectedStatus {
 				return ErrInvalidTransition
@@ -96,14 +96,14 @@ func (m *Module) Retry(ctx context.Context, command RetryCommand) (Record, error
 func (m *Module) Cancel(ctx context.Context, command CancelCommand) (Record, error) {
 	return m.executeUserCommand(
 		ctx,
-		command.OperationID,
+		command.ReleaseOperationID,
 		command.ActorID,
 		command.IdempotencyKey,
 		"operation.cancel",
 		projectauth.PermissionDevelop,
 		struct {
-			OperationID uuid.UUID `json:"operationId"`
-		}{command.OperationID},
+			ReleaseOperationID uuid.UUID `json:"operationId"`
+		}{command.ReleaseOperationID},
 		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
 			switch current.Status {
 			case StatusPending:
@@ -151,10 +151,10 @@ type ReconcileEvidence struct {
 }
 
 type ReconcileCommand struct {
-	OperationID    uuid.UUID
-	ActorID        string
-	IdempotencyKey string
-	Evidence       ReconcileEvidence
+	ReleaseOperationID uuid.UUID
+	ActorID            string
+	IdempotencyKey     string
+	Evidence           ReconcileEvidence
 }
 
 // ReconcileAttention 只持久化外部只读检查的结论，不触发任何 Kubernetes 写入。
@@ -169,14 +169,14 @@ func (m *Module) ReconcileAttention(
 	}
 	return m.executeUserCommand(
 		ctx,
-		command.OperationID,
+		command.ReleaseOperationID,
 		command.ActorID,
 		command.IdempotencyKey,
 		"operation.reconcile",
 		projectauth.PermissionDevelop,
 		struct {
-			OperationID uuid.UUID `json:"operationId"`
-		}{command.OperationID},
+			ReleaseOperationID uuid.UUID `json:"operationId"`
+		}{command.ReleaseOperationID},
 		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
 			if current.Status != StatusAttentionRequired {
 				return ErrInvalidTransition
@@ -232,13 +232,13 @@ func (m *Module) ReconcileAttention(
 }
 
 type ForceFailCommand struct {
-	OperationID    uuid.UUID
-	ActorID        string
-	IdempotencyKey string
-	Reason         string
+	ReleaseOperationID uuid.UUID
+	ActorID            string
+	IdempotencyKey     string
+	Reason             string
 }
 
-// ForceFailAttention 允许 owner 用明确原因结束无法自动判断的 Operation，解除目标阻塞。
+// ForceFailAttention 允许 owner 用明确原因结束无法自动判断的 ReleaseOperation，解除目标阻塞。
 func (m *Module) ForceFailAttention(
 	ctx context.Context,
 	command ForceFailCommand,
@@ -248,15 +248,15 @@ func (m *Module) ForceFailAttention(
 	}
 	return m.executeUserCommand(
 		ctx,
-		command.OperationID,
+		command.ReleaseOperationID,
 		command.ActorID,
 		command.IdempotencyKey,
 		"operation.fail",
 		projectauth.PermissionResolveUnknown,
 		struct {
-			OperationID uuid.UUID `json:"operationId"`
-			Reason      string    `json:"reason"`
-		}{command.OperationID, command.Reason},
+			ReleaseOperationID uuid.UUID `json:"operationId"`
+			Reason             string    `json:"reason"`
+		}{command.ReleaseOperationID, command.Reason},
 		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
 			if current.Status != StatusAttentionRequired {
 				return ErrInvalidTransition
@@ -289,7 +289,7 @@ type userTransition func(
 // executeUserCommand 集中处理锁、授权、幂等、状态变化与审计的共同事务边界。
 func (m *Module) executeUserCommand(
 	ctx context.Context,
-	operationID uuid.UUID,
+	releaseOperationID uuid.UUID,
 	actorID string,
 	idempotencyKey string,
 	commandType string,
@@ -307,7 +307,7 @@ func (m *Module) executeUserCommand(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	current, projectID, err := lockForUserCommand(ctx, tx, operationID)
+	current, projectID, err := lockForUserCommand(ctx, tx, releaseOperationID)
 	if err != nil {
 		return Record{}, err
 	}
@@ -327,7 +327,7 @@ func (m *Module) executeUserCommand(
 	scope := idempotency.Scope{
 		ActorID: actorID, CommandType: commandType, Key: idempotencyKey,
 	}
-	_, isNew, err := idempotency.Claim(ctx, tx, scope, requestHash, operationID, now)
+	_, isNew, err := idempotency.Claim(ctx, tx, scope, requestHash, releaseOperationID, now)
 	if err != nil {
 		return Record{}, err
 	}
@@ -345,16 +345,16 @@ func (m *Module) executeUserCommand(
 	if err := transition(ctx, tx, current, now); err != nil {
 		return Record{}, err
 	}
-	updated, err := getInTransaction(ctx, tx, operationID)
+	updated, err := getInTransaction(ctx, tx, releaseOperationID)
 	if err != nil {
 		return Record{}, err
 	}
 	// 幂等重放已在前面返回；只有本次真正发生的用户状态变化才更新投递意图。
 	if updated.Status == StatusPending {
-		if err := scheduleDispatch(ctx, tx, operationID, commandType, now); err != nil {
+		if err := scheduleDispatch(ctx, tx, releaseOperationID, commandType, now); err != nil {
 			return Record{}, err
 		}
-	} else if err := obsoleteDispatches(ctx, tx, operationID, now); err != nil {
+	} else if err := obsoleteDispatches(ctx, tx, releaseOperationID, now); err != nil {
 		return Record{}, err
 	}
 	if err := idempotency.StoreResponse(ctx, tx, scope, updated); err != nil {
@@ -371,7 +371,7 @@ func (m *Module) executeUserCommand(
 		auditSummary["errorSummary"] = *updated.ErrorSummary
 	}
 	if err := audit.Append(ctx, tx, audit.Entry{
-		ActorID: actorID, Action: commandType, TargetType: "operation", TargetID: operationID,
+		ActorID: actorID, Action: commandType, TargetType: "operation", TargetID: releaseOperationID,
 		Summary:   auditSummary,
 		CreatedAt: now,
 	}); err != nil {
@@ -386,14 +386,14 @@ func (m *Module) executeUserCommand(
 func lockForUserCommand(
 	ctx context.Context,
 	tx *sqlx.Tx,
-	operationID uuid.UUID,
+	releaseOperationID uuid.UUID,
 ) (Record, uuid.UUID, error) {
 	var current Record
 	if err := tx.GetContext(
 		ctx,
 		&current,
 		operationSelect+` WHERE id = $1 FOR UPDATE`,
-		operationID,
+		releaseOperationID,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Record{}, uuid.Nil, ErrNotFound
@@ -415,9 +415,9 @@ func lockForUserCommand(
 	return current, projectID, nil
 }
 
-func getInTransaction(ctx context.Context, tx *sqlx.Tx, operationID uuid.UUID) (Record, error) {
+func getInTransaction(ctx context.Context, tx *sqlx.Tx, releaseOperationID uuid.UUID) (Record, error) {
 	var record Record
-	if err := tx.GetContext(ctx, &record, operationSelect+` WHERE id = $1`, operationID); err != nil {
+	if err := tx.GetContext(ctx, &record, operationSelect+` WHERE id = $1`, releaseOperationID); err != nil {
 		return Record{}, fmt.Errorf("get operation after command: %w", err)
 	}
 	attempts := make([]Attempt, 0)
@@ -425,7 +425,7 @@ func getInTransaction(ctx context.Context, tx *sqlx.Tx, operationID uuid.UUID) (
 		ctx,
 		&attempts,
 		attemptSelect+` WHERE operation_id = $1 ORDER BY attempt_number`,
-		operationID,
+		releaseOperationID,
 	); err != nil {
 		return Record{}, fmt.Errorf("get operation attempts after command: %w", err)
 	}

@@ -120,7 +120,7 @@ func diagnosticReportResponse(report diagnostics.Report) api.ReleaseDiagnosticRe
 	}
 	return api.ReleaseDiagnosticReport{
 		Release:           releaseResponse(report.Release),
-		Operation:         operationResponse(report.Operation),
+		ReleaseOperation:  releaseOperationResponse(report.ReleaseOperation),
 		TargetDifferences: differences,
 		RuntimeReleaseRelation: api.ReleaseDiagnosticReportRuntimeReleaseRelation(
 			report.RuntimeReleaseRelation,

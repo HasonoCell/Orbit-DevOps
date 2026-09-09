@@ -274,8 +274,8 @@ func newKindAdapter(t *testing.T) (*kube.Adapter, kubernetes.Interface) {
 
 func kindPublishRequest(image string) worker.PublishRequest {
 	return worker.PublishRequest{
-		OperationID:        uuid.New(),
-		AttemptID:          uuid.New(),
+		ReleaseOperationID: uuid.New(),
+		ReleaseAttemptID:   uuid.New(),
 		ReleaseID:          uuid.New(),
 		ProjectID:          uuid.New(),
 		ApplicationID:      uuid.New(),

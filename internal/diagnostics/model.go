@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
@@ -201,16 +201,16 @@ type TargetDifference struct {
 type SignalCode string
 
 const (
-	SignalOperationAttentionRequired    SignalCode = "operation_attention_required"
-	SignalOperationFailed               SignalCode = "operation_failed"
-	SignalRuntimeObservationUnavailable SignalCode = "runtime_observation_unavailable"
-	SignalDeploymentMissing             SignalCode = "deployment_missing"
-	SignalRuntimeReleaseDifferent       SignalCode = "runtime_release_different"
-	SignalResourceOwnershipConflict     SignalCode = "resource_ownership_conflict"
-	SignalRolloutIncomplete             SignalCode = "rollout_incomplete"
-	SignalPodWaiting                    SignalCode = "pod_waiting"
-	SignalPodRestarting                 SignalCode = "pod_restarting"
-	SignalWarningEventObserved          SignalCode = "warning_event_observed"
+	SignalReleaseOperationAttentionRequired SignalCode = "release_operation_attention_required"
+	SignalReleaseOperationFailed            SignalCode = "operation_failed"
+	SignalRuntimeObservationUnavailable     SignalCode = "runtime_observation_unavailable"
+	SignalDeploymentMissing                 SignalCode = "deployment_missing"
+	SignalRuntimeReleaseDifferent           SignalCode = "runtime_release_different"
+	SignalResourceOwnershipConflict         SignalCode = "resource_ownership_conflict"
+	SignalRolloutIncomplete                 SignalCode = "rollout_incomplete"
+	SignalPodWaiting                        SignalCode = "pod_waiting"
+	SignalPodRestarting                     SignalCode = "pod_restarting"
+	SignalWarningEventObserved              SignalCode = "warning_event_observed"
 )
 
 type EvidenceReference struct {
@@ -229,7 +229,7 @@ type Signal struct {
 // Report 是面向 HTTP、CLI 与未来 Agent 的稳定发布诊断入口。
 type Report struct {
 	Release                delivery.Release
-	Operation              operation.Record
+	ReleaseOperation       releaseoperation.Record
 	TargetDifferences      []TargetDifference
 	RuntimeReleaseRelation RuntimeReleaseRelation
 	Workload               WorkloadObservation

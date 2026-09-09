@@ -11,8 +11,8 @@ import (
 	"errors"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/dispatch"
-	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/google/uuid"
@@ -50,7 +50,7 @@ func TestQueueWaitsForDatabaseRecovery(t *testing.T) {
 		t.Fatalf("database outage reported empty or executed: NaN=%t calls=%d", nanFound, calls.Load())
 	}
 	resume()
-	current := awaitQueuedStatus(t, operations, accepted.Operation.ID, operation.StatusSucceeded)
+	current := awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 	stop()
 	if current.AttemptCount != 1 || current.AutomaticRetryCount != 0 || calls.Load() != 1 {
 		t.Fatalf("database recovery spent business budget: %+v calls=%d", current, calls.Load())
@@ -64,15 +64,15 @@ func TestQueueArchivedInfrastructureFailuresRemainRecoverable(t *testing.T) {
 	accepted := createRelease(t, environment, "archived-infrastructure")
 	db := openTestDatabase(t, environment.databaseURL)
 	var offset atomic.Int64
-	operations := operation.New(db, operation.WithClock(func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }))
-	runner, err := worker.New(worker.Config{WorkerID: "archive-recovery", LeaseDuration: time.Second, OperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db)), publisherFunc(func(context.Context, worker.PublishRequest) error { return nil }))
+	operations := releaseoperation.New(db, releaseoperation.WithClock(func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }))
+	runner, err := worker.New(worker.Config{WorkerID: "archive-recovery", LeaseDuration: time.Second, ReleaseOperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db)), publisherFunc(func(context.Context, worker.PublishRequest) error { return nil }))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var available atomic.Bool
 	config := queueConfig(address)
 	config.ConsumptionGrace = time.Hour
-	service, err := dispatch.New(config, operations, executorFunc(func(ctx context.Context, ref operation.DispatchRef) (operation.ClaimOutcome, error) {
+	service, err := dispatch.New(config, operations, executorFunc(func(ctx context.Context, ref releaseoperation.DispatchRef) (releaseoperation.ClaimOutcome, error) {
 		if !available.Load() {
 			return "", errors.New("injected infrastructure unavailable")
 		}
@@ -95,13 +95,13 @@ func TestQueueArchivedInfrastructureFailuresRemainRecoverable(t *testing.T) {
 		task, err := inspector.GetTaskInfo(config.Queue, pending[0].ID)
 		return err == nil && task.State == asynq.TaskStateArchived && task.Retried == 5 && task.LastErr == "dispatch_execution_interrupted"
 	})
-	current, err := operations.Get(context.Background(), uuid.MustParse(accepted.Operation.ID))
-	if err != nil || current.Status != operation.StatusPending || current.AttemptCount != 0 || current.AutomaticRetryCount != 0 {
+	current, err := operations.Get(context.Background(), uuid.MustParse(accepted.ReleaseOperation.ID))
+	if err != nil || current.Status != releaseoperation.StatusPending || current.AttemptCount != 0 || current.AutomaticRetryCount != 0 {
 		t.Fatalf("archival changed business state: %+v %v", current, err)
 	}
 	available.Store(true)
 	offset.Store(int64(2 * time.Hour))
-	current = awaitQueuedStatus(t, operations, accepted.Operation.ID, operation.StatusSucceeded)
+	current = awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
 	if current.AttemptCount != 1 || current.AutomaticRetryCount != 0 {
 		t.Fatalf("archival recovery: %+v", current)
 	}
@@ -155,8 +155,8 @@ func TestQueueDatabaseOutageStopsActiveExecutionBeforeLeaseExpiry(t *testing.T) 
 		t.Fatal("database renewal outage did not stop external execution")
 	}
 	resume()
-	current := awaitQueuedStatus(t, operations, accepted.Operation.ID, operation.StatusSucceeded)
-	if current.AttemptCount != 2 || current.Attempts[0].Status != operation.AttemptOutcomeUnknown {
+	current := awaitQueuedStatus(t, operations, accepted.ReleaseOperation.ID, releaseoperation.StatusSucceeded)
+	if current.AttemptCount != 2 || current.Attempts[0].Status != releaseoperation.AttemptOutcomeUnknown {
 		t.Fatalf("active outage history: %+v", current)
 	}
 }

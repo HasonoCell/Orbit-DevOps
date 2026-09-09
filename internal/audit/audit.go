@@ -68,12 +68,12 @@ func Append(ctx context.Context, tx *sqlx.Tx, entry Entry) error {
 	return nil
 }
 
-// ListReleaseTimeline 合并 Release 与其一对一 Operation 的追加式审计，并保持稳定顺序。
+// ListReleaseTimeline 合并 Release 与其一对一 ReleaseOperation 的追加式审计，并保持稳定顺序。
 func ListReleaseTimeline(
 	ctx context.Context,
 	db sqlx.QueryerContext,
 	releaseID uuid.UUID,
-	operationID uuid.UUID,
+	releaseOperationID uuid.UUID,
 ) ([]Record, error) {
 	records := make([]Record, 0)
 	if err := sqlx.SelectContext(
@@ -86,7 +86,7 @@ func ListReleaseTimeline(
 		    OR (target_type = 'operation' AND target_id = $2)
 		 ORDER BY created_at, id`,
 		releaseID,
-		operationID,
+		releaseOperationID,
 	); err != nil {
 		return nil, fmt.Errorf("list release audit timeline: %w", err)
 	}
