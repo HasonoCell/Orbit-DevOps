@@ -2,14 +2,10 @@ package kube
 
 import (
 	"context"
-	"time"
 
+	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/runtimeview"
-	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type ObserveRequest = runtimeview.Query
@@ -23,101 +19,50 @@ const (
 	FreshnessUnavailable = runtimeview.FreshnessUnavailable
 )
 
+// Observe 保留旧 RuntimeSnapshot 契约，但复用 Release 诊断的 Kubernetes 读取与字段解释。
 func (a *Adapter) Observe(ctx context.Context, request ObserveRequest) Snapshot {
-	observedAt := time.Now().UTC()
-	name := ResourceName(request.TargetID)
-	if request.ClusterRef != a.config.ClusterRef || request.Namespace != a.config.Namespace {
-		return unavailableSnapshot(observedAt, name, "target_boundary_violation")
+	observation := a.ObserveRelease(ctx, diagnostics.RuntimeQuery{
+		ClusterRef: request.ClusterRef,
+		Namespace:  request.Namespace,
+		TargetID:   request.TargetID,
+	})
+	workload := observation.Workload
+	snapshot := Snapshot{
+		Source:         workload.Metadata.Source,
+		ObservedAt:     workload.Metadata.ObservedAt,
+		Freshness:      FreshnessFresh,
+		DeploymentName: ResourceName(request.TargetID),
+		Conditions:     []Condition{},
+		Pods:           []PodSummary{},
 	}
-
-	deployment, err := a.client.AppsV1().Deployments(request.Namespace).Get(
-		ctx,
-		name,
-		metav1.GetOptions{},
-	)
-	if apierrors.IsNotFound(err) {
-		return Snapshot{
-			Source:           SourceKubernetes,
-			ObservedAt:       observedAt,
-			Freshness:        FreshnessFresh,
-			DeploymentName:   name,
-			DeploymentExists: false,
-			Conditions:       []Condition{},
-			Pods:             []PodSummary{},
+	if workload.Metadata.Status != diagnostics.ObservationComplete {
+		snapshot.Freshness = FreshnessUnavailable
+		if len(workload.Metadata.ErrorCategories) > 0 {
+			category := workload.Metadata.ErrorCategories[0]
+			snapshot.ErrorCategory = &category
 		}
 	}
-	if err != nil {
-		a.recordReadFailure()
-		return unavailableSnapshot(observedAt, name, "kubernetes_unavailable")
+	if deployment := workload.Deployment; deployment != nil {
+		snapshot.DeploymentExists = true
+		snapshot.DeploymentName = deployment.Name
+		snapshot.ReleaseID = deployment.ReleaseID
+		snapshot.DesiredReplicas = deployment.DesiredReplicas
+		snapshot.UpdatedReplicas = deployment.UpdatedReplicas
+		snapshot.ReadyReplicas = deployment.ReadyReplicas
+		snapshot.AvailableReplicas = deployment.AvailableReplicas
+		for _, condition := range deployment.Conditions {
+			snapshot.Conditions = append(snapshot.Conditions, Condition{
+				Type: condition.Type, Status: condition.Status,
+				Reason: condition.Reason, Message: condition.Message,
+			})
+		}
 	}
-
-	snapshot := deploymentSnapshot(deployment, observedAt)
-	pods, err := a.client.CoreV1().Pods(request.Namespace).List(
-		ctx,
-		metav1.ListOptions{LabelSelector: TargetIDLabel + "=" + request.TargetID.String()},
-	)
-	if err != nil {
-		a.recordReadFailure()
-		snapshot.Freshness = FreshnessUnavailable
-		category := "kubernetes_unavailable"
-		snapshot.ErrorCategory = &category
-		return snapshot
-	}
-	for _, pod := range pods.Items {
-		snapshot.Pods = append(snapshot.Pods, summarizePod(pod))
-	}
-	return snapshot
-}
-
-func deploymentSnapshot(deployment *appsv1.Deployment, observedAt time.Time) Snapshot {
-	snapshot := Snapshot{
-		Source:            SourceKubernetes,
-		ObservedAt:        observedAt,
-		Freshness:         FreshnessFresh,
-		DeploymentName:    deployment.Name,
-		DeploymentExists:  true,
-		DesiredReplicas:   desiredReplicas(deployment),
-		UpdatedReplicas:   deployment.Status.UpdatedReplicas,
-		ReadyReplicas:     deployment.Status.ReadyReplicas,
-		AvailableReplicas: deployment.Status.AvailableReplicas,
-		Conditions:        make([]Condition, 0, len(deployment.Status.Conditions)),
-		Pods:              []PodSummary{},
-	}
-	if releaseID, err := uuid.Parse(deployment.Labels[ReleaseIDLabel]); err == nil {
-		snapshot.ReleaseID = &releaseID
-	}
-	for _, condition := range deployment.Status.Conditions {
-		snapshot.Conditions = append(snapshot.Conditions, Condition{
-			Type:    string(condition.Type),
-			Status:  string(condition.Status),
-			Reason:  condition.Reason,
-			Message: boundedText(condition.Message, 256),
+	for _, pod := range workload.Pods {
+		snapshot.Pods = append(snapshot.Pods, PodSummary{
+			Name: pod.Name, Phase: pod.Phase, Ready: pod.Ready, Reason: pod.Reason,
 		})
 	}
 	return snapshot
-}
-
-func summarizePod(pod corev1.Pod) PodSummary {
-	summary := PodSummary{
-		Name:  pod.Name,
-		Phase: string(pod.Status.Phase),
-	}
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-			summary.Ready = true
-		}
-	}
-	for _, container := range pod.Status.ContainerStatuses {
-		if container.State.Waiting != nil {
-			summary.Reason = container.State.Waiting.Reason
-			break
-		}
-		if container.State.Terminated != nil {
-			summary.Reason = container.State.Terminated.Reason
-			break
-		}
-	}
-	return summary
 }
 
 func desiredReplicas(deployment *appsv1.Deployment) int32 {
@@ -125,25 +70,4 @@ func desiredReplicas(deployment *appsv1.Deployment) int32 {
 		return 1
 	}
 	return *deployment.Spec.Replicas
-}
-
-func unavailableSnapshot(observedAt time.Time, name string, category string) Snapshot {
-	return Snapshot{
-		Source:           SourceKubernetes,
-		ObservedAt:       observedAt,
-		Freshness:        FreshnessUnavailable,
-		DeploymentName:   name,
-		DeploymentExists: false,
-		Conditions:       []Condition{},
-		Pods:             []PodSummary{},
-		ErrorCategory:    &category,
-	}
-}
-
-func boundedText(value string, maximumLength int) string {
-	runes := []rune(value)
-	if len(runes) <= maximumLength {
-		return value
-	}
-	return string(runes[:maximumLength])
 }

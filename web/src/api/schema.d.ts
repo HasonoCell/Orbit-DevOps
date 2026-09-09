@@ -195,6 +195,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/releases/{releaseId}/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询 Release 的控制面与 Kubernetes 诊断证据 */
+        get: operations["getReleaseDiagnostics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/releases/{releaseId}/rollback": {
         parameters: {
             query?: never;
@@ -509,6 +526,131 @@ export interface components {
             startedAt: string;
             /** Format: date-time */
             finishedAt?: string;
+        };
+        ReleaseDiagnosticReport: {
+            release: components["schemas"]["Release"];
+            operation: components["schemas"]["Operation"];
+            targetDifferences: components["schemas"]["SnapshotDifference"][];
+            /** @enum {string} */
+            runtimeReleaseRelation: "matches" | "different" | "absent" | "unknown";
+            workloadObservation: components["schemas"]["WorkloadObservation"];
+            eventObservation: components["schemas"]["EventObservation"];
+            signals: components["schemas"]["DiagnosticSignal"][];
+            /** Format: date-time */
+            generatedAt: string;
+        };
+        ObservationMetadata: {
+            /** @enum {string} */
+            source: "kubernetes";
+            /** Format: date-time */
+            observedAt: string;
+            /** @enum {string} */
+            status: "complete" | "partial" | "unavailable";
+            errorCategories: string[];
+        };
+        WorkloadObservation: {
+            metadata: components["schemas"]["ObservationMetadata"];
+            deployment?: components["schemas"]["DiagnosticDeployment"];
+            service?: components["schemas"]["DiagnosticService"];
+            pods: components["schemas"]["DiagnosticPod"][];
+        };
+        DiagnosticDeployment: {
+            name: string;
+            uid: string;
+            ownershipMatches: boolean;
+            /** Format: uuid */
+            releaseId?: string;
+            /** Format: int64 */
+            generation: number;
+            /** Format: int64 */
+            observedGeneration: number;
+            desiredReplicas: number;
+            updatedReplicas: number;
+            readyReplicas: number;
+            availableReplicas: number;
+            conditions: components["schemas"]["DiagnosticCondition"][];
+        };
+        DiagnosticCondition: {
+            type: string;
+            status: string;
+            reason: string;
+            message: string;
+        };
+        DiagnosticService: {
+            name: string;
+            uid: string;
+            ownershipMatches: boolean;
+            ports: components["schemas"]["DiagnosticServicePort"][];
+        };
+        DiagnosticServicePort: {
+            name: string;
+            protocol: string;
+            port: number;
+        };
+        DiagnosticPod: {
+            name: string;
+            uid: string;
+            /** Format: date-time */
+            createdAt: string;
+            phase: string;
+            ready: boolean;
+            reason: string;
+            containers: components["schemas"]["DiagnosticContainer"][];
+        };
+        DiagnosticContainer: {
+            name: string;
+            ready: boolean;
+            restartCount: number;
+            /** @enum {string} */
+            state: "waiting" | "running" | "terminated" | "unknown";
+            reason: string;
+            exitCode?: number;
+            message: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            finishedAt?: string;
+            previousTermination?: components["schemas"]["DiagnosticTermination"];
+        };
+        DiagnosticTermination: {
+            reason: string;
+            exitCode: number;
+            message: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            finishedAt: string;
+        };
+        EventObservation: {
+            metadata: components["schemas"]["ObservationMetadata"];
+            items: components["schemas"]["DiagnosticEvent"][];
+        };
+        DiagnosticEvent: {
+            uid: string;
+            type: string;
+            reason: string;
+            count: number;
+            /** Format: date-time */
+            firstSeen: string;
+            /** Format: date-time */
+            lastSeen: string;
+            resourceKind: string;
+            resourceName: string;
+            resourceUid: string;
+            message: string;
+        };
+        DiagnosticSignal: {
+            /** @enum {string} */
+            code: "operation_attention_required" | "operation_failed" | "runtime_observation_unavailable" | "deployment_missing" | "runtime_release_different" | "resource_ownership_conflict" | "rollout_incomplete" | "pod_waiting" | "pod_restarting" | "warning_event_observed";
+            /** @enum {string} */
+            severity: "error" | "warning" | "info";
+            summary: string;
+            evidenceRefs: components["schemas"]["DiagnosticEvidenceReference"][];
+        };
+        DiagnosticEvidenceReference: {
+            source: string;
+            kind: string;
+            id: string;
         };
         RuntimeSnapshot: {
             /** Format: uuid */
@@ -1370,6 +1512,46 @@ export interface operations {
                 };
             };
             /** @description 发布不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getReleaseDiagnostics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 诊断报告；Kubernetes 部分或全部不可用时仍返回已有证据 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseDiagnosticReport"];
+                };
+            };
+            /** @description Release 不存在或当前操作者不是项目成员 */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -70,6 +70,7 @@ func run(logger *slog.Logger) error {
 		MigrateOnBoot:   config.MigrateOnBoot,
 	}, app.Dependencies{
 		RuntimeObserver:   adapter,
+		DiagnosticSource:  adapter,
 		RecoveryPublisher: adapter,
 		Logger:            logger,
 		Metrics:           metrics,

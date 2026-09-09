@@ -60,10 +60,12 @@ func (m *Module) GetReleaseReport(
 	}
 
 	observation := m.source.ObserveRelease(ctx, RuntimeQuery{
-		TargetID:   release.DeploymentTargetID,
-		ReleaseID:  release.ID,
-		ClusterRef: release.TargetSnapshot.ClusterRef,
-		Namespace:  release.TargetSnapshot.Namespace,
+		ProjectID:     release.TargetSnapshot.ProjectID,
+		ApplicationID: release.TargetSnapshot.ApplicationID,
+		TargetID:      release.DeploymentTargetID,
+		ReleaseID:     release.ID,
+		ClusterRef:    release.TargetSnapshot.ClusterRef,
+		Namespace:     release.TargetSnapshot.Namespace,
 	})
 	relation := relateRuntimeRelease(release.ID, observation.Workload)
 	report := Report{

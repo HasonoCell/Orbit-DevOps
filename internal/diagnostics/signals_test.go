@@ -35,7 +35,7 @@ func TestRelateRuntimeRelease(t *testing.T) {
 			name: "release label absent",
 			observation: WorkloadObservation{
 				Metadata:   ObservationMetadata{Status: ObservationComplete},
-				Deployment: &DeploymentEvidence{Name: "application"},
+				Deployment: &DeploymentEvidence{Name: "application", OwnershipMatches: true},
 			},
 			want: RuntimeReleaseUnknown,
 		},
@@ -43,7 +43,7 @@ func TestRelateRuntimeRelease(t *testing.T) {
 			name: "matching release",
 			observation: WorkloadObservation{
 				Metadata:   ObservationMetadata{Status: ObservationComplete},
-				Deployment: &DeploymentEvidence{Name: "application", ReleaseID: &requestedID},
+				Deployment: &DeploymentEvidence{Name: "application", OwnershipMatches: true, ReleaseID: &requestedID},
 			},
 			want: RuntimeReleaseMatches,
 		},
@@ -51,7 +51,7 @@ func TestRelateRuntimeRelease(t *testing.T) {
 			name: "different release",
 			observation: WorkloadObservation{
 				Metadata:   ObservationMetadata{Status: ObservationComplete},
-				Deployment: &DeploymentEvidence{Name: "application", ReleaseID: &otherID},
+				Deployment: &DeploymentEvidence{Name: "application", OwnershipMatches: true, ReleaseID: &otherID},
 			},
 			want: RuntimeReleaseDifferent,
 		},
@@ -88,4 +88,53 @@ func TestDeriveSignalsUsesDeterministicSeverityAndCodeOrder(t *testing.T) {
 			t.Fatalf("signal[%d] = %q, want %q", index, signals[index].Code, code)
 		}
 	}
+}
+
+func TestDeriveSignalsExplainsIncompleteKubernetesEvidence(t *testing.T) {
+	t.Parallel()
+
+	report := Report{
+		Operation: operation.Record{ID: uuid.New(), Status: operation.StatusRunning},
+		Workload: WorkloadObservation{
+			Metadata: ObservationMetadata{
+				Status: ObservationPartial, ErrorCategories: []string{"ownership_conflict"},
+			},
+			Deployment: &DeploymentEvidence{
+				UID: "deployment-uid", OwnershipMatches: true,
+				Generation: 2, ObservedGeneration: 1, DesiredReplicas: 1,
+			},
+			Pods: []PodEvidence{{
+				UID: "pod-uid", Name: "application-pod",
+				Containers: []ContainerEvidence{{
+					Name: "application", State: "waiting", Reason: "ImagePullBackOff", RestartCount: 2,
+				}},
+			}},
+		},
+		Events: EventObservation{
+			Metadata: ObservationMetadata{Status: ObservationComplete},
+			Items:    []EventEvidence{{UID: "event-uid", Type: "Warning", Reason: "Failed"}},
+		},
+	}
+
+	signals := deriveSignals(report)
+	for _, code := range []SignalCode{
+		SignalResourceOwnershipConflict,
+		SignalRolloutIncomplete,
+		SignalPodWaiting,
+		SignalPodRestarting,
+		SignalWarningEventObserved,
+	} {
+		if !hasSignal(signals, code) {
+			t.Errorf("signals = %#v, want %q", signals, code)
+		}
+	}
+}
+
+func hasSignal(signals []Signal, code SignalCode) bool {
+	for _, signal := range signals {
+		if signal.Code == code {
+			return true
+		}
+	}
+	return false
 }

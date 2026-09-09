@@ -3,6 +3,7 @@ package kube_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/worker"
@@ -18,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 )
@@ -180,6 +183,185 @@ func TestRuntimeSnapshotReportsKubernetesUnavailable(t *testing.T) {
 	}
 	if !strings.Contains(string(metricPayload), "orbitops_kubernetes_read_failures_total 1") {
 		t.Error("Kubernetes read failure metric was not incremented")
+	}
+}
+
+func TestDiagnosticObservationProjectsWorkloadAndRelatedEvents(t *testing.T) {
+	request := publishRequest()
+	name := kube.ResourceName(request.DeploymentTargetID)
+	labels := recoveryLabels(request, request.ReleaseID)
+	deploymentUID := "deployment-uid"
+	podUID := "pod-uid"
+	replicas := int32(2)
+	objects := []runtime.Object{
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name, Namespace: request.Namespace, UID: types.UID(deploymentUID),
+				Labels: labels, Generation: 3,
+			},
+			Spec: appsv1.DeploymentSpec{Replicas: &replicas},
+			Status: appsv1.DeploymentStatus{
+				ObservedGeneration: 2, UpdatedReplicas: 1, ReadyReplicas: 1, AvailableReplicas: 1,
+				Conditions: []appsv1.DeploymentCondition{{
+					Type: appsv1.DeploymentProgressing, Status: corev1.ConditionTrue,
+					Reason: "ReplicaSetUpdated", Message: strings.Repeat("进", 600),
+				}},
+			},
+		},
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name, Namespace: request.Namespace, UID: "service-uid", Labels: labels,
+			},
+			Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{
+				Name: "http", Protocol: corev1.ProtocolTCP, Port: 8080,
+			}}},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "application-bad", Namespace: request.Namespace, UID: types.UID(podUID),
+				Labels: labels, CreationTimestamp: metav1.NewTime(time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)),
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodPending,
+				ContainerStatuses: []corev1.ContainerStatus{{
+					Name: "application", RestartCount: 2,
+					State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{
+						Reason: "ImagePullBackOff", Message: "cannot pull image",
+					}},
+				}},
+			},
+		},
+		&corev1.Event{
+			ObjectMeta: metav1.ObjectMeta{Name: "pull-failed", Namespace: request.Namespace, UID: "event-uid"},
+			InvolvedObject: corev1.ObjectReference{
+				Kind: "Pod", Name: "application-bad", UID: types.UID(podUID),
+			},
+			Type: corev1.EventTypeWarning, Reason: "Failed", Message: "image pull failed",
+			Count: 3, FirstTimestamp: metav1.NewTime(time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)),
+			LastTimestamp: metav1.NewTime(time.Date(2026, 9, 9, 12, 1, 0, 0, time.UTC)),
+		},
+	}
+	client := fake.NewClientset(objects...)
+	adapter, err := kube.New(client, kube.Config{
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("create adapter: %v", err)
+	}
+
+	observation := adapter.ObserveRelease(context.Background(), diagnostics.RuntimeQuery{
+		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
+		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+	})
+	if observation.Workload.Metadata.Status != diagnostics.ObservationComplete {
+		t.Fatalf("workload status = %q, want complete: %#v", observation.Workload.Metadata.Status, observation.Workload)
+	}
+	if observation.Workload.Deployment == nil ||
+		observation.Workload.Deployment.ObservedGeneration != 2 ||
+		len(observation.Workload.Deployment.Conditions) != 1 ||
+		len([]rune(observation.Workload.Deployment.Conditions[0].Message)) != 512 {
+		t.Fatalf("deployment evidence = %#v", observation.Workload.Deployment)
+	}
+	if len(observation.Workload.Pods) != 1 ||
+		len(observation.Workload.Pods[0].Containers) != 1 ||
+		observation.Workload.Pods[0].Containers[0].Reason != "ImagePullBackOff" {
+		t.Fatalf("pod evidence = %#v", observation.Workload.Pods)
+	}
+	if observation.Events.Metadata.Status != diagnostics.ObservationComplete ||
+		len(observation.Events.Items) != 1 ||
+		observation.Events.Items[0].UID != "event-uid" {
+		t.Fatalf("event observation = %#v", observation.Events)
+	}
+}
+
+func TestDiagnosticObservationKeepsWorkloadWhenEventReadFails(t *testing.T) {
+	request := publishRequest()
+	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Name: kube.ResourceName(request.DeploymentTargetID), Namespace: request.Namespace,
+		UID: "deployment-uid", Labels: recoveryLabels(request, request.ReleaseID),
+	}}
+	client := fake.NewClientset(deployment)
+	client.PrependReactor("list", "events", func(clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("events temporarily unavailable")
+	})
+	adapter, err := kube.New(client, kube.Config{
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("create adapter: %v", err)
+	}
+
+	observation := adapter.ObserveRelease(context.Background(), diagnostics.RuntimeQuery{
+		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
+		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+	})
+	if observation.Workload.Metadata.Status != diagnostics.ObservationComplete ||
+		observation.Workload.Deployment == nil {
+		t.Fatalf("workload observation = %#v, want complete Deployment evidence", observation.Workload)
+	}
+	if observation.Events.Metadata.Status != diagnostics.ObservationUnavailable ||
+		len(observation.Events.Metadata.ErrorCategories) != 1 ||
+		observation.Events.Metadata.ErrorCategories[0] != "kubernetes_unavailable" {
+		t.Fatalf("event observation = %#v, want unavailable", observation.Events)
+	}
+}
+
+func TestDiagnosticObservationPrioritizesAbnormalPodsBeforeLimiting(t *testing.T) {
+	request := publishRequest()
+	labels := recoveryLabels(request, request.ReleaseID)
+	objects := make([]runtime.Object, 0, 22)
+	objects = append(objects, &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Name: kube.ResourceName(request.DeploymentTargetID), Namespace: request.Namespace,
+		UID: "deployment-uid", Labels: labels,
+	}})
+	for index := 0; index < 20; index++ {
+		objects = append(objects, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("ready-%02d", index), Namespace: request.Namespace,
+				UID: types.UID(fmt.Sprintf("ready-uid-%02d", index)), Labels: labels,
+				CreationTimestamp: metav1.NewTime(time.Date(2026, 9, 9, 13, index, 0, 0, time.UTC)),
+			},
+			Status: corev1.PodStatus{
+				Phase:      corev1.PodRunning,
+				Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+				ContainerStatuses: []corev1.ContainerStatus{{
+					Name: "application", Ready: true,
+					State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+				}},
+			},
+		})
+	}
+	objects = append(objects, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "abnormal-oldest", Namespace: request.Namespace,
+			UID: "abnormal-uid", Labels: labels,
+			CreationTimestamp: metav1.NewTime(time.Date(2026, 9, 9, 11, 0, 0, 0, time.UTC)),
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodPending},
+	})
+	client := fake.NewClientset(objects...)
+	adapter, err := kube.New(client, kube.Config{
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("create adapter: %v", err)
+	}
+
+	observation := adapter.ObserveRelease(context.Background(), diagnostics.RuntimeQuery{
+		ProjectID: request.ProjectID, ApplicationID: request.ApplicationID,
+		TargetID: request.DeploymentTargetID, ReleaseID: request.ReleaseID,
+		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
+	})
+	if len(observation.Workload.Pods) != 20 {
+		t.Fatalf("pod count = %d, want 20", len(observation.Workload.Pods))
+	}
+	if observation.Workload.Pods[0].Name != "abnormal-oldest" {
+		t.Fatalf("first pod = %q, want abnormal-oldest", observation.Workload.Pods[0].Name)
 	}
 }
 

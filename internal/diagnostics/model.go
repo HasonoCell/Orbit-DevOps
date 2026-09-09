@@ -30,19 +30,68 @@ type ObservationMetadata struct {
 }
 
 type DeploymentEvidence struct {
-	Name      string
-	UID       string
-	ReleaseID *uuid.UUID
+	Name               string
+	UID                string
+	OwnershipMatches   bool
+	ReleaseID          *uuid.UUID
+	Generation         int64
+	ObservedGeneration int64
+	DesiredReplicas    int32
+	UpdatedReplicas    int32
+	ReadyReplicas      int32
+	AvailableReplicas  int32
+	Conditions         []ConditionEvidence
 }
 
 type ServiceEvidence struct {
-	Name string
-	UID  string
+	Name             string
+	UID              string
+	OwnershipMatches bool
+	Ports            []ServicePortEvidence
+}
+
+type ConditionEvidence struct {
+	Type    string
+	Status  string
+	Reason  string
+	Message string
+}
+
+type ServicePortEvidence struct {
+	Name     string
+	Protocol string
+	Port     int32
 }
 
 type PodEvidence struct {
-	Name string
-	UID  string
+	Name       string
+	UID        string
+	CreatedAt  time.Time
+	Phase      string
+	Ready      bool
+	Reason     string
+	Containers []ContainerEvidence
+}
+
+type ContainerEvidence struct {
+	Name                string
+	Ready               bool
+	RestartCount        int32
+	State               string
+	Reason              string
+	ExitCode            *int32
+	PreviousTermination *TerminationEvidence
+	Message             string
+	StartedAt           *time.Time
+	FinishedAt          *time.Time
+}
+
+type TerminationEvidence struct {
+	Reason     string
+	ExitCode   int32
+	Message    string
+	StartedAt  time.Time
+	FinishedAt time.Time
 }
 
 type WorkloadObservation struct {
@@ -53,11 +102,16 @@ type WorkloadObservation struct {
 }
 
 type EventEvidence struct {
-	UID      string
-	Type     string
-	Reason   string
-	Message  string
-	LastSeen time.Time
+	UID          string
+	Type         string
+	Reason       string
+	Count        int32
+	FirstSeen    time.Time
+	LastSeen     time.Time
+	ResourceKind string
+	ResourceName string
+	ResourceUID  string
+	Message      string
 }
 
 type EventObservation struct {
@@ -72,10 +126,12 @@ type RuntimeObservation struct {
 }
 
 type RuntimeQuery struct {
-	TargetID   uuid.UUID
-	ReleaseID  uuid.UUID
-	ClusterRef string
-	Namespace  string
+	ProjectID     uuid.UUID
+	ApplicationID uuid.UUID
+	TargetID      uuid.UUID
+	ReleaseID     uuid.UUID
+	ClusterRef    string
+	Namespace     string
 }
 
 // RuntimeSource 隐藏 Kubernetes 查询顺序、关联与裁剪规则。
@@ -106,6 +162,11 @@ const (
 	SignalRuntimeObservationUnavailable SignalCode = "runtime_observation_unavailable"
 	SignalDeploymentMissing             SignalCode = "deployment_missing"
 	SignalRuntimeReleaseDifferent       SignalCode = "runtime_release_different"
+	SignalResourceOwnershipConflict     SignalCode = "resource_ownership_conflict"
+	SignalRolloutIncomplete             SignalCode = "rollout_incomplete"
+	SignalPodWaiting                    SignalCode = "pod_waiting"
+	SignalPodRestarting                 SignalCode = "pod_restarting"
+	SignalWarningEventObserved          SignalCode = "warning_event_observed"
 )
 
 type EvidenceReference struct {

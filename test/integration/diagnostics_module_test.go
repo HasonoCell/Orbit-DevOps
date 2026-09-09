@@ -2,10 +2,13 @@ package integration_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
+	"github.com/HasonoCell/OrbitOps/internal/app"
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/google/uuid"
@@ -14,6 +17,29 @@ import (
 // staticRuntimeSource 只在诊断模块 seam 返回已知的 Kubernetes 点时证据。
 type staticRuntimeSource struct {
 	observation diagnostics.RuntimeObservation
+}
+
+type matchingRuntimeSource struct{}
+
+func (matchingRuntimeSource) ObserveRelease(
+	_ context.Context,
+	query diagnostics.RuntimeQuery,
+) diagnostics.RuntimeObservation {
+	metadata := diagnostics.ObservationMetadata{
+		Source: diagnostics.SourceKubernetes, ObservedAt: time.Now().UTC(),
+		Status: diagnostics.ObservationComplete, ErrorCategories: []string{},
+	}
+	return diagnostics.RuntimeObservation{
+		Workload: diagnostics.WorkloadObservation{
+			Metadata: metadata,
+			Deployment: &diagnostics.DeploymentEvidence{
+				Name: "application", UID: "deployment-uid",
+				OwnershipMatches: true, ReleaseID: &query.ReleaseID,
+			},
+			Pods: []diagnostics.PodEvidence{},
+		},
+		Events: diagnostics.EventObservation{Metadata: metadata, Items: []diagnostics.EventEvidence{}},
+	}
 }
 
 func (s staticRuntimeSource) ObserveRelease(
@@ -43,8 +69,9 @@ func TestReleaseReportDistinguishesAnOlderRunningRelease(t *testing.T) {
 					Status:     diagnostics.ObservationComplete,
 				},
 				Deployment: &diagnostics.DeploymentEvidence{
-					Name:      "orbitops-" + target.ID,
-					ReleaseID: &olderReleaseID,
+					Name:             "orbitops-" + target.ID,
+					OwnershipMatches: true,
+					ReleaseID:        &olderReleaseID,
 				},
 			},
 			Events: diagnostics.EventObservation{
@@ -151,6 +178,42 @@ func TestReleaseReportShowsImmutableTargetDifferences(t *testing.T) {
 	}
 	if !containsTargetDifference(report.TargetDifferences, "replicas", "1", "3") {
 		t.Fatalf("target differences = %#v, want replicas 1 -> 3", report.TargetDifferences)
+	}
+}
+
+func TestReleaseDiagnosticsHTTPExposesTheModuleReport(t *testing.T) {
+	environment := newTestEnvironmentWithDependencies(t, app.Dependencies{
+		DiagnosticSource: matchingRuntimeSource{},
+	})
+	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-http")
+	acceptance := createReleaseForTarget(t, environment, target.ID, "diagnostics-http")
+
+	response := environment.get(t, "/api/v1/releases/"+acceptance.Release.ID+"/diagnostics")
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("diagnostics status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	var document struct {
+		Release struct {
+			ID string `json:"id"`
+		} `json:"release"`
+		RuntimeReleaseRelation string `json:"runtimeReleaseRelation"`
+		WorkloadObservation    struct {
+			Metadata struct {
+				Status string `json:"status"`
+			} `json:"metadata"`
+		} `json:"workloadObservation"`
+		Signals []struct {
+			Code string `json:"code"`
+		} `json:"signals"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&document); err != nil {
+		t.Fatalf("decode diagnostics response: %v", err)
+	}
+	if document.Release.ID != acceptance.Release.ID ||
+		document.RuntimeReleaseRelation != string(diagnostics.RuntimeReleaseMatches) ||
+		document.WorkloadObservation.Metadata.Status != string(diagnostics.ObservationComplete) {
+		t.Fatalf("diagnostics document = %#v", document)
 	}
 }
 

@@ -637,6 +637,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/releases/{releaseId}/diagnostics:
+    get:
+      operationId: getReleaseDiagnostics
+      summary: 查询 Release 的控制面与 Kubernetes 诊断证据
+      parameters:
+        - name: releaseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 诊断报告；Kubernetes 部分或全部不可用时仍返回已有证据
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseDiagnosticReport"
+        "404":
+          description: Release 不存在或当前操作者不是项目成员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/releases/{releaseId}/rollback:
     post:
       operationId: rollbackRelease
@@ -1454,6 +1484,382 @@ components:
         finishedAt:
           type: string
           format: date-time
+    ReleaseDiagnosticReport:
+      type: object
+      additionalProperties: false
+      required:
+        - release
+        - operation
+        - targetDifferences
+        - runtimeReleaseRelation
+        - workloadObservation
+        - eventObservation
+        - signals
+        - generatedAt
+      properties:
+        release:
+          $ref: "#/components/schemas/Release"
+        operation:
+          $ref: "#/components/schemas/Operation"
+        targetDifferences:
+          type: array
+          items:
+            $ref: "#/components/schemas/SnapshotDifference"
+        runtimeReleaseRelation:
+          type: string
+          enum:
+            - matches
+            - different
+            - absent
+            - unknown
+        workloadObservation:
+          $ref: "#/components/schemas/WorkloadObservation"
+        eventObservation:
+          $ref: "#/components/schemas/EventObservation"
+        signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiagnosticSignal"
+        generatedAt:
+          type: string
+          format: date-time
+    ObservationMetadata:
+      type: object
+      additionalProperties: false
+      required:
+        - source
+        - observedAt
+        - status
+        - errorCategories
+      properties:
+        source:
+          type: string
+          enum:
+            - kubernetes
+        observedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - complete
+            - partial
+            - unavailable
+        errorCategories:
+          type: array
+          items:
+            type: string
+    WorkloadObservation:
+      type: object
+      additionalProperties: false
+      required:
+        - metadata
+        - pods
+      properties:
+        metadata:
+          $ref: "#/components/schemas/ObservationMetadata"
+        deployment:
+          $ref: "#/components/schemas/DiagnosticDeployment"
+        service:
+          $ref: "#/components/schemas/DiagnosticService"
+        pods:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/DiagnosticPod"
+    DiagnosticDeployment:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - uid
+        - ownershipMatches
+        - generation
+        - observedGeneration
+        - desiredReplicas
+        - updatedReplicas
+        - readyReplicas
+        - availableReplicas
+        - conditions
+      properties:
+        name:
+          type: string
+        uid:
+          type: string
+        ownershipMatches:
+          type: boolean
+        releaseId:
+          type: string
+          format: uuid
+        generation:
+          type: integer
+          format: int64
+        observedGeneration:
+          type: integer
+          format: int64
+        desiredReplicas:
+          type: integer
+          minimum: 0
+        updatedReplicas:
+          type: integer
+          minimum: 0
+        readyReplicas:
+          type: integer
+          minimum: 0
+        availableReplicas:
+          type: integer
+          minimum: 0
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiagnosticCondition"
+    DiagnosticCondition:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - status
+        - reason
+        - message
+      properties:
+        type:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        message:
+          type: string
+          maxLength: 512
+    DiagnosticService:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - uid
+        - ownershipMatches
+        - ports
+      properties:
+        name:
+          type: string
+        uid:
+          type: string
+        ownershipMatches:
+          type: boolean
+        ports:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiagnosticServicePort"
+    DiagnosticServicePort:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - protocol
+        - port
+      properties:
+        name:
+          type: string
+        protocol:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+    DiagnosticPod:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - uid
+        - createdAt
+        - phase
+        - ready
+        - reason
+        - containers
+      properties:
+        name:
+          type: string
+        uid:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        phase:
+          type: string
+        ready:
+          type: boolean
+        reason:
+          type: string
+        containers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiagnosticContainer"
+    DiagnosticContainer:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - ready
+        - restartCount
+        - state
+        - reason
+        - message
+      properties:
+        name:
+          type: string
+        ready:
+          type: boolean
+        restartCount:
+          type: integer
+          minimum: 0
+        state:
+          type: string
+          enum:
+            - waiting
+            - running
+            - terminated
+            - unknown
+        reason:
+          type: string
+        exitCode:
+          type: integer
+        message:
+          type: string
+          maxLength: 512
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        previousTermination:
+          $ref: "#/components/schemas/DiagnosticTermination"
+    DiagnosticTermination:
+      type: object
+      additionalProperties: false
+      required:
+        - reason
+        - exitCode
+        - message
+        - startedAt
+        - finishedAt
+      properties:
+        reason:
+          type: string
+        exitCode:
+          type: integer
+        message:
+          type: string
+          maxLength: 512
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+    EventObservation:
+      type: object
+      additionalProperties: false
+      required:
+        - metadata
+        - items
+      properties:
+        metadata:
+          $ref: "#/components/schemas/ObservationMetadata"
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/DiagnosticEvent"
+    DiagnosticEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - uid
+        - type
+        - reason
+        - count
+        - firstSeen
+        - lastSeen
+        - resourceKind
+        - resourceName
+        - resourceUid
+        - message
+      properties:
+        uid:
+          type: string
+        type:
+          type: string
+        reason:
+          type: string
+        count:
+          type: integer
+          minimum: 0
+        firstSeen:
+          type: string
+          format: date-time
+        lastSeen:
+          type: string
+          format: date-time
+        resourceKind:
+          type: string
+        resourceName:
+          type: string
+        resourceUid:
+          type: string
+        message:
+          type: string
+          maxLength: 512
+    DiagnosticSignal:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - severity
+        - summary
+        - evidenceRefs
+      properties:
+        code:
+          type: string
+          enum:
+            - operation_attention_required
+            - operation_failed
+            - runtime_observation_unavailable
+            - deployment_missing
+            - runtime_release_different
+            - resource_ownership_conflict
+            - rollout_incomplete
+            - pod_waiting
+            - pod_restarting
+            - warning_event_observed
+        severity:
+          type: string
+          enum:
+            - error
+            - warning
+            - info
+        summary:
+          type: string
+          maxLength: 512
+        evidenceRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiagnosticEvidenceReference"
+    DiagnosticEvidenceReference:
+      type: object
+      additionalProperties: false
+      required:
+        - source
+        - kind
+        - id
+      properties:
+        source:
+          type: string
+        kind:
+          type: string
+        id:
+          type: string
     RuntimeSnapshot:
       type: object
       additionalProperties: false

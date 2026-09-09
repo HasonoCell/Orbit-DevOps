@@ -7,6 +7,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/api"
 	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
+	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/project"
@@ -21,6 +22,7 @@ type Server struct {
 	projects     *project.Module
 	catalog      *catalog.Module
 	delivery     *delivery.Module
+	diagnostics  *diagnostics.Module
 	operations   *operation.Module
 	authorizer   *projectauth.Module
 	observer     runtimeview.Observer
@@ -74,6 +76,7 @@ func NewServer(
 	projects *project.Module,
 	catalogModule *catalog.Module,
 	deliveryModule *delivery.Module,
+	diagnosticModule *diagnostics.Module,
 	operationModule *operation.Module,
 	authorizer *projectauth.Module,
 	observer runtimeview.Observer,
@@ -85,6 +88,7 @@ func NewServer(
 		projects:     projects,
 		catalog:      catalogModule,
 		delivery:     deliveryModule,
+		diagnostics:  diagnosticModule,
 		operations:   operationModule,
 		authorizer:   authorizer,
 		observer:     observer,

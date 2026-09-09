@@ -12,6 +12,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/api"
 	"github.com/HasonoCell/OrbitOps/internal/catalog"
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
+	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/operation"
 	"github.com/HasonoCell/OrbitOps/internal/platform/database"
@@ -44,6 +45,7 @@ type Runtime struct {
 
 type Dependencies struct {
 	RuntimeObserver   runtimeview.Observer
+	DiagnosticSource  diagnostics.RuntimeSource
 	RecoveryPublisher worker.RecoveryPublisher
 	Logger            *slog.Logger
 	Metrics           *observability.Metrics
@@ -102,6 +104,7 @@ func NewWithDependencies(
 	}, authorizer)
 	operationModule := operation.New(db, operation.WithAuthorizer(authorizer))
 	deliveryModule := delivery.New(db, operationModule, authorizer)
+	diagnosticModule := diagnostics.New(db, authorizer, dependencies.DiagnosticSource)
 	logger := dependencies.Logger
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -132,6 +135,7 @@ func NewWithDependencies(
 		projectModule,
 		catalogModule,
 		deliveryModule,
+		diagnosticModule,
 		operationModule,
 		authorizer,
 		observer,
