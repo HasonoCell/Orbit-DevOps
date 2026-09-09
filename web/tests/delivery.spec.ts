@@ -48,6 +48,18 @@ test("运行中的 Release 不匹配时显示明确提示", async ({ page }) => 
   await expect(page.getByRole("region", { name: "Kubernetes 实况" })).toContainText("其他 Release");
 });
 
+test("取消后的 Operation 停止自动轮询", async ({ page }) => {
+  const traffic = await mockControlPlane(page, "canceled");
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "创建并发布" }).click();
+  await expect(page.getByTestId("operation-status")).toHaveText("已取消");
+
+  const settledPolls = traffic.operationPolls();
+  await page.waitForTimeout(1_200);
+  expect(traffic.operationPolls()).toBe(settledPolls);
+});
+
 test("移动端可以打开和关闭产品导航", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
@@ -64,7 +76,7 @@ test("移动端可以打开和关闭产品导航", async ({ page }) => {
 
 async function mockControlPlane(
   page: Page,
-  terminal: "succeeded" | "failed",
+  terminal: "succeeded" | "failed" | "canceled",
   relation: "matches" | "different" = "matches",
 ) {
   let operationPolls = 0;
@@ -122,6 +134,7 @@ async function mockControlPlane(
     }
     await json(route, 404, { code: "not_found", message: pathname });
   });
+  return { operationPolls: () => operationPolls };
 }
 
 function targetDocument() {
@@ -158,8 +171,8 @@ function releaseDocument() {
   };
 }
 
-function operationDocument(status: "pending" | "running" | "succeeded" | "failed") {
-  const terminal = status === "succeeded" || status === "failed";
+function operationDocument(status: "pending" | "running" | "succeeded" | "failed" | "canceled") {
+  const terminal = status === "succeeded" || status === "failed" || status === "canceled";
   const failed = status === "failed";
   return {
     id: ids.operation,
@@ -202,7 +215,7 @@ function operationDocument(status: "pending" | "running" | "succeeded" | "failed
 }
 
 function diagnosticDocument(
-  terminal: "succeeded" | "failed",
+  terminal: "succeeded" | "failed" | "canceled",
   relation: "matches" | "different",
 ) {
   const succeeded = terminal === "succeeded";

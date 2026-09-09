@@ -365,7 +365,7 @@ function ResourceLine({ label, value }: { label: string; value: string }) {
 }
 
 function isTerminal(status?: string): boolean {
-  return status === "succeeded" || status === "failed";
+  return status === "succeeded" || status === "failed" || status === "canceled" || status === "attention_required";
 }
 
 function observationStatusText(status?: string): string {
@@ -377,7 +377,16 @@ function releaseRelationText(relation?: string): string {
 }
 
 function statusText(status: string): string {
-  return { idle: "未开始", pending: "等待中", running: "执行中", succeeded: "已成功", failed: "已失败" }[status] ?? status;
+  return {
+    idle: "未开始",
+    pending: "等待中",
+    running: "执行中",
+    cancel_requested: "正在取消",
+    succeeded: "已成功",
+    failed: "已失败",
+    canceled: "已取消",
+    attention_required: "需要处理",
+  }[status] ?? status;
 }
 
 function formatTime(value: string): string {
