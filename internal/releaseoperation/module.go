@@ -244,7 +244,7 @@ func (m *Module) CreatePending(
 
 	if _, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO operations
+		`INSERT INTO release_operations
 		 (id, operation_type, release_id, deployment_target_id, actor_id,
 		  idempotency_key, traceparent, tracestate, status, attempt_count,
 		  automatic_retry_count, recovery_required, queued_at, available_at,
@@ -368,13 +368,13 @@ func (m *Module) ClaimNext(
 		        candidate.status, candidate.attempt_count,
 		        candidate.automatic_retry_count, candidate.recovery_required,
 		        candidate.traceparent, candidate.tracestate
-		 FROM operations AS candidate
+		 FROM release_operations AS candidate
 		 WHERE ((candidate.status = 'pending' AND candidate.available_at <= $1)
 		        OR (candidate.status IN ('running', 'cancel_requested')
 		            AND candidate.lease_expires_at <= $1))
 		   AND NOT EXISTS (
 		       SELECT 1
-		       FROM operations AS preceding
+		       FROM release_operations AS preceding
 		       WHERE preceding.deployment_target_id = candidate.deployment_target_id
 		         AND preceding.status IN (
 		             'pending', 'running', 'cancel_requested', 'attention_required'
@@ -428,7 +428,7 @@ func (m *Module) claimCandidate(ctx context.Context, tx *sqlx.Tx, candidate clai
 		if candidate.Status == StatusCancelRequested {
 			if _, err := tx.ExecContext(
 				ctx,
-				`UPDATE operations
+				`UPDATE release_operations
 				 SET status = 'attention_required', lease_owner = NULL, lease_expires_at = NULL,
 				     error_code = 'cancellation_outcome_unknown', error_summary = $1,
 				     retry_disposition = 'unknown_outcome', updated_at = $2, finished_at = $2
@@ -464,7 +464,7 @@ func (m *Module) claimCandidate(ctx context.Context, tx *sqlx.Tx, candidate clai
 		if candidate.AutomaticRetryCount >= m.maximumAutomaticRetries {
 			if _, err := tx.ExecContext(
 				ctx,
-				`UPDATE operations
+				`UPDATE release_operations
 				 SET status = 'attention_required', lease_owner = NULL, lease_expires_at = NULL,
 				     error_code = $1, error_summary = $2,
 				     retry_disposition = 'unknown_outcome', updated_at = $3, finished_at = $3
@@ -506,7 +506,7 @@ func (m *Module) claimCandidate(ctx context.Context, tx *sqlx.Tx, candidate clai
 	expiresAt := now.Add(request.LeaseDuration)
 	if _, err := tx.ExecContext(
 		ctx,
-		`UPDATE operations
+		`UPDATE release_operations
 		 SET status = 'running', attempt_count = $1, automatic_retry_count = $2,
 		     recovery_required = false,
 		     lease_owner = $3, lease_expires_at = $4, error_code = NULL,
@@ -580,7 +580,7 @@ func (m *Module) CountPending(ctx context.Context) (int, error) {
 	if err := m.db.GetContext(
 		ctx,
 		&count,
-		`SELECT count(*) FROM operations WHERE status = 'pending'`,
+		`SELECT count(*) FROM release_operations WHERE status = 'pending'`,
 	); err != nil {
 		return 0, fmt.Errorf("count pending operations: %w", err)
 	}
@@ -602,7 +602,7 @@ func (m *Module) Renew(
 	err := m.db.GetContext(
 		ctx,
 		&status,
-		`UPDATE operations
+		`UPDATE release_operations
 		 SET lease_expires_at = $1, updated_at = $2
 		 WHERE id = $3 AND status IN ('running', 'cancel_requested') AND lease_owner = $4
 		   AND attempt_count = $5 AND lease_expires_at > $2
@@ -640,7 +640,7 @@ func (m *Module) ConfirmCanceled(ctx context.Context, lease Lease) error {
 	if err := tx.GetContext(
 		ctx,
 		&locked,
-		`SELECT 1 FROM operations
+		`SELECT 1 FROM release_operations
 		 WHERE id = $1 AND status = 'cancel_requested' AND lease_owner = $2
 		   AND attempt_count = $3 AND lease_expires_at > $4
 		 FOR UPDATE`,
@@ -656,7 +656,7 @@ func (m *Module) ConfirmCanceled(ctx context.Context, lease Lease) error {
 	}
 	if _, err := tx.ExecContext(
 		ctx,
-		`UPDATE operations
+		`UPDATE release_operations
 		 SET status = 'canceled', lease_owner = NULL, lease_expires_at = NULL,
 		     recovery_required = false, updated_at = $1, finished_at = $1
 		 WHERE id = $2`,
@@ -729,7 +729,7 @@ func (m *Module) Fail(
 		availableAt := now.Add(delay)
 		if _, err := tx.ExecContext(
 			ctx,
-			`UPDATE operations
+			`UPDATE release_operations
 			 SET status = 'pending', automatic_retry_count = $1,
 			     recovery_required = false, available_at = $2,
 			     lease_owner = NULL, lease_expires_at = NULL, error_code = NULL,
@@ -752,7 +752,7 @@ func (m *Module) Fail(
 	} else {
 		if _, err := tx.ExecContext(
 			ctx,
-			`UPDATE operations
+			`UPDATE release_operations
 			 SET status = 'failed', recovery_required = false,
 			     lease_owner = NULL, lease_expires_at = NULL,
 			     error_code = $1, error_summary = $2, retry_disposition = $3,
@@ -824,7 +824,7 @@ func (m *Module) HandleUnknownOutcome(
 		availableAt := now.Add(delay)
 		if _, err := tx.ExecContext(
 			ctx,
-			`UPDATE operations
+			`UPDATE release_operations
 			 SET status = 'pending', recovery_required = true, available_at = $1,
 			     lease_owner = NULL, lease_expires_at = NULL,
 			     error_code = NULL, error_summary = NULL, retry_disposition = NULL,
@@ -845,7 +845,7 @@ func (m *Module) HandleUnknownOutcome(
 	} else {
 		if _, err := tx.ExecContext(
 			ctx,
-			`UPDATE operations
+			`UPDATE release_operations
 			 SET status = 'attention_required', recovery_required = false,
 			     lease_owner = NULL, lease_expires_at = NULL,
 			     error_code = $1, error_summary = $2,
@@ -885,7 +885,7 @@ func (m *Module) completeSuccess(ctx context.Context, lease Lease) error {
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(
 		ctx,
-		`UPDATE operations
+		`UPDATE release_operations
 		 SET status = 'succeeded', recovery_required = false,
 		     lease_owner = NULL, lease_expires_at = NULL,
 		     error_code = NULL, error_summary = NULL, retry_disposition = NULL,
@@ -933,7 +933,7 @@ func (m *Module) lockCompletion(
 		ctx,
 		&state,
 		`SELECT automatic_retry_count
-		 FROM operations
+		 FROM release_operations
 		 WHERE id = $1 AND status = 'running' AND lease_owner = $2
 		   AND attempt_count = $3 AND lease_expires_at > $4
 		 FOR UPDATE`,
@@ -1033,7 +1033,7 @@ const operationSelect = `SELECT id, operation_type, release_id, deployment_targe
        actor_id, idempotency_key, traceparent, tracestate, status, attempt_count,
        automatic_retry_count, recovery_required, error_code, error_summary, retry_disposition,
        queued_at, available_at, created_at, updated_at, started_at, finished_at
- FROM operations`
+ FROM release_operations`
 
 const attemptSelect = `SELECT id, attempt_number, worker_id, status, error_code,
 	   error_summary, retry_disposition, started_at, finished_at

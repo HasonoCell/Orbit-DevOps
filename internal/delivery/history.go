@@ -92,7 +92,7 @@ func (m *Module) ListHistory(ctx context.Context, query ListHistoryQuery) (Histo
 	       o.started_at AS operation_started_at,
 	       o.finished_at AS operation_finished_at
 	 FROM releases AS r
-	 JOIN operations AS o ON o.release_id = r.id`
+	 JOIN release_operations AS o ON o.release_id = r.id`
 	if cursor == nil {
 		if err := m.db.SelectContext(
 			ctx,

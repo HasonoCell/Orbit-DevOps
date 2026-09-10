@@ -382,7 +382,7 @@ func (r *kindQueueRunner) RunOnce(parent context.Context) (bool, error) {
 	ctx, cancel := context.WithTimeout(parent, 70*time.Second)
 	defer cancel()
 	var ids []uuid.UUID
-	if err := r.db.SelectContext(ctx, &ids, `SELECT id FROM operations WHERE status IN ('pending','running','cancel_requested')`); err != nil {
+	if err := r.db.SelectContext(ctx, &ids, `SELECT id FROM release_operations WHERE status IN ('pending','running','cancel_requested')`); err != nil {
 		return false, err
 	}
 	if len(ids) == 0 {

@@ -30,7 +30,7 @@ func (m *Module) ReadMetricsSnapshot(ctx context.Context) (MetricsSnapshot, erro
 		ctx,
 		&snapshot.Statuses,
 		`SELECT status AS label, count(*)::integer AS count
-		 FROM operations GROUP BY status`,
+		 FROM release_operations GROUP BY status`,
 	); err != nil {
 		return MetricsSnapshot{}, fmt.Errorf("count operation statuses: %w", err)
 	}
@@ -39,7 +39,7 @@ func (m *Module) ReadMetricsSnapshot(ctx context.Context) (MetricsSnapshot, erro
 		`SELECT
 		 count(*) FILTER (WHERE status = 'pending' AND available_at <= $1)::integer,
 		 count(*) FILTER (WHERE status = 'pending' AND available_at > $1)::integer
-		 FROM operations`,
+		 FROM release_operations`,
 		m.now(),
 	).Scan(&snapshot.PendingAvailable, &snapshot.PendingDelayed); err != nil {
 		return MetricsSnapshot{}, fmt.Errorf("count pending availability: %w", err)

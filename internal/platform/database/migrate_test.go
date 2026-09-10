@@ -158,7 +158,7 @@ func TestReliableReleaseOperationMigrationBackfillsSchedulingState(t *testing.T)
 		ctx,
 		`SELECT deployment_target_id, queued_at, available_at, error_code,
 		        retry_disposition, recovery_required
-		 FROM operations WHERE id = $1`,
+		 FROM release_operations WHERE id = $1`,
 		releaseOperationID,
 	).Scan(
 		&gotTargetID,
@@ -272,7 +272,7 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 		t.Fatalf("upgrade dispatch terminology: %v", err)
 	}
 
-	if _, err := database.ExecContext(ctx, `SELECT current_dispatch_sequence FROM operations LIMIT 0`); err != nil {
+	if _, err := database.ExecContext(ctx, `SELECT current_dispatch_sequence FROM release_operations LIMIT 0`); err != nil {
 		t.Fatalf("query renamed operation sequence: %v", err)
 	}
 	if _, err := database.ExecContext(ctx, `SELECT sequence, protocol_version, dispatch_reason, reservation_count FROM operation_dispatches LIMIT 0`); err != nil {
@@ -281,7 +281,7 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 	var oldColumnCount int
 	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.columns
 		WHERE table_schema = 'public' AND (
-			(table_name = 'operations' AND column_name = 'dispatch_generation') OR
+			(table_name = 'release_operations' AND column_name = 'dispatch_generation') OR
 			(table_name = 'operation_dispatches' AND column_name IN ('generation', 'version', 'reason', 'delivery_count'))
 		)`).Scan(&oldColumnCount); err != nil {
 		t.Fatalf("inspect old dispatch fields: %v", err)
@@ -292,7 +292,7 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 	var renamedConstraintCount int
 	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM pg_constraint
 		WHERE conname IN (
-			'operations_current_dispatch_sequence_check',
+			'release_operations_current_dispatch_sequence_check',
 			'operation_dispatches_sequence_check',
 			'operation_dispatches_reservation_count_check',
 			'operation_dispatches_operation_id_sequence_key'
@@ -307,7 +307,7 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 	var dispatchReason string
 	if err := database.QueryRowContext(ctx, `SELECT o.current_dispatch_sequence,
 		d.sequence, d.protocol_version, d.dispatch_reason, d.reservation_count
-		FROM operations o JOIN operation_dispatches d ON d.operation_id = o.id
+		FROM release_operations o JOIN operation_dispatches d ON d.operation_id = o.id
 		WHERE o.id = $1 AND d.id = $2`, releaseOperationID, dispatchID).Scan(
 		&operationSequence,
 		&dispatchSequence,
@@ -320,6 +320,27 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 	if operationSequence != 7 || dispatchSequence != 7 || protocolVersion != 1 || dispatchReason != "accepted" || reservationCount != 2 {
 		t.Fatalf("renamed dispatch data = operation sequence %d, dispatch sequence %d, version %d, reason %q, reservations %d",
 			operationSequence, dispatchSequence, protocolVersion, dispatchReason, reservationCount)
+	}
+	var newTableExists, oldTableMissing bool
+	if err := database.QueryRowContext(ctx, `SELECT
+		to_regclass('public.release_operations') IS NOT NULL,
+		to_regclass('public.operations') IS NULL`).Scan(&newTableExists, &oldTableMissing); err != nil {
+		t.Fatalf("inspect release operation table rename: %v", err)
+	}
+	if !newTableExists || !oldTableMissing {
+		t.Fatalf("release operation tables = new exists %v, old missing %v", newTableExists, oldTableMissing)
+	}
+	var staleObjectCount int
+	if err := database.QueryRowContext(ctx, `SELECT
+		(SELECT count(*) FROM pg_constraint
+		 WHERE conrelid = 'release_operations'::regclass AND conname LIKE 'operations_%') +
+		(SELECT count(*) FROM pg_indexes
+		 WHERE schemaname = current_schema() AND tablename = 'release_operations'
+		   AND indexname LIKE 'operations_%')`).Scan(&staleObjectCount); err != nil {
+		t.Fatalf("inspect release operation schema object names: %v", err)
+	}
+	if staleObjectCount != 0 {
+		t.Fatalf("stale operation schema object names remain: %d", staleObjectCount)
 	}
 
 	// Down migration 必须只恢复旧术语；既有调度事实随后仍可再次升级。

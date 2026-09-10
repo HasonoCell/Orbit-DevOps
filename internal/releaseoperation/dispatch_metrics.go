@@ -24,6 +24,6 @@ func (m *Module) ReadDispatchMetrics(ctx context.Context) (DispatchMetrics, erro
 	 COALESCE(sum(GREATEST(reservation_count-1,0)),0) AS redeliveries
 	 FROM (SELECT d.*, (d.sequence = o.current_dispatch_sequence AND
 	 o.status IN ('pending','running','cancel_requested')) AS current
-	 FROM operation_dispatches d JOIN operations o ON o.id=d.operation_id) d`, m.now())
+	 FROM operation_dispatches d JOIN release_operations o ON o.id=d.operation_id) d`, m.now())
 	return result, err
 }

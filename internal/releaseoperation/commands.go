@@ -74,7 +74,7 @@ func (m *Module) Retry(ctx context.Context, command RetryCommand) (Record, error
 			}
 			if _, err := tx.ExecContext(
 				ctx,
-				`UPDATE operations
+				`UPDATE release_operations
 				 SET status = 'pending', automatic_retry_count = 0,
 				     recovery_required = false,
 				     queued_at = $1, available_at = $1,
@@ -109,7 +109,7 @@ func (m *Module) Cancel(ctx context.Context, command CancelCommand) (Record, err
 			case StatusPending:
 				if _, err := tx.ExecContext(
 					ctx,
-					`UPDATE operations
+					`UPDATE release_operations
 					 SET status = 'canceled', recovery_required = false,
 					     updated_at = $1, finished_at = $1
 					 WHERE id = $2`,
@@ -121,7 +121,7 @@ func (m *Module) Cancel(ctx context.Context, command CancelCommand) (Record, err
 			case StatusRunning:
 				if _, err := tx.ExecContext(
 					ctx,
-					`UPDATE operations
+					`UPDATE release_operations
 					 SET status = 'cancel_requested', updated_at = $1
 					 WHERE id = $2`,
 					now,
@@ -188,7 +188,7 @@ func (m *Module) ReconcileAttention(
 			case ReconcileSucceeded:
 				_, err := tx.ExecContext(
 					ctx,
-					`UPDATE operations
+					`UPDATE release_operations
 					 SET status = 'succeeded', recovery_required = false,
 					     error_code = NULL, error_summary = NULL, retry_disposition = NULL,
 					     updated_at = $1, finished_at = $1
@@ -200,7 +200,7 @@ func (m *Module) ReconcileAttention(
 			case ReconcileFailed:
 				_, err := tx.ExecContext(
 					ctx,
-					`UPDATE operations
+					`UPDATE release_operations
 					 SET status = 'failed', recovery_required = false,
 					     error_code = $1, error_summary = $2,
 					     retry_disposition = 'non_retryable', updated_at = $3, finished_at = $3
@@ -214,7 +214,7 @@ func (m *Module) ReconcileAttention(
 			case ReconcileUnclear:
 				_, err := tx.ExecContext(
 					ctx,
-					`UPDATE operations
+					`UPDATE release_operations
 					 SET error_code = $1, error_summary = $2,
 					     retry_disposition = 'unknown_outcome', updated_at = $3, finished_at = $3
 					 WHERE id = $4`,
@@ -263,7 +263,7 @@ func (m *Module) ForceFailAttention(
 			}
 			if _, err := tx.ExecContext(
 				ctx,
-				`UPDATE operations
+				`UPDATE release_operations
 				 SET status = 'failed', recovery_required = false,
 				     error_code = 'manual_resolution', error_summary = $1,
 				     retry_disposition = 'non_retryable', updated_at = $2, finished_at = $2

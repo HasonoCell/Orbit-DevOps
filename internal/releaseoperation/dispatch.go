@@ -35,7 +35,7 @@ func scheduleDispatch(ctx context.Context, tx *sqlx.Tx, releaseOperationID uuid.
 		AvailableAt  time.Time `db:"available_at"`
 		AttemptCount int       `db:"attempt_count"`
 	}
-	if err := tx.GetContext(ctx, &current, `UPDATE operations
+	if err := tx.GetContext(ctx, &current, `UPDATE release_operations
 	 SET current_dispatch_sequence = current_dispatch_sequence + 1 WHERE id = $1
 	 RETURNING current_dispatch_sequence, available_at, attempt_count`, releaseOperationID); err != nil {
 		return fmt.Errorf("advance dispatch sequence: %w", err)
@@ -72,7 +72,7 @@ func (m *Module) ReserveDispatches(ctx context.Context, limit int, leaseDuration
 	items := []Dispatch{}
 	// 只依据数据库当前意图隔离未知协议；外部损坏载荷不能改变合法工作。
 	if _, err := m.db.ExecContext(ctx, `WITH invalid AS (
-	 SELECT d.id FROM operation_dispatches d JOIN operations o ON o.id = d.operation_id
+	 SELECT d.id FROM operation_dispatches d JOIN release_operations o ON o.id = d.operation_id
 	 WHERE d.state IN ('pending','published') AND d.sequence = o.current_dispatch_sequence AND d.protocol_version <> 1
 	 ORDER BY d.id FOR UPDATE OF d SKIP LOCKED LIMIT $2
 	) UPDATE operation_dispatches d SET state = 'quarantined', publish_token = NULL, publish_expires_at = NULL,
@@ -80,12 +80,12 @@ func (m *Module) ReserveDispatches(ctx context.Context, limit int, leaseDuration
 		return nil, err
 	}
 	err := m.db.SelectContext(ctx, &items, `WITH due AS (
-	 SELECT d.id FROM operation_dispatches d JOIN operations o ON o.id = d.operation_id
+	 SELECT d.id FROM operation_dispatches d JOIN release_operations o ON o.id = d.operation_id
 	 WHERE d.state IN ('pending', 'published') AND d.protocol_version = 1 AND d.next_dispatch_at <= $1
 	   AND (d.publish_expires_at IS NULL OR d.publish_expires_at <= $1)
 	   AND d.sequence = o.current_dispatch_sequence AND d.expected_attempt_count = o.attempt_count
 	   AND (o.status = 'pending' OR (o.status IN ('running', 'cancel_requested') AND o.lease_expires_at <= $1))
-	   AND NOT EXISTS (SELECT 1 FROM operations p WHERE p.deployment_target_id = o.deployment_target_id
+	   AND NOT EXISTS (SELECT 1 FROM release_operations p WHERE p.deployment_target_id = o.deployment_target_id
 	     AND p.status IN ('pending', 'running', 'cancel_requested', 'attention_required')
 	     AND (p.queued_at, p.id) < (o.queued_at, o.id))
 	 ORDER BY d.next_dispatch_at, d.id FOR UPDATE OF d SKIP LOCKED LIMIT $2
@@ -144,7 +144,7 @@ func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request Cla
 	var candidate claimCandidate
 	err = tx.GetContext(ctx, &candidate, `SELECT id, release_id, deployment_target_id, status,
 	 attempt_count, automatic_retry_count, recovery_required, traceparent, tracestate,
-	 current_dispatch_sequence, available_at, lease_expires_at FROM operations WHERE id = $1 FOR UPDATE`, ref.ReleaseOperationID)
+	 current_dispatch_sequence, available_at, lease_expires_at FROM release_operations WHERE id = $1 FOR UPDATE`, ref.ReleaseOperationID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ignored, nil
 	}
@@ -188,7 +188,7 @@ func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request Cla
 		return ignored, tx.Commit()
 	}
 	var preceding bool
-	err = tx.GetContext(ctx, &preceding, `SELECT EXISTS (SELECT 1 FROM operations p JOIN operations o
+	err = tx.GetContext(ctx, &preceding, `SELECT EXISTS (SELECT 1 FROM release_operations p JOIN release_operations o
 	 ON o.id = $1 WHERE p.deployment_target_id = o.deployment_target_id
 	 AND p.status IN ('pending', 'running', 'cancel_requested', 'attention_required')
 	 AND (p.queued_at, p.id) < (o.queued_at, o.id))`, ref.ReleaseOperationID)
@@ -278,7 +278,7 @@ func (m *Module) RepairDispatches(ctx context.Context, limit int) (int, error) {
 	defer func() { _ = tx.Rollback() }()
 	now := m.now()
 	var ids []uuid.UUID
-	err = tx.SelectContext(ctx, &ids, `SELECT o.id FROM operations o
+	err = tx.SelectContext(ctx, &ids, `SELECT o.id FROM release_operations o
 	 WHERE o.status IN ('running', 'cancel_requested') AND o.lease_expires_at <= $1
 	 AND NOT EXISTS (SELECT 1 FROM operation_dispatches d WHERE d.operation_id = o.id
 	   AND d.sequence = o.current_dispatch_sequence AND d.expected_attempt_count = o.attempt_count

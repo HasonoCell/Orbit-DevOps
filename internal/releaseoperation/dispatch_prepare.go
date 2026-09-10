@@ -46,7 +46,7 @@ func (m *Module) PrepareDispatches(ctx context.Context, batchID uuid.UUID) (Disp
 		Expires *time.Time             `db:"lease_expires_at"`
 	}
 	// 离线批次按统一顺序锁业务行，之后才修改 Outbox。历史快照和业务时间不变。
-	err = tx.SelectContext(ctx, &items, `SELECT id, status, lease_expires_at FROM operations ORDER BY id FOR UPDATE`)
+	err = tx.SelectContext(ctx, &items, `SELECT id, status, lease_expires_at FROM release_operations ORDER BY id FOR UPDATE`)
 	if err != nil {
 		return result, err
 	}
@@ -59,7 +59,7 @@ func (m *Module) PrepareDispatches(ctx context.Context, batchID uuid.UUID) (Disp
 			result.Scheduled++
 		} else {
 			// 有效活动租约到期前不接管，终态及人工处理状态也不生成执行意图。
-			if _, err := tx.ExecContext(ctx, `UPDATE operations SET current_dispatch_sequence = current_dispatch_sequence + 1 WHERE id = $1`, item.ID); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE release_operations SET current_dispatch_sequence = current_dispatch_sequence + 1 WHERE id = $1`, item.ID); err != nil {
 				return result, err
 			}
 			if err := obsoleteDispatches(ctx, tx, item.ID, now); err != nil {
