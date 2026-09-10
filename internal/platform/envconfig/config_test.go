@@ -119,3 +119,21 @@ func TestBuildWorkerRejectsMutableRuntimeImage(t *testing.T) {
 		t.Fatal("mutable BuildKit image was accepted")
 	}
 }
+
+func TestAPILoadsWebhookSecretRotationWithoutDefaultSecret(t *testing.T) {
+	t.Setenv("ORBITOPS_GITHUB_WEBHOOK_ENDPOINTS", `{"public":{"currentSecret":"current","previousSecret":"previous"}}`)
+	t.Setenv("ORBITOPS_GITHUB_WEBHOOK_MAX_BODY_BYTES", "2048")
+	config, err := envconfig.LoadAPI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := config.GitHubWebhook.Endpoints["public"]
+	if endpoint.CurrentSecret != "current" || endpoint.PreviousSecret != "previous" || config.GitHubWebhook.MaxBodyBytes != 2048 {
+		t.Fatalf("webhook config = %#v", config.GitHubWebhook)
+	}
+
+	t.Setenv("ORBITOPS_GITHUB_WEBHOOK_ENDPOINTS", `{"public":{"previousSecret":"previous"}}`)
+	if _, err := envconfig.LoadAPI(); err == nil {
+		t.Fatal("endpoint without current secret was accepted")
+	}
+}

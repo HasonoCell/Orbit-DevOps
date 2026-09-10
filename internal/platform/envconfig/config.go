@@ -1,6 +1,7 @@
 package envconfig
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -29,6 +30,25 @@ type API struct {
 	MigrateOnBoot bool
 	Kubernetes    Kubernetes
 	SourceBuild   SourceBuild
+	GitHubWebhook GitHubWebhook
+	GitHubSource  GitHubSource
+}
+
+// GitHubWebhook 只在进程内保存验签材料；这些值不得进入数据库或日志。
+type GitHubWebhook struct {
+	Endpoints    map[string]GitHubWebhookSecrets
+	MaxBodyBytes int64
+}
+
+type GitHubWebhookSecrets struct {
+	CurrentSecret  string `json:"currentSecret"`
+	PreviousSecret string `json:"previousSecret,omitempty"`
+}
+
+type GitHubSource struct {
+	APIBaseURL string
+	Token      string
+	Timeout    time.Duration
 }
 
 // SourceBuild 是 API 用来冻结构建目标的受控配置；用户请求不能覆盖这些边界。
@@ -136,6 +156,14 @@ func LoadAPI() (API, error) {
 	if err != nil {
 		return API{}, err
 	}
+	githubWebhook, err := loadGitHubWebhook()
+	if err != nil {
+		return API{}, err
+	}
+	githubTimeout, err := duration("ORBITOPS_GITHUB_API_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return API{}, err
+	}
 	migrateOnBoot, err := boolean("ORBITOPS_MIGRATE_ON_BOOT", true)
 	if err != nil {
 		return API{}, err
@@ -152,7 +180,29 @@ func LoadAPI() (API, error) {
 			RegistryHost:    value("ORBITOPS_BUILD_REGISTRY_HOST", "orbitops-s4-registry.orbitops-s4-build.svc.cluster.local:5000"),
 			RegistryPrefix:  value("ORBITOPS_BUILD_REGISTRY_PREFIX", "orbitops"),
 		},
+		GitHubWebhook: githubWebhook,
+		GitHubSource:  GitHubSource{APIBaseURL: value("ORBITOPS_GITHUB_API_URL", "https://api.github.com"), Token: os.Getenv("ORBITOPS_GITHUB_API_TOKEN"), Timeout: githubTimeout},
 	}, nil
+}
+
+func loadGitHubWebhook() (GitHubWebhook, error) {
+	maximumBody, err := nonNegativeInteger("ORBITOPS_GITHUB_WEBHOOK_MAX_BODY_BYTES", 1024*1024)
+	if err != nil || maximumBody < 1024 || maximumBody > 10*1024*1024 {
+		return GitHubWebhook{}, errors.New("ORBITOPS_GITHUB_WEBHOOK_MAX_BODY_BYTES must be between 1024 and 10485760")
+	}
+	endpoints := map[string]GitHubWebhookSecrets{}
+	configured := strings.TrimSpace(os.Getenv("ORBITOPS_GITHUB_WEBHOOK_ENDPOINTS"))
+	if configured != "" {
+		if err := json.Unmarshal([]byte(configured), &endpoints); err != nil {
+			return GitHubWebhook{}, fmt.Errorf("parse ORBITOPS_GITHUB_WEBHOOK_ENDPOINTS: %w", err)
+		}
+	}
+	for key, secrets := range endpoints {
+		if strings.TrimSpace(key) == "" || strings.TrimSpace(secrets.CurrentSecret) == "" {
+			return GitHubWebhook{}, errors.New("every GitHub webhook endpoint requires a key and currentSecret")
+		}
+	}
+	return GitHubWebhook{Endpoints: endpoints, MaxBodyBytes: int64(maximumBody)}, nil
 }
 
 // LoadReleaseWorker 分开加载业务租约与运输参数，拒绝会提前截断业务执行的队列超时。

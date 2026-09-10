@@ -20,6 +20,10 @@ func (fixedSourceInspector) Resolve(_ context.Context, request pipeline.SourceRe
 	}, nil
 }
 
+func (fixedSourceInspector) Head(_ context.Context, request pipeline.HeadRequest) (pipeline.SourceIdentity, error) {
+	return pipeline.SourceIdentity{RepositoryID: request.RepositoryID, OwnerID: request.OwnerID, RepositoryName: "example/orbitops-demo", RepositoryURL: request.RepositoryURL, GitRef: request.GitRef, HeadCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, nil
+}
+
 type deliveryPipelineDocument struct {
 	Pipeline struct {
 		ID                   string `json:"id"`

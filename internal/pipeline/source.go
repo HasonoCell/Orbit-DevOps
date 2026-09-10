@@ -6,7 +6,11 @@ import (
 	"errors"
 )
 
-var ErrSourceUnavailable = errors.New("git source inspector is unavailable")
+var (
+	ErrSourceUnavailable  = errors.New("git source inspector is unavailable")
+	ErrSourceNotFound     = errors.New("git repository or branch not found")
+	ErrSourceOwnerChanged = errors.New("git repository owner changed")
+)
 
 // SourceRequest 只包含解析 GitHub 仓库和分支所需的配置，不携带凭据。
 type SourceRequest struct {
@@ -25,13 +29,25 @@ type SourceIdentity struct {
 	HeadCommit     string
 }
 
+type HeadRequest struct {
+	RepositoryID  int64
+	OwnerID       int64
+	RepositoryURL string
+	GitRef        string
+}
+
 // GitSourceInspector 隔离 Git Provider 网络协议；数据库只保存解析后的稳定身份。
 type GitSourceInspector interface {
 	Resolve(context.Context, SourceRequest) (SourceIdentity, error)
+	Head(context.Context, HeadRequest) (SourceIdentity, error)
 }
 
 type unavailableInspector struct{}
 
 func (unavailableInspector) Resolve(context.Context, SourceRequest) (SourceIdentity, error) {
+	return SourceIdentity{}, ErrSourceUnavailable
+}
+
+func (unavailableInspector) Head(context.Context, HeadRequest) (SourceIdentity, error) {
 	return SourceIdentity{}, ErrSourceUnavailable
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
 	"github.com/HasonoCell/OrbitOps/internal/transport/httpapi"
+	"github.com/HasonoCell/OrbitOps/internal/webhook"
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -42,6 +43,7 @@ type Config struct {
 	BuildRegistryHost    string
 	BuildRegistryPrefix  string
 	MigrateOnBoot        bool
+	WebhookConfig        webhook.Config
 }
 
 type Runtime struct {
@@ -141,6 +143,7 @@ func NewWithDependencies(
 			propagation.Baggage{},
 		)
 	}
+	webhookModule := webhook.New(db, config.WebhookConfig, tracer, propagator)
 	server := httpapi.NewServer(
 		projectModule,
 		catalogModule,
@@ -149,6 +152,7 @@ func NewWithDependencies(
 		deliveryModule,
 		diagnosticModule,
 		pipelineModule,
+		webhookModule,
 		releaseOperationModule,
 		authorizer,
 		dependencies.RecoveryPublisher,

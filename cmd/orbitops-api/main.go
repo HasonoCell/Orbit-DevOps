@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/app"
+	"github.com/HasonoCell/OrbitOps/internal/githubsource"
 	"github.com/HasonoCell/OrbitOps/internal/kube"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
 	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/OrbitOps/internal/platform/process"
+	"github.com/HasonoCell/OrbitOps/internal/webhook"
 	"github.com/gin-gonic/gin"
 )
 
@@ -62,6 +64,10 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	githubAdapter, err := githubsource.New(githubsource.Config{APIBaseURL: config.GitHubSource.APIBaseURL, Token: config.GitHubSource.Token, EndpointKeys: webhookEndpointKeys(config.GitHubWebhook.Endpoints), Timeout: config.GitHubSource.Timeout})
+	if err != nil {
+		return err
+	}
 	runtime, err := app.NewWithDependencies(ctx, app.Config{
 		DatabaseURL:          config.DatabaseURL,
 		LocalActorID:         config.ActorID,
@@ -72,13 +78,18 @@ func run(logger *slog.Logger) error {
 		BuildRegistryHost:    config.SourceBuild.RegistryHost,
 		BuildRegistryPrefix:  config.SourceBuild.RegistryPrefix,
 		MigrateOnBoot:        config.MigrateOnBoot,
+		WebhookConfig: webhook.Config{
+			Endpoints:    webhookEndpoints(config.GitHubWebhook.Endpoints),
+			MaxBodyBytes: config.GitHubWebhook.MaxBodyBytes,
+		},
 	}, app.Dependencies{
-		RuntimeSource:     adapter,
-		RecoveryPublisher: adapter,
-		Logger:            logger,
-		Metrics:           metrics,
-		Tracer:            tracing.Provider.Tracer("orbitops-api"),
-		Propagator:        tracing.Propagator,
+		RuntimeSource:      adapter,
+		GitSourceInspector: githubAdapter,
+		RecoveryPublisher:  adapter,
+		Logger:             logger,
+		Metrics:            metrics,
+		Tracer:             tracing.Provider.Tracer("orbitops-api"),
+		Propagator:         tracing.Propagator,
 	})
 	if err != nil {
 		return err
@@ -99,4 +110,21 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+// webhookEndpoints 在进程启动边界复制 Secret，避免配置层结构渗入领域模块。
+func webhookEndpoints(configured map[string]envconfig.GitHubWebhookSecrets) map[string]webhook.EndpointSecrets {
+	result := make(map[string]webhook.EndpointSecrets, len(configured))
+	for key, secrets := range configured {
+		result[key] = webhook.EndpointSecrets{Current: secrets.CurrentSecret, Previous: secrets.PreviousSecret}
+	}
+	return result
+}
+
+func webhookEndpointKeys(configured map[string]envconfig.GitHubWebhookSecrets) map[string]struct{} {
+	result := make(map[string]struct{}, len(configured))
+	for key := range configured {
+		result[key] = struct{}{}
+	}
+	return result
 }

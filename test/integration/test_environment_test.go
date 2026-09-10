@@ -11,6 +11,7 @@ import (
 
 	"github.com/HasonoCell/OrbitOps/internal/app"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/OrbitOps/internal/webhook"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
@@ -34,7 +35,10 @@ func (e *testEnvironment) serverForActor(t *testing.T, actorID string) *httptest
 		BuildPlatform:        "linux/amd64",
 		BuildRegistryHost:    "registry.example",
 		BuildRegistryPrefix:  "orbitops",
-		MigrateOnBoot:        false,
+		WebhookConfig: webhook.Config{Endpoints: map[string]webhook.EndpointSecrets{
+			"integration": {Current: "integration-webhook-secret"},
+		}},
+		MigrateOnBoot: false,
 	}, e.dependencies)
 	if err != nil {
 		t.Fatalf("start OrbitOps for actor %q: %v", actorID, err)
@@ -229,7 +233,10 @@ func newTestEnvironmentWithDependencies(
 		BuildPlatform:        "linux/amd64",
 		BuildRegistryHost:    "registry.example",
 		BuildRegistryPrefix:  "orbitops",
-		MigrateOnBoot:        true,
+		WebhookConfig: webhook.Config{Endpoints: map[string]webhook.EndpointSecrets{
+			"integration": {Current: "integration-webhook-secret"},
+		}},
+		MigrateOnBoot: true,
 	}, dependencies)
 	if err != nil {
 		t.Fatalf("start OrbitOps: %v", err)

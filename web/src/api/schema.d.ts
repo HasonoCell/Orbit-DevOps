@@ -486,6 +486,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/webhooks/github/{endpointKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 接纳经过部署侧 Secret 验证的 GitHub Webhook */
+        post: operations["acceptGitHubWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/delivery-pipelines/{deliveryPipelineId}": {
         parameters: {
             query?: never;
@@ -1070,6 +1087,13 @@ export interface components {
         };
         /** @enum {string} */
         DeliveryMode: "build_only" | "auto_release";
+        WebhookAcceptance: {
+            /** Format: uuid */
+            deliveryId: string;
+            /** @enum {string} */
+            state: "pending" | "processed" | "ignored" | "quarantined";
+            replay: boolean;
+        };
         CreateDeliveryPipelineRequest: {
             name: string;
             endpointKey: string;
@@ -3095,6 +3119,95 @@ export interface operations {
             };
             /** @description 名称或幂等键冲突 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    acceptGitHubWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-GitHub-Delivery": string;
+                "X-GitHub-Event": string;
+                "X-Hub-Signature-256": string;
+            };
+            path: {
+                endpointKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 投递已经可靠接纳、忽略或隔离 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookAcceptance"];
+                };
+            };
+            /** @description 必要 Header 缺失 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 签名无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Endpoint Key 未配置 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Delivery ID 被不同 Payload 重用 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Payload 超过配置上限 */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description PostgreSQL 无法可靠接纳 */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

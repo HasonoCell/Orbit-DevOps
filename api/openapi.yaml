@@ -1398,6 +1398,52 @@ paths:
         default:
           description: 请求失败
           content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+  /api/v1/webhooks/github/{endpointKey}:
+    post:
+      operationId: acceptGitHubWebhook
+      summary: 接纳经过部署侧 Secret 验证的 GitHub Webhook
+      parameters:
+        - name: endpointKey
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+        - name: X-GitHub-Delivery
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 64}
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
+      responses:
+        "202":
+          description: 投递已经可靠接纳、忽略或隔离
+          content: {application/json: {schema: {$ref: "#/components/schemas/WebhookAcceptance"}}}
+        "400":
+          description: 必要 Header 缺失
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "401":
+          description: 签名无效
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "404":
+          description: Endpoint Key 未配置
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "409":
+          description: Delivery ID 被不同 Payload 重用
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "413":
+          description: Payload 超过配置上限
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "503":
+          description: PostgreSQL 无法可靠接纳
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        default:
+          description: 请求失败
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
   /api/v1/delivery-pipelines/{deliveryPipelineId}:
     get:
       operationId: getDeliveryPipeline
@@ -2861,6 +2907,14 @@ components:
     DeliveryMode:
       type: string
       enum: [build_only, auto_release]
+    WebhookAcceptance:
+      type: object
+      additionalProperties: false
+      required: [deliveryId, state, replay]
+      properties:
+        deliveryId: {type: string, format: uuid}
+        state: {type: string, enum: [pending, processed, ignored, quarantined]}
+        replay: {type: boolean}
     CreateDeliveryPipelineRequest:
       type: object
       additionalProperties: false

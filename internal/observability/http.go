@@ -30,6 +30,11 @@ func TraceMiddleware(
 	propagator propagation.TextMapPropagator,
 ) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		// Webhook 在验签成功后自行建立根 Trace，不能继承外部提供的 Trace Context。
+		if strings.HasPrefix(ctx.Request.URL.Path, "/api/v1/webhooks/github/") {
+			ctx.Next()
+			return
+		}
 		parent := propagator.Extract(
 			ctx.Request.Context(),
 			propagation.HeaderCarrier(ctx.Request.Header),
@@ -65,7 +70,11 @@ func RequestMiddleware(
 		requestContext = projectauth.WithDenialRecorder(requestContext, metrics)
 		ctx.Request = ctx.Request.WithContext(requestContext)
 		startedAt := time.Now()
+		webhookRequest := strings.HasPrefix(ctx.Request.URL.Path, "/api/v1/webhooks/github/")
 		requestID := strings.TrimSpace(ctx.GetHeader("X-Request-ID"))
+		if webhookRequest {
+			requestID = ""
+		}
 		if requestID == "" {
 			requestID = uuid.NewString()
 		}
@@ -79,13 +88,17 @@ func RequestMiddleware(
 			}
 			metrics.RecordHTTPRequest(ctx.Request.Method, route, ctx.Writer.Status(), duration)
 			spanContext := trace.SpanContextFromContext(ctx.Request.Context())
+			loggedActorID := actorID
+			if webhookRequest {
+				loggedActorID = "system"
+			}
 			logger.InfoContext(ctx.Request.Context(), "HTTP 请求完成",
 				"request_id", requestID,
 				"method", ctx.Request.Method,
 				"route", route,
 				"status", ctx.Writer.Status(),
 				"duration_ms", duration.Milliseconds(),
-				"actor_id", actorID,
+				"actor_id", loggedActorID,
 				"project_id", projectID,
 				"idempotency_key", boundedHeader(ctx.GetHeader("Idempotency-Key"), 128),
 				"trace_id", spanContext.TraceID().String(),

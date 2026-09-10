@@ -23,7 +23,7 @@ func (s *Server) CreateDeliveryPipeline(ctx context.Context, request api.CreateD
 	})
 	if err != nil {
 		switch {
-		case errors.Is(err, pipeline.ErrInvalidInput), errors.Is(err, pipeline.ErrSourceUnavailable):
+		case errors.Is(err, pipeline.ErrInvalidInput), errors.Is(err, pipeline.ErrSourceNotFound):
 			return api.CreateDeliveryPipeline400JSONResponse{Code: "invalid_delivery_pipeline", Message: err.Error()}, nil
 		case errors.Is(err, pipeline.ErrApplicationNotFound), errors.Is(err, pipeline.ErrTargetNotFound), errors.Is(err, projectauth.ErrNotMember):
 			return api.CreateDeliveryPipeline404JSONResponse{Code: "delivery_pipeline_dependency_not_found", Message: "application or deployment target not found"}, nil
@@ -77,7 +77,7 @@ func (s *Server) UpdateDeliveryPipeline(ctx context.Context, request api.UpdateD
 	})
 	if err != nil {
 		switch {
-		case errors.Is(err, pipeline.ErrInvalidInput), errors.Is(err, pipeline.ErrSourceUnavailable):
+		case errors.Is(err, pipeline.ErrInvalidInput), errors.Is(err, pipeline.ErrSourceNotFound):
 			return api.UpdateDeliveryPipeline400JSONResponse{Code: "invalid_delivery_pipeline", Message: err.Error()}, nil
 		case errors.Is(err, pipeline.ErrNotFound), errors.Is(err, pipeline.ErrTargetNotFound), errors.Is(err, projectauth.ErrNotMember):
 			return api.UpdateDeliveryPipeline404JSONResponse{Code: "delivery_pipeline_not_found", Message: "delivery pipeline or deployment target not found"}, nil
@@ -96,7 +96,7 @@ func (s *Server) EnableDeliveryPipeline(ctx context.Context, request api.EnableD
 	updated, err := s.pipelines.Enable(httpRequestContext(ctx), pipeline.StateCommand{PipelineID: request.DeliveryPipelineId, ActorID: s.localActorID, IdempotencyKey: request.Params.IdempotencyKey})
 	if err != nil {
 		switch {
-		case errors.Is(err, pipeline.ErrInvalidInput), errors.Is(err, pipeline.ErrSourceUnavailable):
+		case errors.Is(err, pipeline.ErrInvalidInput), errors.Is(err, pipeline.ErrSourceNotFound), errors.Is(err, pipeline.ErrSourceOwnerChanged):
 			return api.EnableDeliveryPipeline400JSONResponse{Code: "delivery_pipeline_source_invalid", Message: err.Error()}, nil
 		case errors.Is(err, pipeline.ErrNotFound), errors.Is(err, projectauth.ErrNotMember):
 			return api.EnableDeliveryPipeline404JSONResponse{Code: "delivery_pipeline_not_found", Message: "delivery pipeline not found"}, nil
