@@ -1,7 +1,11 @@
 package kind_test
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,9 +20,12 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
 	"github.com/HasonoCell/OrbitOps/internal/buildworker"
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
+	"github.com/HasonoCell/OrbitOps/internal/internalevent"
+	"github.com/HasonoCell/OrbitOps/internal/pipeline"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -29,6 +36,28 @@ const (
 	kindBuildCommit     = "611fa05748a4031841e5607cd3069288b0aa9973"
 	kindBuildContext    = "nginx-hello-nonroot/plain-text-version"
 )
+
+type kindSourceInspector struct{}
+
+func (kindSourceInspector) Resolve(_ context.Context, request pipeline.SourceRequest) (pipeline.SourceIdentity, error) {
+	if request.RepositoryURL != kindBuildRepository || request.Branch != "main" {
+		return pipeline.SourceIdentity{}, pipeline.ErrSourceNotFound
+	}
+	return kindSourceIdentity(), nil
+}
+
+func (kindSourceInspector) Head(_ context.Context, request pipeline.HeadRequest) (pipeline.SourceIdentity, error) {
+	identity := kindSourceIdentity()
+	if request.RepositoryID != identity.RepositoryID || request.OwnerID != identity.OwnerID || request.GitRef != identity.GitRef {
+		return pipeline.SourceIdentity{}, pipeline.ErrSourceOwnerChanged
+	}
+	return identity, nil
+}
+
+func kindSourceIdentity() pipeline.SourceIdentity {
+	return pipeline.SourceIdentity{RepositoryID: 101, OwnerID: 202, RepositoryName: "nginxinc/NGINX-Demos",
+		RepositoryURL: kindBuildRepository, GitRef: "refs/heads/main", HeadCommit: kindBuildCommit}
+}
 
 // TestKindBuildExecutor 通过真实 Git Fetch、rootless BuildKit Job 和本地 Registry 验证执行边界。
 func TestKindBuildExecutor(t *testing.T) {
@@ -92,8 +121,8 @@ func TestKindBuildExecutor(t *testing.T) {
 	assertRegistryManifest(t, execution, observation.Digest)
 }
 
-// TestKindSourceToReleaseControlPlane 验证 Commit 经 API、队列和 Build Job 生成 Artifact，随后由既有 Release 链路发布。
-func TestKindSourceToReleaseControlPlane(t *testing.T) {
+// TestKindPushToReadyDelivery 验证真实签名 Push 经 Pipeline、BuildKit、OCI 和 Release 最终达到 Ready。
+func TestKindPushToReadyDelivery(t *testing.T) {
 	if os.Getenv("ORBITOPS_KIND_BUILD_E2E") != "1" {
 		t.Skip("set ORBITOPS_KIND_BUILD_E2E=1 to run the real source-to-release acceptance")
 	}
@@ -140,79 +169,141 @@ func TestKindSourceToReleaseControlPlane(t *testing.T) {
 		}
 	})
 
-	projectResponse := environment.postJSON(t, "/api/v1/projects", "source-to-release-project",
-		`{"name":"Source To Release","slug":"source-to-release"}`)
-	projectID := decodeID(t, projectResponse, "project")
-	applicationResponse := environment.postJSON(t, "/api/v1/projects/"+projectID+"/applications", "source-to-release-application",
-		`{"name":"Source To Release","slug":"source-to-release"}`)
-	applicationID := decodeID(t, applicationResponse, "application")
-	buildResponse := environment.postJSON(t, "/api/v1/applications/"+applicationID+"/builds", "source-to-release-build",
-		fmt.Sprintf(`{"repositoryUrl":%q,"sourceCommit":%q,"dockerfilePath":"%s/Dockerfile","contextPath":%q}`,
-			kindBuildRepository, kindBuildCommit, kindBuildContext, kindBuildContext))
-	defer buildResponse.Body.Close()
-	var acceptance sourceBuildAcceptance
-	if err := json.NewDecoder(buildResponse.Body).Decode(&acceptance); err != nil {
-		t.Fatalf("decode build acceptance: %v", err)
+	pipelineModule := pipeline.New(environment.runner.db, pipeline.Config{Platform: environmentOrDefault("ORBITOPS_KIND_BUILD_PLATFORM", "linux/amd64")}, builds, environment.releases, projectauth.New(environment.runner.db), kindSourceInspector{})
+	eventService, err := internalevent.NewService(internalevent.Config{
+		RedisAddress: environment.runner.address, Queue: "orbitops-pipeline-kind", Concurrency: 2,
+		PollInterval: 50 * time.Millisecond, ConsumptionGrace: time.Second,
+		TaskTimeout: 30 * time.Second, ShutdownTimeout: 5 * time.Second,
+	}, internalevent.New(environment.runner.db), pipelineModule)
+	if err != nil {
+		t.Fatalf("create pipeline event service: %v", err)
 	}
-	completed := eventuallySourceBuild(t, environment, acceptance.Build.ID, 8*time.Minute)
-	if completed.BuildOperation.Status != string(buildoperation.StatusSucceeded) || completed.ImageArtifact == nil {
-		t.Fatalf("source build = %#v, want succeeded with artifact", completed)
-	}
-	assertRegistryManifest(t, buildworker.BuildExecution{
-		BuildID: uuid.MustParse(completed.Build.ID), DestinationRepository: completed.Build.DestinationRepository,
-	}, completed.ImageArtifact.Digest)
+	eventContext, stopEvents := context.WithCancel(context.Background())
+	eventDone := make(chan error, 1)
+	go func() { eventDone <- eventService.Run(eventContext) }()
+	t.Cleanup(func() {
+		stopEvents()
+		select {
+		case err := <-eventDone:
+			if err != nil {
+				t.Errorf("stop pipeline event service: %v", err)
+			}
+		case <-time.After(15 * time.Second):
+			t.Error("pipeline event service did not stop")
+		}
+	})
 
-	targetResponse := environment.postJSON(t, "/api/v1/applications/"+applicationID+"/deployment-targets", "source-to-release-target",
+	projectResponse := environment.postJSON(t, "/api/v1/projects", "push-to-ready-project",
+		`{"name":"Push To Ready","slug":"push-to-ready"}`)
+	projectID := decodeID(t, projectResponse, "project")
+	applicationResponse := environment.postJSON(t, "/api/v1/projects/"+projectID+"/applications", "push-to-ready-application",
+		`{"name":"Push To Ready","slug":"push-to-ready"}`)
+	applicationID := decodeID(t, applicationResponse, "application")
+	targetResponse := environment.postJSON(t, "/api/v1/applications/"+applicationID+"/deployment-targets", "push-to-ready-target",
 		`{"stage":"development","replicas":1,"containerPort":8080}`)
 	targetID := decodeID(t, targetResponse, "target")
 	cleanupResources(t, client, uuid.MustParse(targetID))
-	releaseResponse := environment.postJSON(t, "/api/v1/deployment-targets/"+targetID+"/releases", "source-to-release-release",
-		fmt.Sprintf(`{"imageReference":%q,"imageArtifactId":%q}`, completed.ImageArtifact.ImageReference, completed.ImageArtifact.ID))
-	release := decodeReleaseAcceptance(t, releaseResponse)
+	pipelineResponse := environment.postJSON(t, "/api/v1/applications/"+applicationID+"/delivery-pipelines", "push-to-ready-pipeline",
+		fmt.Sprintf(`{"name":"main","endpointKey":"kind","repositoryUrl":%q,"branch":"main","dockerfilePath":"%s/Dockerfile","contextPath":%q,"mode":"auto_release","deploymentTargetId":%q}`,
+			kindBuildRepository, kindBuildContext, kindBuildContext, targetID))
+	defer pipelineResponse.Body.Close()
+	var pipelineDocument struct {
+		Pipeline struct {
+			ID string `json:"id"`
+		} `json:"pipeline"`
+	}
+	if err := json.NewDecoder(pipelineResponse.Body).Decode(&pipelineDocument); err != nil || pipelineDocument.Pipeline.ID == "" {
+		t.Fatalf("decode pipeline: %#v, error = %v", pipelineDocument, err)
+	}
+	environment.postCommand(t, "/api/v1/delivery-pipelines/"+pipelineDocument.Pipeline.ID+"/enable", "push-to-ready-enable", http.StatusOK)
+	postKindPush(t, environment, kindBuildCommit)
+	completed := eventuallyAutomaticRelease(t, environment.runner.db, uuid.MustParse(pipelineDocument.Pipeline.ID), 8*time.Minute)
+	assertRegistryManifest(t, buildworker.BuildExecution{BuildID: completed.BuildID, DestinationRepository: completed.Repository}, completed.Digest)
 	if processed, err := environment.runner.RunOnce(context.Background()); err != nil || !processed {
-		t.Fatalf("publish built artifact = %v, error = %v", processed, err)
+		t.Fatalf("publish automatic artifact = %v, error = %v", processed, err)
 	}
-	operation := environment.getReleaseOperation(t, release.ReleaseOperationID)
+	eventuallyDeliveryPhase(t, environment.runner.db, completed.RunID, "completed", 15*time.Second)
+	operation := environment.getReleaseOperation(t, completed.ReleaseOperationID.String())
 	if operation.Status != releaseoperation.StatusSucceeded {
-		t.Fatalf("built artifact release operation = %#v", operation)
+		t.Fatalf("automatic release operation = %#v", operation)
 	}
-	report := environment.getReleaseDiagnostics(t, release.ReleaseID)
+	report := environment.getReleaseDiagnostics(t, completed.ReleaseID.String())
 	if report.RuntimeReleaseRelation != string(diagnostics.RuntimeReleaseMatches) ||
 		report.WorkloadObservation.Deployment == nil || report.WorkloadObservation.Deployment.ReadyReplicas != 1 {
-		t.Fatalf("built artifact diagnostics = %#v", report)
+		t.Fatalf("automatic delivery diagnostics = %#v", report)
 	}
 }
 
-type sourceBuildAcceptance struct {
-	Build struct {
-		ID                    string `json:"id"`
-		DestinationRepository string `json:"destinationRepository"`
-	} `json:"build"`
-	BuildOperation struct {
-		Status string `json:"status"`
-	} `json:"buildOperation"`
-	ImageArtifact *struct {
-		ID             string `json:"id"`
-		Digest         string `json:"digest"`
-		ImageReference string `json:"imageReference"`
-	} `json:"imageArtifact"`
+type automaticReleaseResult struct {
+	RunID              uuid.UUID `db:"run_id"`
+	BuildID            uuid.UUID `db:"build_id"`
+	ReleaseID          uuid.UUID `db:"release_id"`
+	ReleaseOperationID uuid.UUID `db:"release_operation_id"`
+	Repository         string    `db:"destination_repository"`
+	Digest             string    `db:"digest"`
 }
 
-func eventuallySourceBuild(t *testing.T, environment *kindControlPlane, buildID string, timeout time.Duration) sourceBuildAcceptance {
+func postKindPush(t *testing.T, environment *kindControlPlane, commit string) {
+	t.Helper()
+	payload := []byte(fmt.Sprintf(`{"ref":"refs/heads/main","before":"%s","after":%q,"forced":false,"deleted":false,"repository":{"id":101,"full_name":"nginxinc/NGINX-Demos","owner":{"id":202}}}`, strings.Repeat("0", 40), commit))
+	mac := hmac.New(sha256.New, []byte("kind-webhook-secret"))
+	_, _ = mac.Write(payload)
+	request, err := http.NewRequest(http.MethodPost, environment.server.URL+"/api/v1/webhooks/github/kind", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("X-GitHub-Delivery", "kind-push-to-ready")
+	request.Header.Set("X-GitHub-Event", "push")
+	request.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("accept Kind webhook status = %d", response.StatusCode)
+	}
+}
+
+func eventuallyAutomaticRelease(t *testing.T, db *sqlx.DB, pipelineID uuid.UUID, timeout time.Duration) automaticReleaseResult {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
-	for {
-		var current sourceBuildAcceptance
-		environment.getJSON(t, "/api/v1/builds/"+buildID, &current)
-		switch current.BuildOperation.Status {
-		case string(buildoperation.StatusSucceeded), string(buildoperation.StatusFailed), string(buildoperation.StatusCanceled), string(buildoperation.StatusAttentionRequired):
-			return current
+	for time.Now().Before(deadline) {
+		var result automaticReleaseResult
+		err := db.Get(&result, `SELECT dr.id AS run_id,dr.build_id,dr.release_id,
+			ro.id AS release_operation_id,b.destination_repository,ia.digest
+			FROM delivery_runs dr JOIN builds b ON b.id=dr.build_id
+			JOIN image_artifacts ia ON ia.id=dr.image_artifact_id
+			JOIN release_operations ro ON ro.release_id=dr.release_id
+			WHERE dr.delivery_pipeline_id=$1 AND dr.phase='release_created'`, pipelineID)
+		if err == nil {
+			return result
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("build %s did not reach a terminal status", buildID)
+		var failed struct {
+			Status    string  `db:"status"`
+			ErrorCode *string `db:"error_code"`
+		}
+		if db.Get(&failed, `SELECT bo.status,bo.error_code FROM delivery_runs dr JOIN build_operations bo ON bo.build_id=dr.build_id WHERE dr.delivery_pipeline_id=$1`, pipelineID) == nil &&
+			(failed.Status == "failed" || failed.Status == "canceled" || failed.Status == "attention_required") {
+			t.Fatalf("automatic Build stopped at %s/%v", failed.Status, failed.ErrorCode)
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
+	t.Fatal("automatic delivery did not create Release before deadline")
+	return automaticReleaseResult{}
+}
+
+func eventuallyDeliveryPhase(t *testing.T, db *sqlx.DB, runID uuid.UUID, phase string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		var current string
+		if db.Get(&current, `SELECT phase FROM delivery_runs WHERE id=$1`, runID) == nil && current == phase {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("delivery run did not reach %s", phase)
 }
 
 func newKindBuildAdapter(t *testing.T) *buildkube.Adapter {

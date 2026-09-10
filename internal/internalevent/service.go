@@ -167,6 +167,8 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	defer s.workers.Done()
 	defer func() {
 		if recover() != nil {
+			s.processingErrors.Add(1)
+			s.config.Logger.WarnContext(ctx, "内部事件处理被中断")
 			result = errors.New("internal_event_handler_interrupted")
 		}
 	}()
@@ -181,6 +183,7 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	exists, err := s.events.ExistsForConsumption(ctx, ref)
 	if err != nil {
 		s.processingErrors.Add(1)
+		s.config.Logger.WarnContext(ctx, "内部事件存储暂时不可用", "topic", ref.Topic)
 		return errors.New("internal_event_store_unavailable")
 	}
 	if !exists {
@@ -189,11 +192,13 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	}
 	if err := s.executor.HandleEvent(ctx, ref); err != nil {
 		s.processingErrors.Add(1)
+		s.config.Logger.WarnContext(ctx, "内部事件处理暂时不可用", "topic", ref.Topic)
 		return errors.New("internal_event_processing_interrupted")
 	}
 	resolved, err := s.events.Resolve(ctx, ref)
 	if err != nil {
 		s.processingErrors.Add(1)
+		s.config.Logger.WarnContext(ctx, "内部事件确认暂时不可用", "topic", ref.Topic)
 		return errors.New("internal_event_resolution_unavailable")
 	}
 	if !resolved {

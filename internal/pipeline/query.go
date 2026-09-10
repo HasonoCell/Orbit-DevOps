@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
 
-const detailSelect = `SELECT p.id, p.project_id, p.application_id, p.name, p.current_revision,
+const detailSelect = `SELECT p.id AS pipeline_id, p.project_id, p.application_id, p.name, p.current_revision,
 	p.enabled, p.activation_generation, p.created_by, p.created_at, p.updated_at,
 	r.delivery_pipeline_id, r.revision, r.provider, r.endpoint_key, r.repository_id,
 	r.repository_owner_id, r.repository_full_name, r.repository_url, r.git_ref,
@@ -21,8 +22,48 @@ const detailSelect = `SELECT p.id, p.project_id, p.application_id, p.name, p.cur
 	JOIN delivery_pipeline_revisions r ON r.delivery_pipeline_id=p.id AND r.revision=p.current_revision`
 
 type detailRow struct {
-	Record
-	Revision
+	PipelineID           uuid.UUID  `db:"pipeline_id"`
+	ProjectID            uuid.UUID  `db:"project_id"`
+	ApplicationID        uuid.UUID  `db:"application_id"`
+	Name                 string     `db:"name"`
+	CurrentRevision      int        `db:"current_revision"`
+	Enabled              bool       `db:"enabled"`
+	ActivationGeneration int64      `db:"activation_generation"`
+	CreatedBy            string     `db:"created_by"`
+	CreatedAt            time.Time  `db:"created_at"`
+	UpdatedAt            time.Time  `db:"updated_at"`
+	RevisionPipelineID   uuid.UUID  `db:"delivery_pipeline_id"`
+	RevisionNumber       int        `db:"revision"`
+	Provider             string     `db:"provider"`
+	EndpointKey          string     `db:"endpoint_key"`
+	RepositoryID         int64      `db:"repository_id"`
+	RepositoryOwnerID    int64      `db:"repository_owner_id"`
+	RepositoryFullName   string     `db:"repository_full_name"`
+	RepositoryURL        string     `db:"repository_url"`
+	GitRef               string     `db:"git_ref"`
+	DockerfilePath       string     `db:"dockerfile_path"`
+	ContextPath          string     `db:"context_path"`
+	Platform             string     `db:"platform"`
+	Mode                 string     `db:"mode"`
+	DeploymentTargetID   *uuid.UUID `db:"deployment_target_id"`
+	RevisionCreatedBy    string     `db:"revision_created_by"`
+	RevisionCreatedAt    time.Time  `db:"revision_created_at"`
+}
+
+func (row detailRow) detail() Detail {
+	return Detail{
+		Pipeline: Record{ID: row.PipelineID, ProjectID: row.ProjectID, ApplicationID: row.ApplicationID,
+			Name: row.Name, CurrentRevision: row.CurrentRevision, Enabled: row.Enabled,
+			ActivationGeneration: row.ActivationGeneration, CreatedBy: row.CreatedBy,
+			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt},
+		Revision: Revision{PipelineID: row.RevisionPipelineID, Revision: row.RevisionNumber,
+			Provider: row.Provider, EndpointKey: row.EndpointKey, RepositoryID: row.RepositoryID,
+			RepositoryOwnerID: row.RepositoryOwnerID, RepositoryFullName: row.RepositoryFullName,
+			RepositoryURL: row.RepositoryURL, GitRef: row.GitRef, DockerfilePath: row.DockerfilePath,
+			ContextPath: row.ContextPath, Platform: row.Platform, Mode: row.Mode,
+			DeploymentTargetID: row.DeploymentTargetID, CreatedBy: row.RevisionCreatedBy,
+			CreatedAt: row.RevisionCreatedAt},
+	}
 }
 
 // Get 返回当前 Revision；非成员与不存在统一隐藏为 NotFound。
@@ -58,7 +99,7 @@ func (m *Module) List(ctx context.Context, applicationID uuid.UUID, actorID stri
 	}
 	result := make([]Detail, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, Detail{Pipeline: row.Record, Revision: row.Revision})
+		result = append(result, row.detail())
 	}
 	return result, nil
 }
@@ -71,7 +112,7 @@ func (m *Module) getWith(ctx context.Context, queryer sqlx.QueryerContext, id uu
 		}
 		return Detail{}, fmt.Errorf("get delivery pipeline: %w", err)
 	}
-	return Detail{Pipeline: row.Record, Revision: row.Revision}, nil
+	return row.detail(), nil
 }
 
 func (m *Module) getWithLock(ctx context.Context, tx *sqlx.Tx, id uuid.UUID) (Detail, error) {
@@ -82,5 +123,5 @@ func (m *Module) getWithLock(ctx context.Context, tx *sqlx.Tx, id uuid.UUID) (De
 		}
 		return Detail{}, fmt.Errorf("lock delivery pipeline: %w", err)
 	}
-	return Detail{Pipeline: row.Record, Revision: row.Revision}, nil
+	return row.detail(), nil
 }

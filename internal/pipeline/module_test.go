@@ -34,6 +34,7 @@ func TestProjectRunKeepsOperationFailureAtItsOwningStage(t *testing.T) {
 	}{
 		{name: "build failure", row: runRow{RunRecord: RunRecord{Phase: "build_created"}, BuildOperationStatus: "failed"}, status: "build_failed"},
 		{name: "source verification", row: runRow{RunRecord: RunRecord{Phase: "artifact_ready"}}, status: "candidate_ready", stage: "source_verification"},
+		{name: "build only candidate", row: runRow{RunRecord: RunRecord{Phase: "artifact_ready"}, PipelineMode: ModeBuildOnly}, status: "candidate_ready"},
 		{name: "release failure", row: runRow{RunRecord: RunRecord{Phase: "release_created"}, ReleaseOperationStatus: &failed}, status: "release_failed"},
 	}
 	for _, test := range tests {

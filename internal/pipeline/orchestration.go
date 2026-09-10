@@ -412,6 +412,9 @@ func (m *Module) deferOrBlockSourceCheck(ctx context.Context, check sourceCheck,
 	if errors.Is(inspectErr, ErrSourceOwnerChanged) {
 		return m.finishRun(ctx, check.RunID, check.PhaseVersion, "blocked", "repository_owner_changed")
 	}
+	if errors.Is(inspectErr, ErrSourceNotFound) {
+		return m.finishRun(ctx, check.RunID, check.PhaseVersion, "blocked", "repository_or_branch_not_found")
+	}
 	now := time.Now().UTC()
 	if check.StartedAt != nil && now.Sub(*check.StartedAt) >= m.config.SourceRecoveryWindow {
 		return m.finishRun(ctx, check.RunID, check.PhaseVersion, "blocked", "source_verification_unavailable")

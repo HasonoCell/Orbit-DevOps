@@ -18,6 +18,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
 	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
 	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
+	"github.com/HasonoCell/OrbitOps/internal/webhook"
 	"github.com/HasonoCell/OrbitOps/test/testsupport"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -325,10 +326,14 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 		BuildPlatform:        environmentOrDefault("ORBITOPS_KIND_BUILD_PLATFORM", "linux/amd64"),
 		BuildRegistryHost:    environmentOrDefault("ORBITOPS_KIND_BUILD_REGISTRY", "orbitops-s4-registry.orbitops-s4-build.svc.cluster.local:5000"),
 		BuildRegistryPrefix:  "orbitops",
-		MigrateOnBoot:        true,
+		WebhookConfig: webhook.Config{Endpoints: map[string]webhook.EndpointSecrets{
+			"kind": {Current: "kind-webhook-secret"},
+		}},
+		MigrateOnBoot: true,
 	}, app.Dependencies{
-		RuntimeSource:     adapter,
-		RecoveryPublisher: adapter,
+		RuntimeSource:      adapter,
+		RecoveryPublisher:  adapter,
+		GitSourceInspector: kindSourceInspector{},
 	})
 	if err != nil {
 		t.Fatalf("start control plane: %v", err)

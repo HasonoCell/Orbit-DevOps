@@ -3,6 +3,7 @@ package githubsource
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -106,6 +107,10 @@ func (a *Adapter) repository(ctx context.Context, endpoint string) (repositoryRe
 	if result.ID <= 0 || result.Owner.ID <= 0 || result.FullName == "" || result.CloneURL == "" || result.Private {
 		return result, errors.New("GitHub repository is not a supported public repository")
 	}
+	owner, repository, err := parseRepositoryURL(result.CloneURL)
+	if err != nil || !strings.EqualFold(owner+"/"+repository, result.FullName) {
+		return result, errors.New("GitHub repository identity is inconsistent")
+	}
 	return result, nil
 }
 
@@ -118,10 +123,18 @@ func (a *Adapter) withHead(ctx context.Context, repository repositoryResponse, b
 	if err := a.get(ctx, "/repos/"+url.PathEscape(parts[0])+"/"+url.PathEscape(parts[1])+"/branches/"+url.PathEscape(branch), &result); err != nil {
 		return pipeline.SourceIdentity{}, err
 	}
-	if result.Name != branch || result.Commit.SHA == "" {
+	if result.Name != branch || !validCommit(result.Commit.SHA) {
 		return pipeline.SourceIdentity{}, errors.New("GitHub branch response is invalid")
 	}
 	return pipeline.SourceIdentity{RepositoryID: repository.ID, OwnerID: repository.Owner.ID, RepositoryName: repository.FullName, RepositoryURL: repository.CloneURL, GitRef: "refs/heads/" + branch, HeadCommit: strings.ToLower(result.Commit.SHA)}, nil
+}
+
+func validCommit(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil && value == strings.ToLower(value)
 }
 
 func (a *Adapter) get(ctx context.Context, endpoint string, destination any) error {

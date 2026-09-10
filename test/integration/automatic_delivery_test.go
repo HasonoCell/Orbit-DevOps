@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -116,6 +117,27 @@ func TestAutomaticDeliveryOrchestratesExistingBuildAndReleaseDomains(t *testing.
 	}
 	if run.Phase != "completed" {
 		t.Fatalf("delivery run phase = %q, want completed", run.Phase)
+	}
+	var audits []struct {
+		ActorKind string          `db:"actor_kind"`
+		Action    string          `db:"action"`
+		Summary   json.RawMessage `db:"summary"`
+	}
+	if err := database.Select(&audits, `SELECT actor_kind,action,summary FROM audit_records
+		WHERE action IN ('build.create','release.create') ORDER BY action`); err != nil {
+		t.Fatal(err)
+	}
+	if len(audits) != 2 {
+		t.Fatalf("automatic audit records = %d", len(audits))
+	}
+	for _, record := range audits {
+		var summary map[string]string
+		if err := json.Unmarshal(record.Summary, &summary); err != nil {
+			t.Fatal(err)
+		}
+		if record.ActorKind != "system" || summary["configuredBy"] != "local-developer" || summary["webhookDeliveryId"] == "" || summary["deliveryRunId"] != run.ID.String() {
+			t.Fatalf("automatic audit %s = %s %#v", record.Action, record.ActorKind, summary)
+		}
 	}
 }
 
