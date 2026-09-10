@@ -137,3 +137,16 @@ func TestAPILoadsWebhookSecretRotationWithoutDefaultSecret(t *testing.T) {
 		t.Fatal("endpoint without current secret was accepted")
 	}
 }
+
+func TestPipelineWorkerDefaultsKeepIndependentQueue(t *testing.T) {
+	for _, name := range []string{"ORBITOPS_PIPELINE_WORKER_ADDRESS", "ORBITOPS_PIPELINE_QUEUE_NAME", "ORBITOPS_PIPELINE_SOURCE_RECOVERY_WINDOW"} {
+		t.Setenv(name, "")
+	}
+	config, err := envconfig.LoadPipelineWorker()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Address != "127.0.0.1:9093" || config.Queue.Name != "orbitops-pipeline" || config.SourceRecoveryWindow != 15*time.Minute {
+		t.Fatalf("pipeline worker defaults = %#v", config)
+	}
+}

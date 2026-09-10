@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/HasonoCell/OrbitOps/internal/audit"
+	"github.com/HasonoCell/OrbitOps/internal/build"
+	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/idempotency"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
 	"github.com/google/uuid"
@@ -31,22 +33,50 @@ var (
 var endpointKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 type Config struct {
-	Platform string
+	Platform             string
+	SourceRecoveryWindow time.Duration
+	SourceRetryBaseDelay time.Duration
+	Recorder             Recorder
 }
+
+// Recorder 只接受低基数编排结论，禁止传入资源 ID 或外部内容。
+type Recorder interface {
+	RecordGitHubRead(string)
+	RecordTransition(string, string, string, time.Duration)
+	RecordMaintenance(string)
+}
+
+type noopRecorder struct{}
+
+func (noopRecorder) RecordGitHubRead(string)                                {}
+func (noopRecorder) RecordTransition(string, string, string, time.Duration) {}
+func (noopRecorder) RecordMaintenance(string)                               {}
 
 type Module struct {
 	db         *sqlx.DB
 	config     Config
+	builds     *build.Module
+	releases   *delivery.Module
 	authorizer *projectauth.Module
 	inspector  GitSourceInspector
+	recorder   Recorder
 }
 
 // New 建立深 Pipeline 模块；Git Provider 细节被限制在 Inspector 边界之外。
-func New(db *sqlx.DB, config Config, authorizer *projectauth.Module, inspector GitSourceInspector) *Module {
+func New(db *sqlx.DB, config Config, builds *build.Module, releases *delivery.Module, authorizer *projectauth.Module, inspector GitSourceInspector) *Module {
 	if inspector == nil {
 		inspector = unavailableInspector{}
 	}
-	return &Module{db: db, config: config, authorizer: authorizer, inspector: inspector}
+	if config.SourceRecoveryWindow <= 0 {
+		config.SourceRecoveryWindow = 15 * time.Minute
+	}
+	if config.SourceRetryBaseDelay <= 0 {
+		config.SourceRetryBaseDelay = 5 * time.Second
+	}
+	if config.Recorder == nil {
+		config.Recorder = noopRecorder{}
+	}
+	return &Module{db: db, config: config, builds: builds, releases: releases, authorizer: authorizer, inspector: inspector, recorder: config.Recorder}
 }
 
 // Create 创建禁用的 Pipeline 和首个不可变 Revision；启用必须走独立命令再次核验来源。

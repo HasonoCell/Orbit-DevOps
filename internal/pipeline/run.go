@@ -21,22 +21,24 @@ var (
 )
 
 type RunRecord struct {
-	ID                   uuid.UUID  `db:"id" json:"id"`
-	PipelineID           uuid.UUID  `db:"delivery_pipeline_id" json:"deliveryPipelineId"`
-	PipelineRevision     int        `db:"pipeline_revision" json:"pipelineRevision"`
-	ActivationGeneration int64      `db:"activation_generation" json:"activationGeneration"`
-	WebhookDeliveryID    uuid.UUID  `db:"webhook_delivery_id" json:"webhookDeliveryId"`
-	SourceCommit         string     `db:"source_commit" json:"sourceCommit"`
-	RepositoryURL        string     `db:"repository_url" json:"repositoryUrl"`
-	Phase                string     `db:"phase" json:"phase"`
-	PhaseVersion         int64      `db:"phase_version" json:"phaseVersion"`
-	BuildID              uuid.UUID  `db:"build_id" json:"buildId"`
-	ImageArtifactID      *uuid.UUID `db:"image_artifact_id" json:"imageArtifactId,omitempty"`
-	ReleaseID            *uuid.UUID `db:"release_id" json:"releaseId,omitempty"`
-	ReasonCode           *string    `db:"reason_code" json:"reasonCode,omitempty"`
-	CreatedAt            time.Time  `db:"created_at" json:"createdAt"`
-	UpdatedAt            time.Time  `db:"updated_at" json:"updatedAt"`
-	FinishedAt           *time.Time `db:"finished_at" json:"finishedAt,omitempty"`
+	ID                      uuid.UUID  `db:"id" json:"id"`
+	PipelineID              uuid.UUID  `db:"delivery_pipeline_id" json:"deliveryPipelineId"`
+	PipelineRevision        int        `db:"pipeline_revision" json:"pipelineRevision"`
+	ActivationGeneration    int64      `db:"activation_generation" json:"activationGeneration"`
+	WebhookDeliveryID       *uuid.UUID `db:"webhook_delivery_id" json:"webhookDeliveryId,omitempty"`
+	SourceCommit            string     `db:"source_commit" json:"sourceCommit"`
+	RepositoryURL           string     `db:"repository_url" json:"repositoryUrl"`
+	Phase                   string     `db:"phase" json:"phase"`
+	PhaseVersion            int64      `db:"phase_version" json:"phaseVersion"`
+	BuildID                 uuid.UUID  `db:"build_id" json:"buildId"`
+	ImageArtifactID         *uuid.UUID `db:"image_artifact_id" json:"imageArtifactId,omitempty"`
+	ReleaseID               *uuid.UUID `db:"release_id" json:"releaseId,omitempty"`
+	ReasonCode              *string    `db:"reason_code" json:"reasonCode,omitempty"`
+	SourceCheckAttemptCount int        `db:"source_check_attempt_count" json:"-"`
+	SourceCheckNextAt       *time.Time `db:"source_check_next_at" json:"-"`
+	CreatedAt               time.Time  `db:"created_at" json:"createdAt"`
+	UpdatedAt               time.Time  `db:"updated_at" json:"updatedAt"`
+	FinishedAt              *time.Time `db:"finished_at" json:"finishedAt,omitempty"`
 }
 
 type RunDetail struct {
@@ -79,21 +81,24 @@ type runRow struct {
 	RunRecord
 	RunTrigger
 	ProjectID              uuid.UUID `db:"project_id"`
+	PipelineMode           string    `db:"pipeline_mode"`
 	BuildOperationStatus   string    `db:"build_operation_status"`
 	ReleaseOperationStatus *string   `db:"release_operation_status"`
 }
 
 const runSelect = `SELECT r.id, r.delivery_pipeline_id, r.pipeline_revision, r.activation_generation,
 	r.webhook_delivery_id, r.source_commit, r.repository_url, r.phase, r.phase_version,
-	r.build_id, r.image_artifact_id, r.release_id, r.reason_code, r.created_at, r.updated_at,
-	r.finished_at, p.project_id, bo.status AS build_operation_status,
-	ro.status AS release_operation_status, w.event_type, COALESCE(w.repository_full_name, '') AS repository_full_name,
-	COALESCE(w.git_ref, '') AS git_ref, w.forced, w.received_at
+	r.build_id, r.image_artifact_id, r.release_id, r.reason_code,r.source_check_attempt_count,
+	r.source_check_next_at,r.created_at, r.updated_at,
+	r.finished_at, p.project_id, pr.mode AS pipeline_mode, bo.status AS build_operation_status,
+	ro.status AS release_operation_status, r.trigger_event_type AS event_type,
+	r.trigger_repository_full_name AS repository_full_name,r.trigger_git_ref AS git_ref,
+	r.trigger_forced AS forced,r.trigger_received_at AS received_at
 	FROM delivery_runs r
 	JOIN delivery_pipelines p ON p.id=r.delivery_pipeline_id
+	JOIN delivery_pipeline_revisions pr ON pr.delivery_pipeline_id=r.delivery_pipeline_id AND pr.revision=r.pipeline_revision
 	JOIN build_operations bo ON bo.build_id=r.build_id
-	LEFT JOIN release_operations ro ON ro.release_id=r.release_id
-	JOIN webhook_deliveries w ON w.id=r.webhook_delivery_id`
+	LEFT JOIN release_operations ro ON ro.release_id=r.release_id`
 
 // GetRun 投影编排 Phase 与底层 Operation 权威状态，不复制 Attempt 详情。
 func (m *Module) GetRun(ctx context.Context, id uuid.UUID, actorID string) (RunDetail, error) {
@@ -215,7 +220,14 @@ func projectRun(row runRow) RunDetail {
 		}
 	case "artifact_ready":
 		status = "candidate_ready"
-		stage = "source_verification"
+		if row.PipelineMode != ModeBuildOnly && row.SourceCheckAttemptCount > 0 {
+			status = "verifying_source"
+		}
+		if row.PipelineMode != ModeBuildOnly {
+			stage = "source_verification"
+		} else {
+			stage = ""
+		}
 	case "release_created":
 		status, stage = "releasing", "release"
 		if row.ReleaseOperationStatus != nil {

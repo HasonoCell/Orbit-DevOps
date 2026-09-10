@@ -1,4 +1,4 @@
-.PHONY: bootstrap kind-up db-up db-down api release-worker build-worker web generate check test test-kind
+.PHONY: bootstrap kind-up db-up db-down api release-worker build-worker pipeline-worker web generate check test test-kind
 
 bootstrap: kind-up db-up
 	corepack pnpm install --frozen-lockfile
@@ -22,6 +22,9 @@ build-worker:
 	ORBITOPS_BUILD_REGISTRY_INSECURE=true \
 	ORBITOPS_BUILD_DOCKERHUB_MIRROR=orbitops-s4-registry.orbitops-s4-build.svc.cluster.local:5000 \
 	ORBITOPS_BUILD_DOCKERHUB_MIRROR_INSECURE=true go run ./cmd/orbitops-build-worker
+
+pipeline-worker:
+	go run ./cmd/orbitops-pipeline-worker
 
 web:
 	corepack pnpm --filter @orbitops/web dev

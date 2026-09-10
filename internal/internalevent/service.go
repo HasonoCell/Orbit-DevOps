@@ -33,16 +33,23 @@ type Config struct {
 }
 
 type Service struct {
-	config     Config
-	events     *Module
-	executor   Executor
-	connection *redisclient.Client
-	client     *asynq.Client
-	redis      asynq.RedisClientOpt
-	started    atomic.Bool
-	workers    sync.WaitGroup
-	mu         sync.Mutex
-	closing    bool
+	config           Config
+	events           *Module
+	executor         Executor
+	connection       *redisclient.Client
+	client           *asynq.Client
+	redis            asynq.RedisClientOpt
+	started          atomic.Bool
+	running          atomic.Bool
+	lastPublish      atomic.Int64
+	sendErrors       atomic.Uint64
+	received         atomic.Uint64
+	ignored          atomic.Uint64
+	invalid          atomic.Uint64
+	processingErrors atomic.Uint64
+	workers          sync.WaitGroup
+	mu               sync.Mutex
+	closing          bool
 }
 
 func NewService(config Config, events *Module, executor Executor) (*Service, error) {
@@ -83,6 +90,9 @@ func (s *Service) PublishOnce(ctx context.Context) error {
 	for itemErr := range errorsByItem {
 		result = errors.Join(result, itemErr)
 	}
+	if result == nil {
+		s.lastPublish.Store(time.Now().UnixNano())
+	}
 	return result
 }
 
@@ -97,6 +107,7 @@ func (s *Service) publish(ctx context.Context, item Reservation) error {
 	code := ""
 	if sendErr != nil {
 		code = "queue_unavailable"
+		s.sendErrors.Add(1)
 	}
 	if err := s.events.ConfirmPublish(ctx, item, code, s.config.ConsumptionGrace); err != nil {
 		return errors.New("internal_event_confirmation_unavailable")
@@ -119,6 +130,8 @@ func (s *Service) Run(ctx context.Context) error {
 	if err := server.Start(asynq.HandlerFunc(s.handle)); err != nil {
 		return errors.New("internal_event_queue_start_failed")
 	}
+	s.running.Store(true)
+	defer s.running.Store(false)
 	ticker := time.NewTicker(s.config.PollInterval)
 	defer ticker.Stop()
 	for {
@@ -161,20 +174,30 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	decoder := json.NewDecoder(bytes.NewReader(task.Payload()))
 	decoder.DisallowUnknownFields()
 	if task.Type() != TaskType || len(task.Payload()) > 1024 || decoder.Decode(&ref) != nil || decoder.Decode(new(any)) != io.EOF || ref.EventID == uuid.Nil || ref.AggregateID == uuid.Nil || ref.ProtocolVersion != 1 || ref.Topic == "" {
+		s.invalid.Add(1)
 		return asynq.SkipRetry
 	}
+	s.received.Add(1)
 	exists, err := s.events.ExistsForConsumption(ctx, ref)
 	if err != nil {
+		s.processingErrors.Add(1)
 		return errors.New("internal_event_store_unavailable")
 	}
 	if !exists {
+		s.ignored.Add(1)
 		return nil
 	}
 	if err := s.executor.HandleEvent(ctx, ref); err != nil {
+		s.processingErrors.Add(1)
 		return errors.New("internal_event_processing_interrupted")
 	}
-	if _, err := s.events.Resolve(ctx, ref); err != nil {
+	resolved, err := s.events.Resolve(ctx, ref)
+	if err != nil {
+		s.processingErrors.Add(1)
 		return errors.New("internal_event_resolution_unavailable")
+	}
+	if !resolved {
+		s.ignored.Add(1)
 	}
 	return nil
 }

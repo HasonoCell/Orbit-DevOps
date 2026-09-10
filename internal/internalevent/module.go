@@ -28,6 +28,14 @@ type Reservation struct {
 
 type Module struct{ db *sqlx.DB }
 
+type MetricsSnapshot struct {
+	Pending      int     `db:"pending"`
+	Published    int     `db:"published"`
+	Quarantined  int     `db:"quarantined"`
+	OldestAge    float64 `db:"oldest_age"`
+	Reservations int64   `db:"reservations"`
+}
+
 func New(db *sqlx.DB) *Module { return &Module{db: db} }
 
 // Reserve 取得短期运输权；它不代表事件已经被消费者处理。
@@ -106,6 +114,23 @@ func (m *Module) ExistsForConsumption(ctx context.Context, ref Ref) (bool, error
 		return false, nil
 	}
 	return exists, err
+}
+
+// ReadMetricsSnapshot 从持久化事实重建事件积压，避免进程重启让核心指标归零。
+func (m *Module) ReadMetricsSnapshot(ctx context.Context) (MetricsSnapshot, error) {
+	var snapshot MetricsSnapshot
+	err := m.db.GetContext(ctx, &snapshot, `SELECT
+		count(*) FILTER (WHERE state='pending')::integer AS pending,
+		count(*) FILTER (WHERE state='published')::integer AS published,
+		count(*) FILTER (WHERE state='quarantined')::integer AS quarantined,
+		COALESCE(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-min(created_at)
+			FILTER (WHERE state IN ('pending','published')))),0)::double precision AS oldest_age,
+		COALESCE(sum(reservation_count),0)::bigint AS reservations
+		FROM internal_event_outbox`)
+	if err != nil {
+		return MetricsSnapshot{}, fmt.Errorf("read internal event metrics: %w", err)
+	}
+	return snapshot, nil
 }
 
 func nullString(value string) any {

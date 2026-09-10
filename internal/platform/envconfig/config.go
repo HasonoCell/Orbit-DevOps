@@ -98,6 +98,19 @@ type BuildWorker struct {
 	BuildQueue              ReleaseQueue
 }
 
+// PipelineWorker 只配置数据库、内部事件运输与 GitHub 出站访问，不包含集群或 Registry 凭据。
+type PipelineWorker struct {
+	Address              string
+	DatabaseURL          string
+	PollInterval         time.Duration
+	MaintenanceInterval  time.Duration
+	SourceRecoveryWindow time.Duration
+	SourceRetryBaseDelay time.Duration
+	SourceBuild          SourceBuild
+	GitHubSource         GitHubSource
+	Queue                ReleaseQueue
+}
+
 // ReleaseQueue 只配置消息运输；业务租约、重试预算仍由 ReleaseWorker 与 ReleaseOperation 管理。
 type ReleaseQueue struct {
 	RedisAddress     string
@@ -174,15 +187,85 @@ func LoadAPI() (API, error) {
 		ActorID:       value("ORBITOPS_ACTOR_ID", "local-developer"),
 		MigrateOnBoot: migrateOnBoot,
 		Kubernetes:    kubernetes,
-		SourceBuild: SourceBuild{
-			AllowedGitHosts: commaSeparated("ORBITOPS_BUILD_GIT_ALLOWED_HOSTS", []string{"github.com", "gitea.com"}),
-			Platform:        value("ORBITOPS_BUILD_PLATFORM", "linux/amd64"),
-			RegistryHost:    value("ORBITOPS_BUILD_REGISTRY_HOST", "orbitops-s4-registry.orbitops-s4-build.svc.cluster.local:5000"),
-			RegistryPrefix:  value("ORBITOPS_BUILD_REGISTRY_PREFIX", "orbitops"),
-		},
+		SourceBuild:   loadSourceBuild(),
 		GitHubWebhook: githubWebhook,
 		GitHubSource:  GitHubSource{APIBaseURL: value("ORBITOPS_GITHUB_API_URL", "https://api.github.com"), Token: os.Getenv("ORBITOPS_GITHUB_API_TOKEN"), Timeout: githubTimeout},
 	}, nil
+}
+
+// LoadPipelineWorker 让自动编排进程与 Build/Release Worker 保持权限隔离。
+func LoadPipelineWorker() (PipelineWorker, error) {
+	poll, err := duration("ORBITOPS_PIPELINE_WORKER_POLL_INTERVAL", 500*time.Millisecond)
+	if err != nil {
+		return PipelineWorker{}, err
+	}
+	maintenance, err := duration("ORBITOPS_PIPELINE_MAINTENANCE_INTERVAL", time.Minute)
+	if err != nil {
+		return PipelineWorker{}, err
+	}
+	recoveryWindow, err := duration("ORBITOPS_PIPELINE_SOURCE_RECOVERY_WINDOW", 15*time.Minute)
+	if err != nil {
+		return PipelineWorker{}, err
+	}
+	retryDelay, err := duration("ORBITOPS_PIPELINE_SOURCE_RETRY_BASE_DELAY", 5*time.Second)
+	if err != nil {
+		return PipelineWorker{}, err
+	}
+	githubTimeout, err := duration("ORBITOPS_GITHUB_API_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return PipelineWorker{}, err
+	}
+	queue, err := loadPipelineQueue()
+	if err != nil {
+		return PipelineWorker{}, err
+	}
+	return PipelineWorker{
+		Address:     value("ORBITOPS_PIPELINE_WORKER_ADDRESS", "127.0.0.1:9093"),
+		DatabaseURL: value("ORBITOPS_DATABASE_URL", defaultDatabaseURL), PollInterval: poll,
+		MaintenanceInterval: maintenance, SourceRecoveryWindow: recoveryWindow,
+		SourceRetryBaseDelay: retryDelay, SourceBuild: loadSourceBuild(), Queue: queue,
+		GitHubSource: GitHubSource{APIBaseURL: value("ORBITOPS_GITHUB_API_URL", "https://api.github.com"), Token: os.Getenv("ORBITOPS_GITHUB_API_TOKEN"), Timeout: githubTimeout},
+	}, nil
+}
+
+func loadPipelineQueue() (ReleaseQueue, error) {
+	config := ReleaseQueue{RedisAddress: value("ORBITOPS_REDIS_ADDRESS", "127.0.0.1:6379"),
+		RedisUsername: os.Getenv("ORBITOPS_REDIS_USERNAME"), RedisPassword: os.Getenv("ORBITOPS_REDIS_PASSWORD"),
+		Name: value("ORBITOPS_PIPELINE_QUEUE_NAME", "orbitops-pipeline")}
+	var err error
+	config.RedisDB, err = nonNegativeInteger("ORBITOPS_REDIS_DB", 0)
+	if err != nil {
+		return ReleaseQueue{}, err
+	}
+	config.Concurrency, err = nonNegativeInteger("ORBITOPS_PIPELINE_QUEUE_CONCURRENCY", 4)
+	if err != nil || config.Concurrency < 1 || config.Concurrency > 100 {
+		return ReleaseQueue{}, errors.New("ORBITOPS_PIPELINE_QUEUE_CONCURRENCY must be between 1 and 100")
+	}
+	for _, item := range []struct {
+		name     string
+		fallback time.Duration
+		target   *time.Duration
+	}{
+		{"ORBITOPS_PIPELINE_QUEUE_CONSUMPTION_GRACE", 30 * time.Second, &config.ConsumptionGrace},
+		{"ORBITOPS_PIPELINE_QUEUE_TASK_TIMEOUT", 30 * time.Second, &config.TaskTimeout},
+		{"ORBITOPS_PIPELINE_QUEUE_SHUTDOWN_TIMEOUT", 15 * time.Second, &config.ShutdownTimeout},
+	} {
+		*item.target, err = duration(item.name, item.fallback)
+		if err != nil {
+			return ReleaseQueue{}, err
+		}
+	}
+	config.RepairInterval = time.Minute
+	return config, nil
+}
+
+func loadSourceBuild() SourceBuild {
+	return SourceBuild{
+		AllowedGitHosts: commaSeparated("ORBITOPS_BUILD_GIT_ALLOWED_HOSTS", []string{"github.com", "gitea.com"}),
+		Platform:        value("ORBITOPS_BUILD_PLATFORM", "linux/amd64"),
+		RegistryHost:    value("ORBITOPS_BUILD_REGISTRY_HOST", "orbitops-s4-registry.orbitops-s4-build.svc.cluster.local:5000"),
+		RegistryPrefix:  value("ORBITOPS_BUILD_REGISTRY_PREFIX", "orbitops"),
+	}
 }
 
 func loadGitHubWebhook() (GitHubWebhook, error) {
