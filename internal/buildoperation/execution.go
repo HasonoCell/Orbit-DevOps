@@ -88,6 +88,7 @@ func (m *Module) Renew(ctx context.Context, lease Lease, duration time.Duration)
 		return Renewal{}, fmt.Errorf("renew build operation lease: %w", err)
 	}
 	lease.ExpiresAt = expiresAt
+	lease.CancelRequested = status == StatusCancelRequested
 	return Renewal{Lease: lease, CancelRequested: status == StatusCancelRequested}, nil
 }
 
@@ -215,7 +216,13 @@ func (m *Module) HandleUnknownOutcome(ctx context.Context, lease Lease, failure 
 		return FailureResult{}, err
 	}
 	now := m.now()
-	tx, automaticRetryCount, err := m.lockCompletion(ctx, lease, StatusRunning, now)
+	expectedStatus := StatusRunning
+	if lease.CancelRequested {
+		expectedStatus = StatusCancelRequested
+		// 取消结果未知时必须等待人工核验，不能退回 pending 后重新获得执行资格。
+		retry = false
+	}
+	tx, automaticRetryCount, err := m.lockCompletion(ctx, lease, expectedStatus, now)
 	if err != nil {
 		return FailureResult{}, err
 	}

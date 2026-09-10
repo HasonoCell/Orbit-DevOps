@@ -57,16 +57,56 @@ func TestBuildAdapterReadsOnlyValidatedTerminationResult(t *testing.T) {
 		}},
 	}}}}
 	client := fake.NewClientset(job, pod)
-	observation, err := newAdapter(t, client).Observe(context.Background(), buildworker.ExecutionIdentity{Name: job.Name, UID: string(job.UID)})
+	observation, err := newAdapter(t, client).Observe(context.Background(), execution,
+		buildworker.ExecutionIdentity{Name: job.Name, UID: string(job.UID)})
 	if err != nil || observation.Phase != buildworker.PhaseSucceeded || observation.Repository != execution.DestinationRepository {
 		t.Fatalf("successful observation = %#v, %v", observation, err)
 	}
 
 	pod.Status.ContainerStatuses[0].State.Terminated.Message = `{"repository":"registry.invalid/forged","digest":"not-a-digest"}`
 	invalidClient := fake.NewClientset(job, pod)
-	invalid, err := newAdapter(t, invalidClient).Observe(context.Background(), buildworker.ExecutionIdentity{Name: job.Name, UID: string(job.UID)})
+	invalid, err := newAdapter(t, invalidClient).Observe(context.Background(), execution,
+		buildworker.ExecutionIdentity{Name: job.Name, UID: string(job.UID)})
 	if err != nil || invalid.Phase != buildworker.PhaseUnknown || invalid.ErrorCode != "build_result_invalid" {
 		t.Fatalf("invalid result observation = %#v, %v", invalid, err)
+	}
+}
+
+// 恢复观察不能因为数据库尚未记录 UID，就信任同名但归属或输入摘要不同的 Job。
+func TestBuildAdapterObserveRejectsUnownedJobWithoutRecordedUID(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*batchv1.Job)
+	}{
+		{
+			name: "ownership label mismatch",
+			mutate: func(job *batchv1.Job) {
+				job.Labels[buildkube.BuildIDLabel] = uuid.NewString()
+			},
+		},
+		{
+			name: "input digest mismatch",
+			mutate: func(job *batchv1.Job) {
+				job.Annotations[buildkube.InputDigestAnnotation] = "sha256:" + strings.Repeat("f", 64)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			execution := buildExecution()
+			adapter := newAdapter(t, fake.NewClientset())
+			job := adapter.RenderJob(execution)
+			job.UID = types.UID("foreign-job-uid")
+			job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}}
+			test.mutate(job)
+
+			observation, err := newAdapter(t, fake.NewClientset(job)).Observe(
+				context.Background(), execution, buildworker.ExecutionIdentity{Name: job.Name})
+			if err != nil || observation.Phase != buildworker.PhaseUnknown ||
+				observation.ErrorCode != "build_job_ownership_conflict" {
+				t.Fatalf("unowned job observation = %#v, %v", observation, err)
+			}
+		})
 	}
 }
 
@@ -105,7 +145,7 @@ func TestBuildAdapterTranslatesPlatformControlledFailures(t *testing.T) {
 				Labels: map[string]string{"job-name": job.Name}}}
 			test.mutate(pod)
 			observation, err := newAdapter(t, fake.NewClientset(job, pod)).Observe(
-				context.Background(), buildworker.ExecutionIdentity{Name: job.Name, UID: string(job.UID)})
+				context.Background(), execution, buildworker.ExecutionIdentity{Name: job.Name, UID: string(job.UID)})
 			if err != nil || observation.Phase != buildworker.PhaseFailed || observation.ErrorCode != test.wantCode ||
 				observation.Disposition != test.disposition {
 				t.Fatalf("failure observation = %#v, %v", observation, err)

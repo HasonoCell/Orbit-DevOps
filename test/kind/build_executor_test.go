@@ -72,7 +72,7 @@ func TestKindBuildExecutor(t *testing.T) {
 
 	var observation buildworker.ExecutionObservation
 	for {
-		observation, err = adapter.Observe(ctx, identity)
+		observation, err = adapter.Observe(ctx, execution, identity)
 		if err != nil {
 			t.Fatalf("observe build Job: %v", err)
 		}

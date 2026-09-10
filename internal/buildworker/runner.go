@@ -58,11 +58,19 @@ type ExecutionObservation struct {
 	LogTruncated bool
 }
 
-// Executor 返回 OrbitOps 构建语义，避免 Runner 依赖 Pod 或 client-go 类型。
+// Executor 返回 OrbitOps 构建语义，避免 Runner 依赖 Pod 或 client-go 类型；Cancel 只接收 Start 或 Observe 已确认的身份。
 type Executor interface {
 	Start(context.Context, BuildExecution) (ExecutionIdentity, error)
-	Observe(context.Context, ExecutionIdentity) (ExecutionObservation, error)
+	Observe(context.Context, BuildExecution, ExecutionIdentity) (ExecutionObservation, error)
 	Cancel(context.Context, ExecutionIdentity) (ExecutionObservation, error)
+}
+
+// preparedExecution 同时保存当前 Attempt 的执行输入与实际外部 Job 的期望归属；恢复时两者的 Attempt ID 不同。
+type preparedExecution struct {
+	execution      BuildExecution
+	identity       ExecutionIdentity
+	observation    ExecutionObservation
+	recordIdentity bool
 }
 
 type Config struct {
@@ -125,17 +133,18 @@ func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) error
 	executionContext, cancel := context.WithTimeout(ctx, r.config.BuildTimeout)
 	defer cancel()
 
-	identity, observation, started, err := r.prepareExecution(executionContext, lease, execution)
+	prepared, err := r.prepareExecution(executionContext, lease, execution)
 	if err != nil {
 		return r.finishExecutorError(ctx, lease, err)
 	}
-	if started {
+	if prepared.recordIdentity {
 		if err := r.operations.RecordExecutorIdentity(ctx, lease, buildoperation.ExecutorIdentity{
-			Name: identity.Name, UID: identity.UID,
+			Name: prepared.identity.Name, UID: prepared.identity.UID,
 		}); err != nil {
 			return err
 		}
 	}
+	observation := prepared.observation
 	for {
 		if observation.Phase != "" && observation.Phase != PhaseRunning {
 			return r.finishObservation(ctx, lease, observation)
@@ -154,9 +163,9 @@ func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) error
 		}
 		lease = renewal.Lease
 		if renewal.CancelRequested {
-			observation, err = r.executor.Cancel(executionContext, identity)
+			observation, err = r.executor.Cancel(executionContext, prepared.identity)
 		} else {
-			observation, err = r.executor.Observe(executionContext, identity)
+			observation, err = r.executor.Observe(executionContext, prepared.execution, prepared.identity)
 		}
 		if err != nil {
 			return r.finishExecutorError(ctx, lease, err)
@@ -164,9 +173,11 @@ func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) error
 	}
 }
 
-// prepareExecution 在恢复窗口中优先观察旧 Job；仅当旧 Attempt 从未记录 UID 且资源确实不存在时才启动新 Job。
-func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Lease, execution BuildExecution) (ExecutionIdentity, ExecutionObservation, bool, error) {
+// prepareExecution 在恢复窗口中优先核验旧 Job；取消恢复绝不创建新 Job，普通恢复仅在安全条件下重建。
+func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Lease, execution BuildExecution) (preparedExecution, error) {
 	if lease.Recovery && lease.RecoveredFromAttemptID != nil {
+		previousExecution := execution
+		previousExecution.BuildAttemptID = *lease.RecoveredFromAttemptID
 		name := "orbitops-build-" + lease.RecoveredFromAttemptID.String()
 		if lease.PreviousExecutorName != nil {
 			name = *lease.PreviousExecutorName
@@ -176,27 +187,56 @@ func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Leas
 			uid = *lease.PreviousExecutorUID
 		}
 		previous := ExecutionIdentity{Name: name, UID: uid}
-		observation, err := r.executor.Observe(ctx, previous)
+		observation, err := r.executor.Observe(ctx, previousExecution, previous)
 		if err != nil {
-			return ExecutionIdentity{}, ExecutionObservation{}, false, err
+			return preparedExecution{}, err
+		}
+		// 取消请求在领取事务中已经确定。旧 Job 缺失即表示没有需要重新启动的执行；存在时只取消已核验身份。
+		if lease.CancelRequested {
+			if observation.Phase == PhaseMissing {
+				return preparedExecution{execution: previousExecution, identity: previous,
+					observation: ExecutionObservation{Phase: PhaseCanceled, Identity: previous}}, nil
+			}
+			if observation.ErrorCode == "build_job_ownership_conflict" {
+				return preparedExecution{execution: previousExecution, identity: previous, observation: observation}, nil
+			}
+			identity := observation.Identity
+			if identity.Name == "" || identity.UID == "" {
+				return preparedExecution{}, newFailure("build_job_ownership_conflict",
+					"the recovered build job could not be identified safely for cancellation", buildoperation.UnknownOutcome, nil)
+			}
+			canceled, err := r.executor.Cancel(ctx, identity)
+			if err != nil {
+				return preparedExecution{}, err
+			}
+			return preparedExecution{execution: previousExecution, identity: identity,
+				observation: canceled, recordIdentity: true}, nil
 		}
 		if observation.Phase != PhaseMissing {
 			// 新 Attempt 只是在观察旧 Job，仍记录同一外部身份以保留清晰证据链。
-			if observation.Identity.Name != "" && observation.Identity.UID != "" {
+			trusted := observation.ErrorCode != "build_job_ownership_conflict" &&
+				observation.Identity.Name != "" && observation.Identity.UID != ""
+			if trusted {
 				previous = observation.Identity
 			}
-			return previous, observation, true, nil
+			return preparedExecution{execution: previousExecution, identity: previous,
+				observation: observation, recordIdentity: trusted}, nil
 		}
 		if uid != "" {
-			return ExecutionIdentity{}, ExecutionObservation{}, false,
+			return preparedExecution{},
 				newFailure("build_job_missing", "previous build job disappeared after its UID was recorded", buildoperation.UnknownOutcome, nil)
 		}
 	}
+	if lease.CancelRequested {
+		return preparedExecution{}, newFailure("build_job_ownership_conflict",
+			"the canceled build did not contain a recoverable executor identity", buildoperation.UnknownOutcome, nil)
+	}
 	identity, err := r.executor.Start(ctx, execution)
 	if err != nil {
-		return ExecutionIdentity{}, ExecutionObservation{}, false, err
+		return preparedExecution{}, err
 	}
-	return identity, ExecutionObservation{Phase: PhaseRunning, Identity: identity}, true, nil
+	return preparedExecution{execution: execution, identity: identity,
+		observation: ExecutionObservation{Phase: PhaseRunning, Identity: identity}, recordIdentity: true}, nil
 }
 
 func (r *Runner) finishObservation(ctx context.Context, lease buildoperation.Lease, observation ExecutionObservation) error {

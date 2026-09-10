@@ -112,7 +112,7 @@ func TestBuildWorkerRecoveryObservesExistingExecutorBeforeStarting(t *testing.T)
 	now := acceptance.Build.CreatedAt.Add(time.Second)
 	operations := buildoperation.New(database, buildoperation.WithClock(func() time.Time { return now }))
 	first := claimBuildDispatch(t, operations, "build-worker-lost")
-	oldIdentity := buildworker.ExecutionIdentity{Name: "existing-build-job", UID: "existing-build-uid"}
+	oldIdentity := buildworker.ExecutionIdentity{Name: "orbitops-build-" + first.BuildAttemptID.String(), UID: "existing-build-uid"}
 	if err := operations.RecordExecutorIdentity(context.Background(), first, buildoperation.ExecutorIdentity{
 		Name: oldIdentity.Name, UID: oldIdentity.UID,
 	}); err != nil {
@@ -150,6 +150,84 @@ func TestBuildWorkerRecoveryObservesExistingExecutorBeforeStarting(t *testing.T)
 	}
 	if current.Attempts[1].ExecutorUID == nil || *current.Attempts[1].ExecutorUID != oldIdentity.UID {
 		t.Fatalf("recovery attempt did not preserve executor identity: %#v", current.Attempts[1])
+	}
+}
+
+// 已请求取消的恢复任务只能收束、取消已核验 Job 或进入人工处理，任何分支都不能启动新的外部构建。
+func TestBuildWorkerCancelRecoveryNeverStartsNewExecutor(t *testing.T) {
+	tests := []struct {
+		name            string
+		mode            string
+		wantStatus      buildoperation.Status
+		wantCancelCount int
+	}{
+		{name: "missing job confirms cancellation", mode: "missing", wantStatus: buildoperation.StatusCanceled},
+		{name: "owned job is canceled", mode: "owned", wantStatus: buildoperation.StatusCanceled, wantCancelCount: 1},
+		{name: "ownership conflict requires attention", mode: "conflict", wantStatus: buildoperation.StatusAttentionRequired},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			environment := newTestEnvironment(t)
+			project := createProject(t, environment, "build-worker-cancel-recovery-project")
+			application := createApplication(t, environment, project.ID, "build-worker-cancel-recovery-application")
+			response := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/builds", "build-worker-cancel-recovery",
+				`{"repositoryUrl":"https://github.com/example/demo.git","sourceCommit":"`+strings.Repeat("e", 40)+`"}`)
+			defer response.Body.Close()
+			var acceptance buildAcceptanceDocument
+			if response.StatusCode != http.StatusCreated || json.NewDecoder(response.Body).Decode(&acceptance) != nil {
+				t.Fatalf("create cancel recovery build status = %d", response.StatusCode)
+			}
+
+			database := openTestDatabase(t, environment.databaseURL)
+			now := acceptance.Build.CreatedAt.Add(time.Second)
+			operations := buildoperation.New(database,
+				buildoperation.WithClock(func() time.Time { return now }),
+				buildoperation.WithAuthorizer(projectauth.New(database)))
+			first := claimBuildDispatch(t, operations, "build-worker-cancel-lost")
+			operationID := uuid.MustParse(acceptance.BuildOperation.ID)
+			if _, err := operations.Cancel(context.Background(), buildoperation.CancelCommand{
+				BuildOperationID: operationID, ActorID: "local-developer", IdempotencyKey: "cancel-recovery-request",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			now = first.ExpiresAt.Add(time.Second)
+			if repaired, err := operations.RepairDispatches(context.Background(), 10); err != nil || repaired != 1 {
+				t.Fatalf("repair canceled execution = %d, %v", repaired, err)
+			}
+			items, err := operations.ReserveDispatches(context.Background(), 10, time.Minute)
+			if err != nil || len(items) != 1 {
+				t.Fatalf("reserve canceled recovery dispatch = %d, %v", len(items), err)
+			}
+			if err := operations.ConfirmDispatch(context.Background(), items[0], "", time.Second); err != nil {
+				t.Fatal(err)
+			}
+
+			executor := &memoryBuildExecutor{}
+			oldName := "orbitops-build-" + first.BuildAttemptID.String()
+			switch test.mode {
+			case "owned":
+				executor.started = map[string]bool{oldName: true}
+			case "conflict":
+				executor.observation = &buildworker.ExecutionObservation{Phase: buildworker.PhaseUnknown,
+					ErrorCode: "build_job_ownership_conflict", ErrorSummary: "build job ownership does not match"}
+			}
+			runner, err := buildworker.New(buildworker.Config{WorkerID: "build-worker-cancel-recovery", LeaseDuration: time.Minute,
+				BuildTimeout: time.Minute, PollInterval: time.Millisecond}, operations,
+				build.New(database, build.Config{}, operations, projectauth.New(database)), executor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			outcome, err := runner.RunDispatch(context.Background(), items[0].DispatchRef)
+			if err != nil || outcome != buildoperation.ClaimOutcomeClaimed {
+				t.Fatalf("run canceled recovery dispatch = %s, %v", outcome, err)
+			}
+			current, err := operations.Get(context.Background(), operationID)
+			if err != nil || current.Status != test.wantStatus || executor.startCount != 0 ||
+				executor.cancelCount != test.wantCancelCount || len(current.Attempts) != 2 {
+				t.Fatalf("cancel recovery = operation %#v, starts %d, cancels %d, error %v",
+					current, executor.startCount, executor.cancelCount, err)
+			}
+		})
 	}
 }
 
@@ -204,11 +282,13 @@ func TestBuildAttemptLogsRequireDevelopPermission(t *testing.T) {
 }
 
 type memoryBuildExecutor struct {
-	mu         sync.Mutex
-	repository string
-	digest     string
-	started    map[string]bool
-	startCount int
+	mu          sync.Mutex
+	repository  string
+	digest      string
+	started     map[string]bool
+	startCount  int
+	cancelCount int
+	observation *buildworker.ExecutionObservation
 }
 
 func (e *memoryBuildExecutor) Start(_ context.Context, execution buildworker.BuildExecution) (buildworker.ExecutionIdentity, error) {
@@ -223,11 +303,19 @@ func (e *memoryBuildExecutor) Start(_ context.Context, execution buildworker.Bui
 	return buildworker.ExecutionIdentity{Name: name, UID: "uid-" + execution.BuildAttemptID.String()}, nil
 }
 
-func (e *memoryBuildExecutor) Observe(_ context.Context, identity buildworker.ExecutionIdentity) (buildworker.ExecutionObservation, error) {
+func (e *memoryBuildExecutor) Observe(_ context.Context, _ buildworker.BuildExecution, identity buildworker.ExecutionIdentity) (buildworker.ExecutionObservation, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.observation != nil {
+		observation := *e.observation
+		observation.Identity = identity
+		return observation, nil
+	}
 	if !e.started[identity.Name] {
 		return buildworker.ExecutionObservation{Phase: buildworker.PhaseMissing}, nil
+	}
+	if identity.UID == "" {
+		identity.UID = "uid-" + identity.Name
 	}
 	return buildworker.ExecutionObservation{
 		Phase: buildworker.PhaseSucceeded, Identity: identity,
@@ -236,5 +324,8 @@ func (e *memoryBuildExecutor) Observe(_ context.Context, identity buildworker.Ex
 }
 
 func (e *memoryBuildExecutor) Cancel(_ context.Context, identity buildworker.ExecutionIdentity) (buildworker.ExecutionObservation, error) {
+	e.mu.Lock()
+	e.cancelCount++
+	e.mu.Unlock()
 	return buildworker.ExecutionObservation{Phase: buildworker.PhaseCanceled, Identity: identity}, nil
 }

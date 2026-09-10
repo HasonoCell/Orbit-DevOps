@@ -68,8 +68,12 @@ func (a *Adapter) identityForOwnedJob(existing, want *batchv1.Job) (buildworker.
 	return buildworker.ExecutionIdentity{Name: existing.Name, UID: string(existing.UID)}, nil
 }
 
-// Observe 只读取指定 Job UID、Pod 终态和平台 termination message，不信任普通日志中的成功文本。
-func (a *Adapter) Observe(ctx context.Context, identity buildworker.ExecutionIdentity) (buildworker.ExecutionObservation, error) {
+// Observe 在读取 Pod 结果前先核验确定性名称、完整归属标签、输入摘要与可选 UID。
+func (a *Adapter) Observe(ctx context.Context, execution buildworker.BuildExecution, identity buildworker.ExecutionIdentity) (buildworker.ExecutionObservation, error) {
+	want := a.RenderJob(execution)
+	if identity.Name != want.Name {
+		return ownershipConflictObservation(identity, "build job name does not match the recovered build attempt"), nil
+	}
 	job, err := a.client.BatchV1().Jobs(a.config.Namespace).Get(ctx, identity.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return buildworker.ExecutionObservation{Phase: buildworker.PhaseMissing, Identity: identity}, nil
@@ -79,12 +83,13 @@ func (a *Adapter) Observe(ctx context.Context, identity buildworker.ExecutionIde
 			"build_job_read_failed", "Kubernetes build job state could not be read", true, err)
 	}
 	if identity.UID != "" && string(job.UID) != identity.UID {
-		return buildworker.ExecutionObservation{Phase: buildworker.PhaseUnknown, Identity: identity,
-			ErrorCode: "build_job_ownership_conflict", ErrorSummary: "build job UID changed while it was being observed"}, nil
+		return ownershipConflictObservation(identity, "build job UID changed while it was being observed"), nil
 	}
-	if identity.UID == "" {
-		identity.UID = string(job.UID)
+	ownedIdentity, ownershipErr := a.identityForOwnedJob(job, want)
+	if ownershipErr != nil {
+		return ownershipConflictObservation(identity, "build job ownership or accepted input does not match"), nil
 	}
+	identity = ownedIdentity
 	pods, err := a.client.CoreV1().Pods(a.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "job-name=" + identity.Name,
 	})
@@ -130,6 +135,11 @@ func (a *Adapter) Observe(ctx context.Context, identity buildworker.ExecutionIde
 	}
 	return buildworker.ExecutionObservation{Phase: buildworker.PhaseRunning, Identity: identity,
 		LogExcerpt: logExcerpt, LogTruncated: truncated}, nil
+}
+
+func ownershipConflictObservation(identity buildworker.ExecutionIdentity, summary string) buildworker.ExecutionObservation {
+	return buildworker.ExecutionObservation{Phase: buildworker.PhaseUnknown, Identity: identity,
+		ErrorCode: "build_job_ownership_conflict", ErrorSummary: summary}
 }
 
 // Cancel 使用已记录 UID 防止删除同名替代资源；删除被 API Server 接受后由 Worker 收束取消。

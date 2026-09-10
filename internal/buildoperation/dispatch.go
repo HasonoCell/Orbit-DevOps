@@ -44,6 +44,7 @@ type Lease struct {
 	TraceParent            string
 	TraceState             string
 	Recovery               bool
+	CancelRequested        bool
 }
 
 type DispatchState string
@@ -280,7 +281,7 @@ func (m *Module) ClaimDispatch(ctx context.Context, ref DispatchRef, request Cla
 		PreviousExecutorUID: previousExecutorUID,
 		WorkerID:            request.WorkerID, ExpiresAt: expiresAt,
 		TraceParent: candidate.TraceParent, TraceState: candidate.TraceState,
-		Recovery: recovery,
+		Recovery: recovery, CancelRequested: candidate.Status == StatusCancelRequested,
 	}}, nil
 }
 
