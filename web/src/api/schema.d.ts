@@ -468,6 +468,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/applications/{applicationId}/delivery-pipelines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询应用的自动交付配置 */
+        get: operations["listDeliveryPipelines"];
+        put?: never;
+        /** 创建禁用的自动交付配置 */
+        post: operations["createDeliveryPipeline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-pipelines/{deliveryPipelineId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询自动交付配置 */
+        get: operations["getDeliveryPipeline"];
+        /** 追加自动交付配置 Revision */
+        put: operations["updateDeliveryPipeline"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-pipelines/{deliveryPipelineId}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 启用自动交付配置 */
+        post: operations["enableDeliveryPipeline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-pipelines/{deliveryPipelineId}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 禁用自动交付配置 */
+        post: operations["disableDeliveryPipeline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-pipelines/{deliveryPipelineId}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询自动交付运行历史 */
+        get: operations["listDeliveryRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-runs/{deliveryRunId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询一次自动交付运行 */
+        get: operations["getDeliveryRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-runs/{deliveryRunId}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 请求重新读取并推进自动交付运行 */
+        post: operations["reconcileDeliveryRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -947,6 +1068,128 @@ export interface components {
             release: components["schemas"]["Release"];
             releaseOperation: components["schemas"]["ReleaseOperation"];
         };
+        /** @enum {string} */
+        DeliveryMode: "build_only" | "auto_release";
+        CreateDeliveryPipelineRequest: {
+            name: string;
+            endpointKey: string;
+            /** Format: uri */
+            repositoryUrl: string;
+            branch: string;
+            /** @default Dockerfile */
+            dockerfilePath: string;
+            /** @default . */
+            contextPath: string;
+            mode: components["schemas"]["DeliveryMode"];
+            /** Format: uuid */
+            deploymentTargetId?: string;
+        };
+        UpdateDeliveryPipelineRequest: {
+            expectedRevision: number;
+            endpointKey: string;
+            /** Format: uri */
+            repositoryUrl: string;
+            branch: string;
+            /** @default Dockerfile */
+            dockerfilePath: string;
+            /** @default . */
+            contextPath: string;
+            mode: components["schemas"]["DeliveryMode"];
+            /** Format: uuid */
+            deploymentTargetId?: string;
+        };
+        DeliveryPipeline: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            projectId: string;
+            /** Format: uuid */
+            applicationId: string;
+            name: string;
+            currentRevision: number;
+            enabled: boolean;
+            /** Format: int64 */
+            activationGeneration: number;
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        DeliveryPipelineRevision: {
+            revision: number;
+            /** @enum {string} */
+            provider: "github";
+            endpointKey: string;
+            /** Format: int64 */
+            repositoryId: number;
+            /** Format: int64 */
+            repositoryOwnerId: number;
+            repositoryFullName: string;
+            repositoryUrl: string;
+            gitRef: string;
+            dockerfilePath: string;
+            contextPath: string;
+            platform: string;
+            mode: components["schemas"]["DeliveryMode"];
+            /** Format: uuid */
+            deploymentTargetId?: string;
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        DeliveryPipelineDetail: {
+            pipeline: components["schemas"]["DeliveryPipeline"];
+            revision: components["schemas"]["DeliveryPipelineRevision"];
+        };
+        DeliveryRun: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            deliveryPipelineId: string;
+            pipelineRevision: number;
+            /** Format: int64 */
+            activationGeneration: number;
+            sourceCommit: string;
+            repositoryUrl: string;
+            /** @enum {string} */
+            phase: "build_created" | "artifact_ready" | "release_created" | "completed" | "superseded" | "blocked";
+            /** Format: int64 */
+            phaseVersion: number;
+            /** Format: uuid */
+            buildId: string;
+            /** Format: uuid */
+            imageArtifactId?: string;
+            /** Format: uuid */
+            releaseId?: string;
+            reasonCode?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            finishedAt?: string;
+        };
+        DeliveryRunTrigger: {
+            eventType: string;
+            repositoryFullName: string;
+            gitRef: string;
+            forced: boolean;
+            /** Format: date-time */
+            receivedAt: string;
+        };
+        DeliveryRunDetail: {
+            run: components["schemas"]["DeliveryRun"];
+            /** @enum {string} */
+            status: "building" | "build_failed" | "build_canceled" | "candidate_ready" | "verifying_source" | "releasing" | "release_failed" | "release_canceled" | "succeeded" | "superseded" | "attention_required" | "blocked";
+            /** @enum {string} */
+            activeStage?: "build" | "source_verification" | "release";
+            trigger: components["schemas"]["DeliveryRunTrigger"];
+        };
+        DeliveryRunPage: {
+            items: components["schemas"]["DeliveryRunDetail"][];
+            nextCursor?: string;
+        };
         Error: {
             code: string;
             message: string;
@@ -957,6 +1200,8 @@ export interface components {
         BuildOperationId: string;
         /** @description 当前操作者与写操作范围内的幂等标识。 */
         IdempotencyKey: string;
+        DeliveryPipelineId: string;
+        DeliveryRunId: string;
     };
     requestBodies: never;
     headers: never;
@@ -2735,6 +2980,518 @@ export interface operations {
                 };
             };
             /** @description 当前状态不允许取消，或幂等键冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listDeliveryPipelines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                applicationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自动交付配置列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryPipelineDetail"][];
+                };
+            };
+            /** @description 应用不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createDeliveryPipeline: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前操作者与写操作范围内的幂等标识。 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                applicationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDeliveryPipelineRequest"];
+            };
+        };
+        responses: {
+            /** @description 自动交付配置已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryPipelineDetail"];
+                };
+            };
+            /** @description 配置或来源无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 当前角色不能管理自动交付 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 应用或部署目标不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 名称或幂等键冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDeliveryPipeline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryPipelineId: components["parameters"]["DeliveryPipelineId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自动交付配置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryPipelineDetail"];
+                };
+            };
+            /** @description 配置不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateDeliveryPipeline: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前操作者与写操作范围内的幂等标识。 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                deliveryPipelineId: components["parameters"]["DeliveryPipelineId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDeliveryPipelineRequest"];
+            };
+        };
+        responses: {
+            /** @description 自动交付配置已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryPipelineDetail"];
+                };
+            };
+            /** @description 配置或来源无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 当前角色不能管理自动交付 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 配置或部署目标不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Revision 或幂等键冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    enableDeliveryPipeline: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前操作者与写操作范围内的幂等标识。 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                deliveryPipelineId: components["parameters"]["DeliveryPipelineId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自动交付配置已启用 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryPipelineDetail"];
+                };
+            };
+            /** @description 来源身份已经变化 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 当前角色不能管理自动交付 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 配置不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Revision、来源所有权或幂等键冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    disableDeliveryPipeline: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前操作者与写操作范围内的幂等标识。 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                deliveryPipelineId: components["parameters"]["DeliveryPipelineId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自动交付配置已禁用 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryPipelineDetail"];
+                };
+            };
+            /** @description 当前角色不能管理自动交付 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 配置不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 幂等键冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listDeliveryRuns: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                deliveryPipelineId: components["parameters"]["DeliveryPipelineId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自动交付运行历史 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRunPage"];
+                };
+            };
+            /** @description 游标无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 配置不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDeliveryRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryRunId: components["parameters"]["DeliveryRunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自动交付运行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRunDetail"];
+                };
+            };
+            /** @description 运行不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reconcileDeliveryRun: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前操作者与写操作范围内的幂等标识。 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                deliveryRunId: components["parameters"]["DeliveryRunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已可靠记录推进请求 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRunDetail"];
+                };
+            };
+            /** @description 当前角色不能推进自动交付 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 运行不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 幂等键冲突 */
             409: {
                 headers: {
                     [name: string]: unknown;

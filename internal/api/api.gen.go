@@ -157,6 +157,138 @@ func (e CreateDeploymentTargetRequestStage) Valid() bool {
 	}
 }
 
+// Defines values for DeliveryMode.
+const (
+	AutoRelease DeliveryMode = "auto_release"
+	BuildOnly   DeliveryMode = "build_only"
+)
+
+// Valid indicates whether the value is a known member of the DeliveryMode enum.
+func (e DeliveryMode) Valid() bool {
+	switch e {
+	case AutoRelease:
+		return true
+	case BuildOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeliveryPipelineRevisionProvider.
+const (
+	Github DeliveryPipelineRevisionProvider = "github"
+)
+
+// Valid indicates whether the value is a known member of the DeliveryPipelineRevisionProvider enum.
+func (e DeliveryPipelineRevisionProvider) Valid() bool {
+	switch e {
+	case Github:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeliveryRunPhase.
+const (
+	DeliveryRunPhaseArtifactReady  DeliveryRunPhase = "artifact_ready"
+	DeliveryRunPhaseBlocked        DeliveryRunPhase = "blocked"
+	DeliveryRunPhaseBuildCreated   DeliveryRunPhase = "build_created"
+	DeliveryRunPhaseCompleted      DeliveryRunPhase = "completed"
+	DeliveryRunPhaseReleaseCreated DeliveryRunPhase = "release_created"
+	DeliveryRunPhaseSuperseded     DeliveryRunPhase = "superseded"
+)
+
+// Valid indicates whether the value is a known member of the DeliveryRunPhase enum.
+func (e DeliveryRunPhase) Valid() bool {
+	switch e {
+	case DeliveryRunPhaseArtifactReady:
+		return true
+	case DeliveryRunPhaseBlocked:
+		return true
+	case DeliveryRunPhaseBuildCreated:
+		return true
+	case DeliveryRunPhaseCompleted:
+		return true
+	case DeliveryRunPhaseReleaseCreated:
+		return true
+	case DeliveryRunPhaseSuperseded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeliveryRunDetailActiveStage.
+const (
+	DeliveryRunDetailActiveStageBuild              DeliveryRunDetailActiveStage = "build"
+	DeliveryRunDetailActiveStageRelease            DeliveryRunDetailActiveStage = "release"
+	DeliveryRunDetailActiveStageSourceVerification DeliveryRunDetailActiveStage = "source_verification"
+)
+
+// Valid indicates whether the value is a known member of the DeliveryRunDetailActiveStage enum.
+func (e DeliveryRunDetailActiveStage) Valid() bool {
+	switch e {
+	case DeliveryRunDetailActiveStageBuild:
+		return true
+	case DeliveryRunDetailActiveStageRelease:
+		return true
+	case DeliveryRunDetailActiveStageSourceVerification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeliveryRunDetailStatus.
+const (
+	DeliveryRunDetailStatusAttentionRequired DeliveryRunDetailStatus = "attention_required"
+	DeliveryRunDetailStatusBlocked           DeliveryRunDetailStatus = "blocked"
+	DeliveryRunDetailStatusBuildCanceled     DeliveryRunDetailStatus = "build_canceled"
+	DeliveryRunDetailStatusBuildFailed       DeliveryRunDetailStatus = "build_failed"
+	DeliveryRunDetailStatusBuilding          DeliveryRunDetailStatus = "building"
+	DeliveryRunDetailStatusCandidateReady    DeliveryRunDetailStatus = "candidate_ready"
+	DeliveryRunDetailStatusReleaseCanceled   DeliveryRunDetailStatus = "release_canceled"
+	DeliveryRunDetailStatusReleaseFailed     DeliveryRunDetailStatus = "release_failed"
+	DeliveryRunDetailStatusReleasing         DeliveryRunDetailStatus = "releasing"
+	DeliveryRunDetailStatusSucceeded         DeliveryRunDetailStatus = "succeeded"
+	DeliveryRunDetailStatusSuperseded        DeliveryRunDetailStatus = "superseded"
+	DeliveryRunDetailStatusVerifyingSource   DeliveryRunDetailStatus = "verifying_source"
+)
+
+// Valid indicates whether the value is a known member of the DeliveryRunDetailStatus enum.
+func (e DeliveryRunDetailStatus) Valid() bool {
+	switch e {
+	case DeliveryRunDetailStatusAttentionRequired:
+		return true
+	case DeliveryRunDetailStatusBlocked:
+		return true
+	case DeliveryRunDetailStatusBuildCanceled:
+		return true
+	case DeliveryRunDetailStatusBuildFailed:
+		return true
+	case DeliveryRunDetailStatusBuilding:
+		return true
+	case DeliveryRunDetailStatusCandidateReady:
+		return true
+	case DeliveryRunDetailStatusReleaseCanceled:
+		return true
+	case DeliveryRunDetailStatusReleaseFailed:
+		return true
+	case DeliveryRunDetailStatusReleasing:
+		return true
+	case DeliveryRunDetailStatusSucceeded:
+		return true
+	case DeliveryRunDetailStatusSuperseded:
+		return true
+	case DeliveryRunDetailStatusVerifyingSource:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DeploymentTargetStage.
 const (
 	DeploymentTargetStageDevelopment DeploymentTargetStage = "development"
@@ -648,6 +780,18 @@ type CreateBuildRequest struct {
 	SourceCommit string `json:"sourceCommit"`
 }
 
+// CreateDeliveryPipelineRequest defines model for CreateDeliveryPipelineRequest.
+type CreateDeliveryPipelineRequest struct {
+	Branch             string              `json:"branch"`
+	ContextPath        *string             `json:"contextPath,omitempty"`
+	DeploymentTargetId *openapi_types.UUID `json:"deploymentTargetId,omitempty"`
+	DockerfilePath     *string             `json:"dockerfilePath,omitempty"`
+	EndpointKey        string              `json:"endpointKey"`
+	Mode               DeliveryMode        `json:"mode"`
+	Name               string              `json:"name"`
+	RepositoryUrl      string              `json:"repositoryUrl"`
+}
+
 // CreateDeploymentTargetRequest defines model for CreateDeploymentTargetRequest.
 type CreateDeploymentTargetRequest struct {
 	ContainerPort int                                `json:"containerPort"`
@@ -671,6 +815,102 @@ type CreateReleaseRequest struct {
 
 	// ImageReference 包含 sha256 Digest 的不可变 OCI 镜像引用。
 	ImageReference string `json:"imageReference"`
+}
+
+// DeliveryMode defines model for DeliveryMode.
+type DeliveryMode string
+
+// DeliveryPipeline defines model for DeliveryPipeline.
+type DeliveryPipeline struct {
+	ActivationGeneration int64              `json:"activationGeneration"`
+	ApplicationId        openapi_types.UUID `json:"applicationId"`
+	CreatedAt            time.Time          `json:"createdAt"`
+	CreatedBy            string             `json:"createdBy"`
+	CurrentRevision      int                `json:"currentRevision"`
+	Enabled              bool               `json:"enabled"`
+	Id                   openapi_types.UUID `json:"id"`
+	Name                 string             `json:"name"`
+	ProjectId            openapi_types.UUID `json:"projectId"`
+	UpdatedAt            time.Time          `json:"updatedAt"`
+}
+
+// DeliveryPipelineDetail defines model for DeliveryPipelineDetail.
+type DeliveryPipelineDetail struct {
+	Pipeline DeliveryPipeline         `json:"pipeline"`
+	Revision DeliveryPipelineRevision `json:"revision"`
+}
+
+// DeliveryPipelineRevision defines model for DeliveryPipelineRevision.
+type DeliveryPipelineRevision struct {
+	ContextPath        string                           `json:"contextPath"`
+	CreatedAt          time.Time                        `json:"createdAt"`
+	CreatedBy          string                           `json:"createdBy"`
+	DeploymentTargetId *openapi_types.UUID              `json:"deploymentTargetId,omitempty"`
+	DockerfilePath     string                           `json:"dockerfilePath"`
+	EndpointKey        string                           `json:"endpointKey"`
+	GitRef             string                           `json:"gitRef"`
+	Mode               DeliveryMode                     `json:"mode"`
+	Platform           string                           `json:"platform"`
+	Provider           DeliveryPipelineRevisionProvider `json:"provider"`
+	RepositoryFullName string                           `json:"repositoryFullName"`
+	RepositoryId       int64                            `json:"repositoryId"`
+	RepositoryOwnerId  int64                            `json:"repositoryOwnerId"`
+	RepositoryUrl      string                           `json:"repositoryUrl"`
+	Revision           int                              `json:"revision"`
+}
+
+// DeliveryPipelineRevisionProvider defines model for DeliveryPipelineRevision.Provider.
+type DeliveryPipelineRevisionProvider string
+
+// DeliveryRun defines model for DeliveryRun.
+type DeliveryRun struct {
+	ActivationGeneration int64               `json:"activationGeneration"`
+	BuildId              openapi_types.UUID  `json:"buildId"`
+	CreatedAt            time.Time           `json:"createdAt"`
+	DeliveryPipelineId   openapi_types.UUID  `json:"deliveryPipelineId"`
+	FinishedAt           *time.Time          `json:"finishedAt,omitempty"`
+	Id                   openapi_types.UUID  `json:"id"`
+	ImageArtifactId      *openapi_types.UUID `json:"imageArtifactId,omitempty"`
+	Phase                DeliveryRunPhase    `json:"phase"`
+	PhaseVersion         int64               `json:"phaseVersion"`
+	PipelineRevision     int                 `json:"pipelineRevision"`
+	ReasonCode           *string             `json:"reasonCode,omitempty"`
+	ReleaseId            *openapi_types.UUID `json:"releaseId,omitempty"`
+	RepositoryUrl        string              `json:"repositoryUrl"`
+	SourceCommit         string              `json:"sourceCommit"`
+	UpdatedAt            time.Time           `json:"updatedAt"`
+}
+
+// DeliveryRunPhase defines model for DeliveryRun.Phase.
+type DeliveryRunPhase string
+
+// DeliveryRunDetail defines model for DeliveryRunDetail.
+type DeliveryRunDetail struct {
+	ActiveStage *DeliveryRunDetailActiveStage `json:"activeStage,omitempty"`
+	Run         DeliveryRun                   `json:"run"`
+	Status      DeliveryRunDetailStatus       `json:"status"`
+	Trigger     DeliveryRunTrigger            `json:"trigger"`
+}
+
+// DeliveryRunDetailActiveStage defines model for DeliveryRunDetail.ActiveStage.
+type DeliveryRunDetailActiveStage string
+
+// DeliveryRunDetailStatus defines model for DeliveryRunDetail.Status.
+type DeliveryRunDetailStatus string
+
+// DeliveryRunPage defines model for DeliveryRunPage.
+type DeliveryRunPage struct {
+	Items      []DeliveryRunDetail `json:"items"`
+	NextCursor *string             `json:"nextCursor,omitempty"`
+}
+
+// DeliveryRunTrigger defines model for DeliveryRunTrigger.
+type DeliveryRunTrigger struct {
+	EventType          string    `json:"eventType"`
+	Forced             bool      `json:"forced"`
+	GitRef             string    `json:"gitRef"`
+	ReceivedAt         time.Time `json:"receivedAt"`
+	RepositoryFullName string    `json:"repositoryFullName"`
 }
 
 // DeploymentTarget defines model for DeploymentTarget.
@@ -1028,6 +1268,18 @@ type SnapshotDifference struct {
 	ReleaseValue string `json:"releaseValue"`
 }
 
+// UpdateDeliveryPipelineRequest defines model for UpdateDeliveryPipelineRequest.
+type UpdateDeliveryPipelineRequest struct {
+	Branch             string              `json:"branch"`
+	ContextPath        *string             `json:"contextPath,omitempty"`
+	DeploymentTargetId *openapi_types.UUID `json:"deploymentTargetId,omitempty"`
+	DockerfilePath     *string             `json:"dockerfilePath,omitempty"`
+	EndpointKey        string              `json:"endpointKey"`
+	ExpectedRevision   int                 `json:"expectedRevision"`
+	Mode               DeliveryMode        `json:"mode"`
+	RepositoryUrl      string              `json:"repositoryUrl"`
+}
+
 // UpdateDeploymentTargetRequest defines model for UpdateDeploymentTargetRequest.
 type UpdateDeploymentTargetRequest struct {
 	ContainerPort int                                `json:"containerPort"`
@@ -1054,6 +1306,12 @@ type WorkloadObservation struct {
 // BuildOperationId defines model for BuildOperationId.
 type BuildOperationId = openapi_types.UUID
 
+// DeliveryPipelineId defines model for DeliveryPipelineId.
+type DeliveryPipelineId = openapi_types.UUID
+
+// DeliveryRunId defines model for DeliveryRunId.
+type DeliveryRunId = openapi_types.UUID
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -1065,6 +1323,12 @@ type ListBuildHistoryParams struct {
 
 // CreateBuildParams defines parameters for CreateBuild.
 type CreateBuildParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CreateDeliveryPipelineParams defines parameters for CreateDeliveryPipeline.
+type CreateDeliveryPipelineParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
@@ -1095,6 +1359,36 @@ type ReconcileBuildOperationParams struct {
 
 // RetryBuildOperationParams defines parameters for RetryBuildOperation.
 type RetryBuildOperationParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// UpdateDeliveryPipelineParams defines parameters for UpdateDeliveryPipeline.
+type UpdateDeliveryPipelineParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DisableDeliveryPipelineParams defines parameters for DisableDeliveryPipeline.
+type DisableDeliveryPipelineParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// EnableDeliveryPipelineParams defines parameters for EnableDeliveryPipeline.
+type EnableDeliveryPipelineParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ListDeliveryRunsParams defines parameters for ListDeliveryRuns.
+type ListDeliveryRunsParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ReconcileDeliveryRunParams defines parameters for ReconcileDeliveryRun.
+type ReconcileDeliveryRunParams struct {
 	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
@@ -1188,11 +1482,17 @@ type GetReleaseRuntimeLogsParams struct {
 // CreateBuildJSONRequestBody defines body for CreateBuild for application/json ContentType.
 type CreateBuildJSONRequestBody = CreateBuildRequest
 
+// CreateDeliveryPipelineJSONRequestBody defines body for CreateDeliveryPipeline for application/json ContentType.
+type CreateDeliveryPipelineJSONRequestBody = CreateDeliveryPipelineRequest
+
 // CreateDeploymentTargetJSONRequestBody defines body for CreateDeploymentTarget for application/json ContentType.
 type CreateDeploymentTargetJSONRequestBody = CreateDeploymentTargetRequest
 
 // ForceFailBuildOperationJSONRequestBody defines body for ForceFailBuildOperation for application/json ContentType.
 type ForceFailBuildOperationJSONRequestBody = ForceFailBuildOperationRequest
+
+// UpdateDeliveryPipelineJSONRequestBody defines body for UpdateDeliveryPipeline for application/json ContentType.
+type UpdateDeliveryPipelineJSONRequestBody = UpdateDeliveryPipelineRequest
 
 // UpdateDeploymentTargetJSONRequestBody defines body for UpdateDeploymentTarget for application/json ContentType.
 type UpdateDeploymentTargetJSONRequestBody = UpdateDeploymentTargetRequest
@@ -1226,6 +1526,12 @@ type ServerInterface interface {
 	// CreateBuild 从不可变 Git Commit 创建源码构建
 	// (POST /api/v1/applications/{applicationId}/builds)
 	CreateBuild(c *gin.Context, applicationId openapi_types.UUID, params CreateBuildParams)
+	// ListDeliveryPipelines 查询应用的自动交付配置
+	// (GET /api/v1/applications/{applicationId}/delivery-pipelines)
+	ListDeliveryPipelines(c *gin.Context, applicationId openapi_types.UUID)
+	// CreateDeliveryPipeline 创建禁用的自动交付配置
+	// (POST /api/v1/applications/{applicationId}/delivery-pipelines)
+	CreateDeliveryPipeline(c *gin.Context, applicationId openapi_types.UUID, params CreateDeliveryPipelineParams)
 	// CreateDeploymentTarget 创建部署目标
 	// (POST /api/v1/applications/{applicationId}/deployment-targets)
 	CreateDeploymentTarget(c *gin.Context, applicationId openapi_types.UUID, params CreateDeploymentTargetParams)
@@ -1250,6 +1556,27 @@ type ServerInterface interface {
 	// GetBuild 查询不可变构建输入和当前构建操作
 	// (GET /api/v1/builds/{buildId})
 	GetBuild(c *gin.Context, buildId openapi_types.UUID)
+	// GetDeliveryPipeline 查询自动交付配置
+	// (GET /api/v1/delivery-pipelines/{deliveryPipelineId})
+	GetDeliveryPipeline(c *gin.Context, deliveryPipelineId DeliveryPipelineId)
+	// UpdateDeliveryPipeline 追加自动交付配置 Revision
+	// (PUT /api/v1/delivery-pipelines/{deliveryPipelineId})
+	UpdateDeliveryPipeline(c *gin.Context, deliveryPipelineId DeliveryPipelineId, params UpdateDeliveryPipelineParams)
+	// DisableDeliveryPipeline 禁用自动交付配置
+	// (POST /api/v1/delivery-pipelines/{deliveryPipelineId}/disable)
+	DisableDeliveryPipeline(c *gin.Context, deliveryPipelineId DeliveryPipelineId, params DisableDeliveryPipelineParams)
+	// EnableDeliveryPipeline 启用自动交付配置
+	// (POST /api/v1/delivery-pipelines/{deliveryPipelineId}/enable)
+	EnableDeliveryPipeline(c *gin.Context, deliveryPipelineId DeliveryPipelineId, params EnableDeliveryPipelineParams)
+	// ListDeliveryRuns 查询自动交付运行历史
+	// (GET /api/v1/delivery-pipelines/{deliveryPipelineId}/runs)
+	ListDeliveryRuns(c *gin.Context, deliveryPipelineId DeliveryPipelineId, params ListDeliveryRunsParams)
+	// GetDeliveryRun 查询一次自动交付运行
+	// (GET /api/v1/delivery-runs/{deliveryRunId})
+	GetDeliveryRun(c *gin.Context, deliveryRunId DeliveryRunId)
+	// ReconcileDeliveryRun 请求重新读取并推进自动交付运行
+	// (POST /api/v1/delivery-runs/{deliveryRunId}/reconcile)
+	ReconcileDeliveryRun(c *gin.Context, deliveryRunId DeliveryRunId, params ReconcileDeliveryRunParams)
 	// GetDeploymentTarget 查询部署目标
 	// (GET /api/v1/deployment-targets/{deploymentTargetId})
 	GetDeploymentTarget(c *gin.Context, deploymentTargetId openapi_types.UUID)
@@ -1443,6 +1770,83 @@ func (siw *ServerInterfaceWrapper) CreateBuild(c *gin.Context) {
 	}
 
 	siw.Handler.CreateBuild(c, applicationId, params)
+}
+
+// ListDeliveryPipelines operation middleware
+func (siw *ServerInterfaceWrapper) ListDeliveryPipelines(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "applicationId" -------------
+	var applicationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "applicationId", c.Param("applicationId"), &applicationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter applicationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListDeliveryPipelines(c, applicationId)
+}
+
+// CreateDeliveryPipeline operation middleware
+func (siw *ServerInterfaceWrapper) CreateDeliveryPipeline(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "applicationId" -------------
+	var applicationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "applicationId", c.Param("applicationId"), &applicationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter applicationId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateDeliveryPipelineParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateDeliveryPipeline(c, applicationId, params)
 }
 
 // CreateDeploymentTarget operation middleware
@@ -1778,6 +2182,308 @@ func (siw *ServerInterfaceWrapper) GetBuild(c *gin.Context) {
 	}
 
 	siw.Handler.GetBuild(c, buildId)
+}
+
+// GetDeliveryPipeline operation middleware
+func (siw *ServerInterfaceWrapper) GetDeliveryPipeline(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deliveryPipelineId" -------------
+	var deliveryPipelineId DeliveryPipelineId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deliveryPipelineId", c.Param("deliveryPipelineId"), &deliveryPipelineId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deliveryPipelineId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetDeliveryPipeline(c, deliveryPipelineId)
+}
+
+// UpdateDeliveryPipeline operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDeliveryPipeline(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deliveryPipelineId" -------------
+	var deliveryPipelineId DeliveryPipelineId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deliveryPipelineId", c.Param("deliveryPipelineId"), &deliveryPipelineId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deliveryPipelineId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateDeliveryPipelineParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateDeliveryPipeline(c, deliveryPipelineId, params)
+}
+
+// DisableDeliveryPipeline operation middleware
+func (siw *ServerInterfaceWrapper) DisableDeliveryPipeline(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deliveryPipelineId" -------------
+	var deliveryPipelineId DeliveryPipelineId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deliveryPipelineId", c.Param("deliveryPipelineId"), &deliveryPipelineId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deliveryPipelineId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DisableDeliveryPipelineParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DisableDeliveryPipeline(c, deliveryPipelineId, params)
+}
+
+// EnableDeliveryPipeline operation middleware
+func (siw *ServerInterfaceWrapper) EnableDeliveryPipeline(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deliveryPipelineId" -------------
+	var deliveryPipelineId DeliveryPipelineId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deliveryPipelineId", c.Param("deliveryPipelineId"), &deliveryPipelineId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deliveryPipelineId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EnableDeliveryPipelineParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.EnableDeliveryPipeline(c, deliveryPipelineId, params)
+}
+
+// ListDeliveryRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListDeliveryRuns(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deliveryPipelineId" -------------
+	var deliveryPipelineId DeliveryPipelineId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deliveryPipelineId", c.Param("deliveryPipelineId"), &deliveryPipelineId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deliveryPipelineId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListDeliveryRunsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListDeliveryRuns(c, deliveryPipelineId, params)
+}
+
+// GetDeliveryRun operation middleware
+func (siw *ServerInterfaceWrapper) GetDeliveryRun(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deliveryRunId" -------------
+	var deliveryRunId DeliveryRunId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deliveryRunId", c.Param("deliveryRunId"), &deliveryRunId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deliveryRunId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetDeliveryRun(c, deliveryRunId)
+}
+
+// ReconcileDeliveryRun operation middleware
+func (siw *ServerInterfaceWrapper) ReconcileDeliveryRun(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deliveryRunId" -------------
+	var deliveryRunId DeliveryRunId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deliveryRunId", c.Param("deliveryRunId"), &deliveryRunId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deliveryRunId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReconcileDeliveryRunParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ReconcileDeliveryRun(c, deliveryRunId, params)
 }
 
 // GetDeploymentTarget operation middleware
@@ -2751,6 +3457,15 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/v1/release-operations/:releaseOperationId/reconcile", wrapper.ReconcileReleaseOperation)
 	router.POST(options.BaseURL+"/api/v1/release-operations/:releaseOperationId/fail", wrapper.ForceFailReleaseOperation)
 	router.POST(options.BaseURL+"/api/v1/release-operations/:releaseOperationId/cancel", wrapper.CancelReleaseOperation)
+	router.GET(options.BaseURL+"/api/v1/applications/:applicationId/delivery-pipelines", wrapper.ListDeliveryPipelines)
+	router.POST(options.BaseURL+"/api/v1/applications/:applicationId/delivery-pipelines", wrapper.CreateDeliveryPipeline)
+	router.GET(options.BaseURL+"/api/v1/delivery-pipelines/:deliveryPipelineId", wrapper.GetDeliveryPipeline)
+	router.PUT(options.BaseURL+"/api/v1/delivery-pipelines/:deliveryPipelineId", wrapper.UpdateDeliveryPipeline)
+	router.POST(options.BaseURL+"/api/v1/delivery-pipelines/:deliveryPipelineId/enable", wrapper.EnableDeliveryPipeline)
+	router.POST(options.BaseURL+"/api/v1/delivery-pipelines/:deliveryPipelineId/disable", wrapper.DisableDeliveryPipeline)
+	router.GET(options.BaseURL+"/api/v1/delivery-pipelines/:deliveryPipelineId/runs", wrapper.ListDeliveryRuns)
+	router.GET(options.BaseURL+"/api/v1/delivery-runs/:deliveryRunId", wrapper.GetDeliveryRun)
+	router.POST(options.BaseURL+"/api/v1/delivery-runs/:deliveryRunId/reconcile", wrapper.ReconcileDeliveryRun)
 }
 
 type GetApplicationRequestObject struct {
@@ -2960,6 +3675,156 @@ type CreateBuilddefaultJSONResponse struct {
 }
 
 func (response CreateBuilddefaultJSONResponse) VisitCreateBuildResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeliveryPipelinesRequestObject struct {
+	ApplicationId openapi_types.UUID `json:"applicationId"`
+}
+
+type ListDeliveryPipelinesResponseObject interface {
+	VisitListDeliveryPipelinesResponse(w http.ResponseWriter) error
+}
+
+type ListDeliveryPipelines200JSONResponse []DeliveryPipelineDetail
+
+func (response ListDeliveryPipelines200JSONResponse) VisitListDeliveryPipelinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeliveryPipelines404JSONResponse Error
+
+func (response ListDeliveryPipelines404JSONResponse) VisitListDeliveryPipelinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeliveryPipelinesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListDeliveryPipelinesdefaultJSONResponse) VisitListDeliveryPipelinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeliveryPipelineRequestObject struct {
+	ApplicationId openapi_types.UUID `json:"applicationId"`
+	Params        CreateDeliveryPipelineParams
+	Body          *CreateDeliveryPipelineJSONRequestBody
+}
+
+type CreateDeliveryPipelineResponseObject interface {
+	VisitCreateDeliveryPipelineResponse(w http.ResponseWriter) error
+}
+
+type CreateDeliveryPipeline201JSONResponse DeliveryPipelineDetail
+
+func (response CreateDeliveryPipeline201JSONResponse) VisitCreateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeliveryPipeline400JSONResponse Error
+
+func (response CreateDeliveryPipeline400JSONResponse) VisitCreateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeliveryPipeline403JSONResponse Error
+
+func (response CreateDeliveryPipeline403JSONResponse) VisitCreateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeliveryPipeline404JSONResponse Error
+
+func (response CreateDeliveryPipeline404JSONResponse) VisitCreateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeliveryPipeline409JSONResponse Error
+
+func (response CreateDeliveryPipeline409JSONResponse) VisitCreateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeliveryPipelinedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateDeliveryPipelinedefaultJSONResponse) VisitCreateDeliveryPipelineResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3545,6 +4410,537 @@ type GetBuilddefaultJSONResponse struct {
 }
 
 func (response GetBuilddefaultJSONResponse) VisitGetBuildResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeliveryPipelineRequestObject struct {
+	DeliveryPipelineId DeliveryPipelineId `json:"deliveryPipelineId"`
+}
+
+type GetDeliveryPipelineResponseObject interface {
+	VisitGetDeliveryPipelineResponse(w http.ResponseWriter) error
+}
+
+type GetDeliveryPipeline200JSONResponse DeliveryPipelineDetail
+
+func (response GetDeliveryPipeline200JSONResponse) VisitGetDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeliveryPipeline404JSONResponse Error
+
+func (response GetDeliveryPipeline404JSONResponse) VisitGetDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeliveryPipelinedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetDeliveryPipelinedefaultJSONResponse) VisitGetDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDeliveryPipelineRequestObject struct {
+	DeliveryPipelineId DeliveryPipelineId `json:"deliveryPipelineId"`
+	Params             UpdateDeliveryPipelineParams
+	Body               *UpdateDeliveryPipelineJSONRequestBody
+}
+
+type UpdateDeliveryPipelineResponseObject interface {
+	VisitUpdateDeliveryPipelineResponse(w http.ResponseWriter) error
+}
+
+type UpdateDeliveryPipeline200JSONResponse DeliveryPipelineDetail
+
+func (response UpdateDeliveryPipeline200JSONResponse) VisitUpdateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDeliveryPipeline400JSONResponse Error
+
+func (response UpdateDeliveryPipeline400JSONResponse) VisitUpdateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDeliveryPipeline403JSONResponse Error
+
+func (response UpdateDeliveryPipeline403JSONResponse) VisitUpdateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDeliveryPipeline404JSONResponse Error
+
+func (response UpdateDeliveryPipeline404JSONResponse) VisitUpdateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDeliveryPipeline409JSONResponse Error
+
+func (response UpdateDeliveryPipeline409JSONResponse) VisitUpdateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDeliveryPipelinedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateDeliveryPipelinedefaultJSONResponse) VisitUpdateDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableDeliveryPipelineRequestObject struct {
+	DeliveryPipelineId DeliveryPipelineId `json:"deliveryPipelineId"`
+	Params             DisableDeliveryPipelineParams
+}
+
+type DisableDeliveryPipelineResponseObject interface {
+	VisitDisableDeliveryPipelineResponse(w http.ResponseWriter) error
+}
+
+type DisableDeliveryPipeline200JSONResponse DeliveryPipelineDetail
+
+func (response DisableDeliveryPipeline200JSONResponse) VisitDisableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableDeliveryPipeline403JSONResponse Error
+
+func (response DisableDeliveryPipeline403JSONResponse) VisitDisableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableDeliveryPipeline404JSONResponse Error
+
+func (response DisableDeliveryPipeline404JSONResponse) VisitDisableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableDeliveryPipeline409JSONResponse Error
+
+func (response DisableDeliveryPipeline409JSONResponse) VisitDisableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableDeliveryPipelinedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DisableDeliveryPipelinedefaultJSONResponse) VisitDisableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableDeliveryPipelineRequestObject struct {
+	DeliveryPipelineId DeliveryPipelineId `json:"deliveryPipelineId"`
+	Params             EnableDeliveryPipelineParams
+}
+
+type EnableDeliveryPipelineResponseObject interface {
+	VisitEnableDeliveryPipelineResponse(w http.ResponseWriter) error
+}
+
+type EnableDeliveryPipeline200JSONResponse DeliveryPipelineDetail
+
+func (response EnableDeliveryPipeline200JSONResponse) VisitEnableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableDeliveryPipeline400JSONResponse Error
+
+func (response EnableDeliveryPipeline400JSONResponse) VisitEnableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableDeliveryPipeline403JSONResponse Error
+
+func (response EnableDeliveryPipeline403JSONResponse) VisitEnableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableDeliveryPipeline404JSONResponse Error
+
+func (response EnableDeliveryPipeline404JSONResponse) VisitEnableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableDeliveryPipeline409JSONResponse Error
+
+func (response EnableDeliveryPipeline409JSONResponse) VisitEnableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableDeliveryPipelinedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response EnableDeliveryPipelinedefaultJSONResponse) VisitEnableDeliveryPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeliveryRunsRequestObject struct {
+	DeliveryPipelineId DeliveryPipelineId `json:"deliveryPipelineId"`
+	Params             ListDeliveryRunsParams
+}
+
+type ListDeliveryRunsResponseObject interface {
+	VisitListDeliveryRunsResponse(w http.ResponseWriter) error
+}
+
+type ListDeliveryRuns200JSONResponse DeliveryRunPage
+
+func (response ListDeliveryRuns200JSONResponse) VisitListDeliveryRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeliveryRuns400JSONResponse Error
+
+func (response ListDeliveryRuns400JSONResponse) VisitListDeliveryRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeliveryRuns404JSONResponse Error
+
+func (response ListDeliveryRuns404JSONResponse) VisitListDeliveryRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeliveryRunsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListDeliveryRunsdefaultJSONResponse) VisitListDeliveryRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeliveryRunRequestObject struct {
+	DeliveryRunId DeliveryRunId `json:"deliveryRunId"`
+}
+
+type GetDeliveryRunResponseObject interface {
+	VisitGetDeliveryRunResponse(w http.ResponseWriter) error
+}
+
+type GetDeliveryRun200JSONResponse DeliveryRunDetail
+
+func (response GetDeliveryRun200JSONResponse) VisitGetDeliveryRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeliveryRun404JSONResponse Error
+
+func (response GetDeliveryRun404JSONResponse) VisitGetDeliveryRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeliveryRundefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetDeliveryRundefaultJSONResponse) VisitGetDeliveryRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileDeliveryRunRequestObject struct {
+	DeliveryRunId DeliveryRunId `json:"deliveryRunId"`
+	Params        ReconcileDeliveryRunParams
+}
+
+type ReconcileDeliveryRunResponseObject interface {
+	VisitReconcileDeliveryRunResponse(w http.ResponseWriter) error
+}
+
+type ReconcileDeliveryRun202JSONResponse DeliveryRunDetail
+
+func (response ReconcileDeliveryRun202JSONResponse) VisitReconcileDeliveryRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileDeliveryRun403JSONResponse Error
+
+func (response ReconcileDeliveryRun403JSONResponse) VisitReconcileDeliveryRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileDeliveryRun404JSONResponse Error
+
+func (response ReconcileDeliveryRun404JSONResponse) VisitReconcileDeliveryRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileDeliveryRun409JSONResponse Error
+
+func (response ReconcileDeliveryRun409JSONResponse) VisitReconcileDeliveryRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileDeliveryRundefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ReconcileDeliveryRundefaultJSONResponse) VisitReconcileDeliveryRunResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -5122,6 +6518,12 @@ type StrictServerInterface interface {
 	// CreateBuild 从不可变 Git Commit 创建源码构建
 	// (POST /api/v1/applications/{applicationId}/builds)
 	CreateBuild(ctx context.Context, request CreateBuildRequestObject) (CreateBuildResponseObject, error)
+	// ListDeliveryPipelines 查询应用的自动交付配置
+	// (GET /api/v1/applications/{applicationId}/delivery-pipelines)
+	ListDeliveryPipelines(ctx context.Context, request ListDeliveryPipelinesRequestObject) (ListDeliveryPipelinesResponseObject, error)
+	// CreateDeliveryPipeline 创建禁用的自动交付配置
+	// (POST /api/v1/applications/{applicationId}/delivery-pipelines)
+	CreateDeliveryPipeline(ctx context.Context, request CreateDeliveryPipelineRequestObject) (CreateDeliveryPipelineResponseObject, error)
 	// CreateDeploymentTarget 创建部署目标
 	// (POST /api/v1/applications/{applicationId}/deployment-targets)
 	CreateDeploymentTarget(ctx context.Context, request CreateDeploymentTargetRequestObject) (CreateDeploymentTargetResponseObject, error)
@@ -5146,6 +6548,27 @@ type StrictServerInterface interface {
 	// GetBuild 查询不可变构建输入和当前构建操作
 	// (GET /api/v1/builds/{buildId})
 	GetBuild(ctx context.Context, request GetBuildRequestObject) (GetBuildResponseObject, error)
+	// GetDeliveryPipeline 查询自动交付配置
+	// (GET /api/v1/delivery-pipelines/{deliveryPipelineId})
+	GetDeliveryPipeline(ctx context.Context, request GetDeliveryPipelineRequestObject) (GetDeliveryPipelineResponseObject, error)
+	// UpdateDeliveryPipeline 追加自动交付配置 Revision
+	// (PUT /api/v1/delivery-pipelines/{deliveryPipelineId})
+	UpdateDeliveryPipeline(ctx context.Context, request UpdateDeliveryPipelineRequestObject) (UpdateDeliveryPipelineResponseObject, error)
+	// DisableDeliveryPipeline 禁用自动交付配置
+	// (POST /api/v1/delivery-pipelines/{deliveryPipelineId}/disable)
+	DisableDeliveryPipeline(ctx context.Context, request DisableDeliveryPipelineRequestObject) (DisableDeliveryPipelineResponseObject, error)
+	// EnableDeliveryPipeline 启用自动交付配置
+	// (POST /api/v1/delivery-pipelines/{deliveryPipelineId}/enable)
+	EnableDeliveryPipeline(ctx context.Context, request EnableDeliveryPipelineRequestObject) (EnableDeliveryPipelineResponseObject, error)
+	// ListDeliveryRuns 查询自动交付运行历史
+	// (GET /api/v1/delivery-pipelines/{deliveryPipelineId}/runs)
+	ListDeliveryRuns(ctx context.Context, request ListDeliveryRunsRequestObject) (ListDeliveryRunsResponseObject, error)
+	// GetDeliveryRun 查询一次自动交付运行
+	// (GET /api/v1/delivery-runs/{deliveryRunId})
+	GetDeliveryRun(ctx context.Context, request GetDeliveryRunRequestObject) (GetDeliveryRunResponseObject, error)
+	// ReconcileDeliveryRun 请求重新读取并推进自动交付运行
+	// (POST /api/v1/delivery-runs/{deliveryRunId}/reconcile)
+	ReconcileDeliveryRun(ctx context.Context, request ReconcileDeliveryRunRequestObject) (ReconcileDeliveryRunResponseObject, error)
 	// GetDeploymentTarget 查询部署目标
 	// (GET /api/v1/deployment-targets/{deploymentTargetId})
 	GetDeploymentTarget(ctx context.Context, request GetDeploymentTargetRequestObject) (GetDeploymentTargetResponseObject, error)
@@ -5348,6 +6771,66 @@ func (sh *strictHandler) CreateBuild(ctx *gin.Context, applicationId openapi_typ
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(CreateBuildResponseObject); ok {
 		if err := validResponse.VisitCreateBuildResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDeliveryPipelines operation middleware
+func (sh *strictHandler) ListDeliveryPipelines(ctx *gin.Context, applicationId openapi_types.UUID) {
+	var request ListDeliveryPipelinesRequestObject
+
+	request.ApplicationId = applicationId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDeliveryPipelines(ctx, request.(ListDeliveryPipelinesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDeliveryPipelines")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListDeliveryPipelinesResponseObject); ok {
+		if err := validResponse.VisitListDeliveryPipelinesResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateDeliveryPipeline operation middleware
+func (sh *strictHandler) CreateDeliveryPipeline(ctx *gin.Context, applicationId openapi_types.UUID, params CreateDeliveryPipelineParams) {
+	var request CreateDeliveryPipelineRequestObject
+
+	request.ApplicationId = applicationId
+	request.Params = params
+
+	var body CreateDeliveryPipelineJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateDeliveryPipeline(ctx, request.(CreateDeliveryPipelineRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateDeliveryPipeline")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateDeliveryPipelineResponseObject); ok {
+		if err := validResponse.VisitCreateDeliveryPipelineResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -5575,6 +7058,200 @@ func (sh *strictHandler) GetBuild(ctx *gin.Context, buildId openapi_types.UUID) 
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(GetBuildResponseObject); ok {
 		if err := validResponse.VisitGetBuildResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetDeliveryPipeline operation middleware
+func (sh *strictHandler) GetDeliveryPipeline(ctx *gin.Context, deliveryPipelineId DeliveryPipelineId) {
+	var request GetDeliveryPipelineRequestObject
+
+	request.DeliveryPipelineId = deliveryPipelineId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetDeliveryPipeline(ctx, request.(GetDeliveryPipelineRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDeliveryPipeline")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetDeliveryPipelineResponseObject); ok {
+		if err := validResponse.VisitGetDeliveryPipelineResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateDeliveryPipeline operation middleware
+func (sh *strictHandler) UpdateDeliveryPipeline(ctx *gin.Context, deliveryPipelineId DeliveryPipelineId, params UpdateDeliveryPipelineParams) {
+	var request UpdateDeliveryPipelineRequestObject
+
+	request.DeliveryPipelineId = deliveryPipelineId
+	request.Params = params
+
+	var body UpdateDeliveryPipelineJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateDeliveryPipeline(ctx, request.(UpdateDeliveryPipelineRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateDeliveryPipeline")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(UpdateDeliveryPipelineResponseObject); ok {
+		if err := validResponse.VisitUpdateDeliveryPipelineResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DisableDeliveryPipeline operation middleware
+func (sh *strictHandler) DisableDeliveryPipeline(ctx *gin.Context, deliveryPipelineId DeliveryPipelineId, params DisableDeliveryPipelineParams) {
+	var request DisableDeliveryPipelineRequestObject
+
+	request.DeliveryPipelineId = deliveryPipelineId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.DisableDeliveryPipeline(ctx, request.(DisableDeliveryPipelineRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DisableDeliveryPipeline")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(DisableDeliveryPipelineResponseObject); ok {
+		if err := validResponse.VisitDisableDeliveryPipelineResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// EnableDeliveryPipeline operation middleware
+func (sh *strictHandler) EnableDeliveryPipeline(ctx *gin.Context, deliveryPipelineId DeliveryPipelineId, params EnableDeliveryPipelineParams) {
+	var request EnableDeliveryPipelineRequestObject
+
+	request.DeliveryPipelineId = deliveryPipelineId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.EnableDeliveryPipeline(ctx, request.(EnableDeliveryPipelineRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "EnableDeliveryPipeline")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(EnableDeliveryPipelineResponseObject); ok {
+		if err := validResponse.VisitEnableDeliveryPipelineResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDeliveryRuns operation middleware
+func (sh *strictHandler) ListDeliveryRuns(ctx *gin.Context, deliveryPipelineId DeliveryPipelineId, params ListDeliveryRunsParams) {
+	var request ListDeliveryRunsRequestObject
+
+	request.DeliveryPipelineId = deliveryPipelineId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDeliveryRuns(ctx, request.(ListDeliveryRunsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDeliveryRuns")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListDeliveryRunsResponseObject); ok {
+		if err := validResponse.VisitListDeliveryRunsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetDeliveryRun operation middleware
+func (sh *strictHandler) GetDeliveryRun(ctx *gin.Context, deliveryRunId DeliveryRunId) {
+	var request GetDeliveryRunRequestObject
+
+	request.DeliveryRunId = deliveryRunId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetDeliveryRun(ctx, request.(GetDeliveryRunRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDeliveryRun")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetDeliveryRunResponseObject); ok {
+		if err := validResponse.VisitGetDeliveryRunResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReconcileDeliveryRun operation middleware
+func (sh *strictHandler) ReconcileDeliveryRun(ctx *gin.Context, deliveryRunId DeliveryRunId, params ReconcileDeliveryRunParams) {
+	var request ReconcileDeliveryRunRequestObject
+
+	request.DeliveryRunId = deliveryRunId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ReconcileDeliveryRun(ctx, request.(ReconcileDeliveryRunRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReconcileDeliveryRun")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ReconcileDeliveryRunResponseObject); ok {
+		if err := validResponse.VisitReconcileDeliveryRunResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -6197,105 +7874,124 @@ func (sh *strictHandler) GetReleaseRuntimeLogs(ctx *gin.Context, releaseId opena
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

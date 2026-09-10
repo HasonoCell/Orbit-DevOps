@@ -1344,6 +1344,217 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/applications/{applicationId}/delivery-pipelines:
+    get:
+      operationId: listDeliveryPipelines
+      summary: 查询应用的自动交付配置
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 自动交付配置列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/DeliveryPipelineDetail"}
+        "404":
+          description: 应用不存在
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        default:
+          description: 请求失败
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+    post:
+      operationId: createDeliveryPipeline
+      summary: 创建禁用的自动交付配置
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/CreateDeliveryPipelineRequest"}}}
+      responses:
+        "201":
+          description: 自动交付配置已创建
+          content: {application/json: {schema: {$ref: "#/components/schemas/DeliveryPipelineDetail"}}}
+        "400":
+          description: 配置或来源无效
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "403":
+          description: 当前角色不能管理自动交付
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "404":
+          description: 应用或部署目标不存在
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "409":
+          description: 名称或幂等键冲突
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        default:
+          description: 请求失败
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+  /api/v1/delivery-pipelines/{deliveryPipelineId}:
+    get:
+      operationId: getDeliveryPipeline
+      summary: 查询自动交付配置
+      parameters:
+        - $ref: "#/components/parameters/DeliveryPipelineId"
+      responses:
+        "200":
+          description: 自动交付配置
+          content: {application/json: {schema: {$ref: "#/components/schemas/DeliveryPipelineDetail"}}}
+        "404":
+          description: 配置不存在
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        default:
+          description: 请求失败
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+    put:
+      operationId: updateDeliveryPipeline
+      summary: 追加自动交付配置 Revision
+      parameters:
+        - $ref: "#/components/parameters/DeliveryPipelineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/UpdateDeliveryPipelineRequest"}}}
+      responses:
+        "200":
+          description: 自动交付配置已更新
+          content: {application/json: {schema: {$ref: "#/components/schemas/DeliveryPipelineDetail"}}}
+        "400":
+          description: 配置或来源无效
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "403":
+          description: 当前角色不能管理自动交付
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "404":
+          description: 配置或部署目标不存在
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "409":
+          description: Revision 或幂等键冲突
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        default:
+          description: 请求失败
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+  /api/v1/delivery-pipelines/{deliveryPipelineId}/enable:
+    post:
+      operationId: enableDeliveryPipeline
+      summary: 启用自动交付配置
+      parameters:
+        - $ref: "#/components/parameters/DeliveryPipelineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 自动交付配置已启用
+          content: {application/json: {schema: {$ref: "#/components/schemas/DeliveryPipelineDetail"}}}
+        "400":
+          description: 来源身份已经变化
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "403":
+          description: 当前角色不能管理自动交付
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "404":
+          description: 配置不存在
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "409":
+          description: Revision、来源所有权或幂等键冲突
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        default:
+          description: 请求失败
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+  /api/v1/delivery-pipelines/{deliveryPipelineId}/disable:
+    post:
+      operationId: disableDeliveryPipeline
+      summary: 禁用自动交付配置
+      parameters:
+        - $ref: "#/components/parameters/DeliveryPipelineId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: 自动交付配置已禁用
+          content: {application/json: {schema: {$ref: "#/components/schemas/DeliveryPipelineDetail"}}}
+        "403":
+          description: 当前角色不能管理自动交付
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "404":
+          description: 配置不存在
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "409":
+          description: 幂等键冲突
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        default:
+          description: 请求失败
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+  /api/v1/delivery-pipelines/{deliveryPipelineId}/runs:
+    get:
+      operationId: listDeliveryRuns
+      summary: 查询自动交付运行历史
+      parameters:
+        - $ref: "#/components/parameters/DeliveryPipelineId"
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - name: cursor
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: 自动交付运行历史
+          content: {application/json: {schema: {$ref: "#/components/schemas/DeliveryRunPage"}}}
+        "400":
+          description: 游标无效
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "404":
+          description: 配置不存在
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        default:
+          description: 请求失败
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+  /api/v1/delivery-runs/{deliveryRunId}:
+    get:
+      operationId: getDeliveryRun
+      summary: 查询一次自动交付运行
+      parameters:
+        - $ref: "#/components/parameters/DeliveryRunId"
+      responses:
+        "200":
+          description: 自动交付运行
+          content: {application/json: {schema: {$ref: "#/components/schemas/DeliveryRunDetail"}}}
+        "404":
+          description: 运行不存在
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        default:
+          description: 请求失败
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+  /api/v1/delivery-runs/{deliveryRunId}/reconcile:
+    post:
+      operationId: reconcileDeliveryRun
+      summary: 请求重新读取并推进自动交付运行
+      parameters:
+        - $ref: "#/components/parameters/DeliveryRunId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202":
+          description: 已可靠记录推进请求
+          content: {application/json: {schema: {$ref: "#/components/schemas/DeliveryRunDetail"}}}
+        "403":
+          description: 当前角色不能推进自动交付
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "404":
+          description: 运行不存在
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        "409":
+          description: 幂等键冲突
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+        default:
+          description: 请求失败
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
 components:
   parameters:
     BuildOperationId:
@@ -1362,6 +1573,16 @@ components:
         type: string
         minLength: 8
         maxLength: 128
+    DeliveryPipelineId:
+      name: deliveryPipelineId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    DeliveryRunId:
+      name: deliveryRunId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
   schemas:
     CreateProjectRequest:
       type: object
@@ -2637,6 +2858,125 @@ components:
           $ref: "#/components/schemas/Release"
         releaseOperation:
           $ref: "#/components/schemas/ReleaseOperation"
+    DeliveryMode:
+      type: string
+      enum: [build_only, auto_release]
+    CreateDeliveryPipelineRequest:
+      type: object
+      additionalProperties: false
+      required: [name, endpointKey, repositoryUrl, branch, mode]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        endpointKey: {type: string, minLength: 1, maxLength: 128}
+        repositoryUrl: {type: string, format: uri, minLength: 12, maxLength: 2048}
+        branch: {type: string, minLength: 1, maxLength: 255}
+        dockerfilePath: {type: string, default: Dockerfile, minLength: 1, maxLength: 512}
+        contextPath: {type: string, default: ., minLength: 1, maxLength: 512}
+        mode: {$ref: "#/components/schemas/DeliveryMode"}
+        deploymentTargetId: {type: string, format: uuid}
+    UpdateDeliveryPipelineRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, endpointKey, repositoryUrl, branch, mode]
+      properties:
+        expectedRevision: {type: integer, minimum: 1}
+        endpointKey: {type: string, minLength: 1, maxLength: 128}
+        repositoryUrl: {type: string, format: uri, minLength: 12, maxLength: 2048}
+        branch: {type: string, minLength: 1, maxLength: 255}
+        dockerfilePath: {type: string, default: Dockerfile, minLength: 1, maxLength: 512}
+        contextPath: {type: string, default: ., minLength: 1, maxLength: 512}
+        mode: {$ref: "#/components/schemas/DeliveryMode"}
+        deploymentTargetId: {type: string, format: uuid}
+    DeliveryPipeline:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, applicationId, name, currentRevision, enabled, activationGeneration, createdBy, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        projectId: {type: string, format: uuid}
+        applicationId: {type: string, format: uuid}
+        name: {type: string}
+        currentRevision: {type: integer}
+        enabled: {type: boolean}
+        activationGeneration: {type: integer, format: int64}
+        createdBy: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    DeliveryPipelineRevision:
+      type: object
+      additionalProperties: false
+      required: [revision, provider, endpointKey, repositoryId, repositoryOwnerId, repositoryFullName, repositoryUrl, gitRef, dockerfilePath, contextPath, platform, mode, createdBy, createdAt]
+      properties:
+        revision: {type: integer}
+        provider: {type: string, enum: [github]}
+        endpointKey: {type: string}
+        repositoryId: {type: integer, format: int64}
+        repositoryOwnerId: {type: integer, format: int64}
+        repositoryFullName: {type: string}
+        repositoryUrl: {type: string}
+        gitRef: {type: string}
+        dockerfilePath: {type: string}
+        contextPath: {type: string}
+        platform: {type: string}
+        mode: {$ref: "#/components/schemas/DeliveryMode"}
+        deploymentTargetId: {type: string, format: uuid}
+        createdBy: {type: string}
+        createdAt: {type: string, format: date-time}
+    DeliveryPipelineDetail:
+      type: object
+      additionalProperties: false
+      required: [pipeline, revision]
+      properties:
+        pipeline: {$ref: "#/components/schemas/DeliveryPipeline"}
+        revision: {$ref: "#/components/schemas/DeliveryPipelineRevision"}
+    DeliveryRun:
+      type: object
+      additionalProperties: false
+      required: [id, deliveryPipelineId, pipelineRevision, activationGeneration, sourceCommit, repositoryUrl, phase, phaseVersion, buildId, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        deliveryPipelineId: {type: string, format: uuid}
+        pipelineRevision: {type: integer}
+        activationGeneration: {type: integer, format: int64}
+        sourceCommit: {type: string}
+        repositoryUrl: {type: string}
+        phase: {type: string, enum: [build_created, artifact_ready, release_created, completed, superseded, blocked]}
+        phaseVersion: {type: integer, format: int64}
+        buildId: {type: string, format: uuid}
+        imageArtifactId: {type: string, format: uuid}
+        releaseId: {type: string, format: uuid}
+        reasonCode: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+    DeliveryRunTrigger:
+      type: object
+      additionalProperties: false
+      required: [eventType, repositoryFullName, gitRef, forced, receivedAt]
+      properties:
+        eventType: {type: string}
+        repositoryFullName: {type: string}
+        gitRef: {type: string}
+        forced: {type: boolean}
+        receivedAt: {type: string, format: date-time}
+    DeliveryRunDetail:
+      type: object
+      additionalProperties: false
+      required: [run, status, trigger]
+      properties:
+        run: {$ref: "#/components/schemas/DeliveryRun"}
+        status: {type: string, enum: [building, build_failed, build_canceled, candidate_ready, verifying_source, releasing, release_failed, release_canceled, succeeded, superseded, attention_required, blocked]}
+        activeStage: {type: string, enum: [build, source_verification, release]}
+        trigger: {$ref: "#/components/schemas/DeliveryRunTrigger"}
+    DeliveryRunPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/DeliveryRunDetail"}
+        nextCursor: {type: string}
     Error:
       type: object
       additionalProperties: false

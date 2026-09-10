@@ -16,6 +16,7 @@ import (
 	"github.com/HasonoCell/OrbitOps/internal/delivery"
 	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
 	"github.com/HasonoCell/OrbitOps/internal/observability"
+	"github.com/HasonoCell/OrbitOps/internal/pipeline"
 	"github.com/HasonoCell/OrbitOps/internal/platform/database"
 	"github.com/HasonoCell/OrbitOps/internal/project"
 	"github.com/HasonoCell/OrbitOps/internal/projectauth"
@@ -49,12 +50,13 @@ type Runtime struct {
 }
 
 type Dependencies struct {
-	RuntimeSource     diagnostics.RuntimeSource
-	RecoveryPublisher releaseworker.RecoveryPublisher
-	Logger            *slog.Logger
-	Metrics           *observability.Metrics
-	Tracer            trace.Tracer
-	Propagator        propagation.TextMapPropagator
+	RuntimeSource      diagnostics.RuntimeSource
+	GitSourceInspector pipeline.GitSourceInspector
+	RecoveryPublisher  releaseworker.RecoveryPublisher
+	Logger             *slog.Logger
+	Metrics            *observability.Metrics
+	Tracer             trace.Tracer
+	Propagator         propagation.TextMapPropagator
 }
 
 func New(ctx context.Context, config Config) (*Runtime, error) {
@@ -115,6 +117,7 @@ func NewWithDependencies(
 		RegistryPrefix:  config.BuildRegistryPrefix,
 	}, buildOperationModule, authorizer)
 	deliveryModule := delivery.New(db, releaseOperationModule, authorizer)
+	pipelineModule := pipeline.New(db, pipeline.Config{Platform: config.BuildPlatform}, authorizer, dependencies.GitSourceInspector)
 	diagnosticModule := diagnostics.New(db, authorizer, dependencies.RuntimeSource)
 	logger := dependencies.Logger
 	if logger == nil {
@@ -145,6 +148,7 @@ func NewWithDependencies(
 		buildOperationModule,
 		deliveryModule,
 		diagnosticModule,
+		pipelineModule,
 		releaseOperationModule,
 		authorizer,
 		dependencies.RecoveryPublisher,
