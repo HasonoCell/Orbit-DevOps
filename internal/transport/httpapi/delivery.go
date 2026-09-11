@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/HasonoCell/OrbitOps/internal/api"
-	"github.com/HasonoCell/OrbitOps/internal/catalog"
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/idempotency"
-	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/api"
+	"github.com/HasonoCell/Orbit-DevOps/internal/catalog"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"go.opentelemetry.io/otel/propagation"
 )
 

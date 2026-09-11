@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 
-	"github.com/HasonoCell/OrbitOps/internal/api"
-	builddomain "github.com/HasonoCell/OrbitOps/internal/build"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/internal/idempotency"
-	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/api"
+	builddomain "github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"go.opentelemetry.io/otel/propagation"
 )
 

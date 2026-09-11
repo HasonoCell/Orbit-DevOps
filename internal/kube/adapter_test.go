@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
-	"github.com/HasonoCell/OrbitOps/internal/kube"
-	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -34,8 +34,8 @@ func TestRecoveryInspectionClassifiesStableKubernetesState(t *testing.T) {
 	newAdapter := func(objects ...runtime.Object) *kube.Adapter {
 		t.Helper()
 		adapter, err := kube.New(fake.NewClientset(objects...), kube.Config{
-			ClusterRef: "kind-orbitops-s1", Namespace: "orbitops-s1",
-			FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+			ClusterRef: "kind-orbit-devops-s1", Namespace: "orbit-devops-s1",
+			FieldManager: "orbit-devops-delivery", PollInterval: time.Millisecond,
 		})
 		if err != nil {
 			t.Fatalf("create adapter: %v", err)
@@ -51,14 +51,14 @@ func TestRecoveryInspectionClassifiesStableKubernetesState(t *testing.T) {
 	labels := recoveryLabels(request, request.ReleaseID)
 	readyDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name, Namespace: "orbitops-s1", Labels: labels, Generation: 1,
+			Name: name, Namespace: "orbit-devops-s1", Labels: labels, Generation: 1,
 		},
 		Status: appsv1.DeploymentStatus{
 			ObservedGeneration: 1, UpdatedReplicas: 1, AvailableReplicas: 1,
 		},
 	}
 	readyService := &corev1.Service{ObjectMeta: metav1.ObjectMeta{
-		Name: name, Namespace: "orbitops-s1", Labels: labels,
+		Name: name, Namespace: "orbit-devops-s1", Labels: labels,
 	}}
 	ready, err := newAdapter(readyDeployment, readyService).InspectRecovery(
 		context.Background(),
@@ -84,7 +84,7 @@ func TestRecoveryInspectionClassifiesStableKubernetesState(t *testing.T) {
 	}
 
 	foreign := readyDeployment.DeepCopy()
-	foreign.Labels = map[string]string{"owner": "outside-orbitops"}
+	foreign.Labels = map[string]string{"owner": "outside-orbit-devops"}
 	conflict, err := newAdapter(foreign).InspectRecovery(context.Background(), request)
 	if err != nil || conflict.Action != releaseworker.RecoveryAttention ||
 		conflict.ErrorCode != "ownership_conflict" {
@@ -98,15 +98,15 @@ func TestPublisherRefusesForeignResourceBeforeApply(t *testing.T) {
 	foreignDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: "orbitops-s1",
+			Namespace: "orbit-devops-s1",
 			Labels:    map[string]string{"owner": "someone-else"},
 		},
 	}
 	client := fake.NewClientset(foreignDeployment)
 	adapter, err := kube.New(client, kube.Config{
-		ClusterRef:   "kind-orbitops-s1",
-		Namespace:    "orbitops-s1",
-		FieldManager: "orbitops-delivery",
+		ClusterRef:   "kind-orbit-devops-s1",
+		Namespace:    "orbit-devops-s1",
+		FieldManager: "orbit-devops-delivery",
 		PollInterval: time.Millisecond,
 	})
 	if err != nil {
@@ -127,7 +127,7 @@ func TestPublisherRefusesForeignResourceBeforeApply(t *testing.T) {
 		}
 	}
 
-	preserved, err := client.AppsV1().Deployments("orbitops-s1").Get(
+	preserved, err := client.AppsV1().Deployments("orbit-devops-s1").Get(
 		context.Background(),
 		name,
 		metav1.GetOptions{},
@@ -151,9 +151,9 @@ func TestDiagnosticObservationReportsKubernetesReadFailure(t *testing.T) {
 		},
 	)
 	adapter, err := kube.New(client, kube.Config{
-		ClusterRef:          "kind-orbitops-s1",
-		Namespace:           "orbitops-s1",
-		FieldManager:        "orbitops-delivery",
+		ClusterRef:          "kind-orbit-devops-s1",
+		Namespace:           "orbit-devops-s1",
+		FieldManager:        "orbit-devops-delivery",
 		ReadFailureRecorder: metrics,
 	})
 	if err != nil {
@@ -162,8 +162,8 @@ func TestDiagnosticObservationReportsKubernetesReadFailure(t *testing.T) {
 	targetID := uuid.New()
 
 	observation := adapter.ObserveTarget(context.Background(), diagnostics.TargetRuntimeQuery{
-		ClusterRef: "kind-orbitops-s1",
-		Namespace:  "orbitops-s1",
+		ClusterRef: "kind-orbit-devops-s1",
+		Namespace:  "orbit-devops-s1",
 		TargetID:   targetID,
 	})
 	if observation.Workload.Metadata.Source != diagnostics.SourceKubernetes {
@@ -185,7 +185,7 @@ func TestDiagnosticObservationReportsKubernetesReadFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read Kubernetes metrics: %v", err)
 	}
-	if !strings.Contains(string(metricPayload), "orbitops_kubernetes_read_failures_total 1") {
+	if !strings.Contains(string(metricPayload), "orbit_devops_kubernetes_read_failures_total 1") {
 		t.Error("Kubernetes read failure metric was not incremented")
 	}
 }
@@ -248,7 +248,7 @@ func TestDiagnosticObservationProjectsWorkloadAndRelatedEvents(t *testing.T) {
 	client := fake.NewClientset(objects...)
 	adapter, err := kube.New(client, kube.Config{
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
-		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+		FieldManager: "orbit-devops-delivery", PollInterval: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("create adapter: %v", err)
@@ -292,7 +292,7 @@ func TestDiagnosticObservationKeepsWorkloadWhenEventReadFails(t *testing.T) {
 	})
 	adapter, err := kube.New(client, kube.Config{
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
-		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+		FieldManager: "orbit-devops-delivery", PollInterval: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("create adapter: %v", err)
@@ -350,7 +350,7 @@ func TestDiagnosticObservationPrioritizesAbnormalPodsBeforeLimiting(t *testing.T
 	client := fake.NewClientset(objects...)
 	adapter, err := kube.New(client, kube.Config{
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
-		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+		FieldManager: "orbit-devops-delivery", PollInterval: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("create adapter: %v", err)
@@ -380,7 +380,7 @@ func TestRuntimeLogsRefusesPodFromDifferentRelease(t *testing.T) {
 	}
 	adapter, err := kube.New(fake.NewClientset(pod), kube.Config{
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
-		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+		FieldManager: "orbit-devops-delivery", PollInterval: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("create adapter: %v", err)
@@ -412,12 +412,12 @@ func TestRuntimeLogsReadsTheVerifiedContainerWithBoundedOptions(t *testing.T) {
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, incoming *http.Request) {
 		switch incoming.URL.Path {
-		case "/api/v1/namespaces/orbitops-s1/pods/application-pod":
+		case "/api/v1/namespaces/orbit-devops-s1/pods/application-pod":
 			response.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(response).Encode(&pod); err != nil {
 				t.Errorf("encode Pod response: %v", err)
 			}
-		case "/api/v1/namespaces/orbitops-s1/pods":
+		case "/api/v1/namespaces/orbit-devops-s1/pods":
 			response.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(response).Encode(&corev1.PodList{
 				TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "PodList"},
@@ -425,7 +425,7 @@ func TestRuntimeLogsReadsTheVerifiedContainerWithBoundedOptions(t *testing.T) {
 			}); err != nil {
 				t.Errorf("encode Pod list response: %v", err)
 			}
-		case "/api/v1/namespaces/orbitops-s1/pods/application-pod/log":
+		case "/api/v1/namespaces/orbit-devops-s1/pods/application-pod/log":
 			observedTailLines = incoming.URL.Query().Get("tailLines")
 			observedPrevious = incoming.URL.Query().Get("previous")
 			_, _ = io.WriteString(response, "line one\nline two\n")
@@ -440,7 +440,7 @@ func TestRuntimeLogsReadsTheVerifiedContainerWithBoundedOptions(t *testing.T) {
 	}
 	adapter, err := kube.New(client, kube.Config{
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
-		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+		FieldManager: "orbit-devops-delivery", PollInterval: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("create adapter: %v", err)
@@ -487,7 +487,7 @@ func TestRuntimeLogsRefusesOwnedPodOutsideTheDiagnosticProjection(t *testing.T) 
 	}
 	adapter, err := kube.New(fake.NewClientset(objects...), kube.Config{
 		ClusterRef: request.ClusterRef, Namespace: request.Namespace,
-		FieldManager: "orbitops-delivery", PollInterval: time.Millisecond,
+		FieldManager: "orbit-devops-delivery", PollInterval: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("create adapter: %v", err)
@@ -512,10 +512,10 @@ func publishRequest() releaseworker.PublishRequest {
 		ProjectID:          uuid.New(),
 		ApplicationID:      uuid.New(),
 		DeploymentTargetID: uuid.New(),
-		ImageReference:     "registry.example/orbitops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ImageReference:     "registry.example/orbit-devops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		Stage:              "development",
-		ClusterRef:         "kind-orbitops-s1",
-		Namespace:          "orbitops-s1",
+		ClusterRef:         "kind-orbit-devops-s1",
+		Namespace:          "orbit-devops-s1",
 		Replicas:           1,
 		ContainerPort:      8080,
 	}

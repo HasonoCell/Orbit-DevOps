@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: OrbitOps API
+  title: Orbit-DevOps API
   version: 0.1.0
-  description: OrbitOps 应用交付控制平面的公开 HTTP 契约。
+  description: Orbit-DevOps 应用交付控制平面的公开 HTTP 契约。
 paths:
   /api/v1/projects:
     post:
@@ -2146,7 +2146,7 @@ components:
         imageArtifactId:
           type: string
           format: uuid
-          description: 可选的 OrbitOps ImageArtifact；服务端会核验其项目、应用和镜像引用。
+          description: 可选的 Orbit-DevOps ImageArtifact；服务端会核验其项目、应用和镜像引用。
     ReleaseTargetSnapshot:
       type: object
       additionalProperties: false

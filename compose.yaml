@@ -1,21 +1,21 @@
-name: orbitops-s1
+name: orbit-devops-s1
 
 services:
   postgres:
     image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     environment:
-      POSTGRES_DB: orbitops
-      POSTGRES_USER: orbitops
-      POSTGRES_PASSWORD: orbitops
+      POSTGRES_DB: orbitdevops
+      POSTGRES_USER: orbitdevops
+      POSTGRES_PASSWORD: orbitdevops
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U orbitops -d orbitops"]
+      test: ["CMD-SHELL", "pg_isready -U orbitdevops -d orbitdevops"]
       interval: 2s
       timeout: 2s
       retries: 20
     volumes:
-      - orbitops-postgres:/var/lib/postgresql/data
+      - orbit-devops-postgres:/var/lib/postgresql/data
 
   redis:
     image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
@@ -28,8 +28,8 @@ services:
       timeout: 2s
       retries: 20
     volumes:
-      - orbitops-redis:/data
+      - orbit-devops-redis:/data
 
 volumes:
-  orbitops-postgres:
-  orbitops-redis:
+  orbit-devops-postgres:
+  orbit-devops-redis:

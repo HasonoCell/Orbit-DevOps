@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/build"
-	"github.com/HasonoCell/OrbitOps/internal/builddispatch"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/internal/buildworker"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/test/testsupport"
+	"github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/builddispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/test/testsupport"
 	"github.com/google/uuid"
 )
 
@@ -51,7 +51,7 @@ func TestBuildWorkerCompletesAcceptedBuildThroughQueue(t *testing.T) {
 	}
 	_, address := testsupport.StartRedis(t)
 	service, err := builddispatch.New(builddispatch.Config{
-		RedisAddress: address, Queue: "orbitops-build-worker-test", Concurrency: 2,
+		RedisAddress: address, Queue: "orbit-devops-build-worker-test", Concurrency: 2,
 		PollInterval: 20 * time.Millisecond, RepairInterval: 50 * time.Millisecond,
 		ConsumptionGrace: time.Second, TaskTimeout: 10 * time.Second, ShutdownTimeout: time.Second,
 	}, operations, runner)
@@ -112,7 +112,7 @@ func TestBuildWorkerRecoveryObservesExistingExecutorBeforeStarting(t *testing.T)
 	now := acceptance.Build.CreatedAt.Add(time.Second)
 	operations := buildoperation.New(database, buildoperation.WithClock(func() time.Time { return now }))
 	first := claimBuildDispatch(t, operations, "build-worker-lost")
-	oldIdentity := buildworker.ExecutionIdentity{Name: "orbitops-build-" + first.BuildAttemptID.String(), UID: "existing-build-uid"}
+	oldIdentity := buildworker.ExecutionIdentity{Name: "orbit-devops-build-" + first.BuildAttemptID.String(), UID: "existing-build-uid"}
 	if err := operations.RecordExecutorIdentity(context.Background(), first, buildoperation.ExecutorIdentity{
 		Name: oldIdentity.Name, UID: oldIdentity.UID,
 	}); err != nil {
@@ -203,7 +203,7 @@ func TestBuildWorkerCancelRecoveryNeverStartsNewExecutor(t *testing.T) {
 			}
 
 			executor := &memoryBuildExecutor{}
-			oldName := "orbitops-build-" + first.BuildAttemptID.String()
+			oldName := "orbit-devops-build-" + first.BuildAttemptID.String()
 			switch test.mode {
 			case "owned":
 				executor.started = map[string]bool{oldName: true}

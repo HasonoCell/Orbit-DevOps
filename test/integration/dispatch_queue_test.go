@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
-	"github.com/HasonoCell/OrbitOps/test/testsupport"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releasedispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/test/testsupport"
 )
 
 // 用户受理的发布必须经过真实 PostgreSQL、Redis 和消费者得到业务终态。

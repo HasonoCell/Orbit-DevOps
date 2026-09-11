@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
 	"github.com/google/uuid"
 )
 

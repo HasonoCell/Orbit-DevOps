@@ -42,19 +42,19 @@ func (s *Service) ReadinessHandler() http.Handler {
 
 // 指标只有固定名称/类别，不使用 ReleaseOperation、Task 或地址作为标签。
 var releaseDispatchDescriptors = []*prometheus.Desc{
-	prometheus.NewDesc("orbitops_release_dispatch_pending", "当前有效的待投递意图数量。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_published", "已入队但尚未取得业务执行权的意图数量。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_quarantined", "需要受控修复的协议隔离意图数量。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_oldest_age_seconds", "最老有效待办年龄；数据库不可用时为 NaN。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_reservations", "数据库记录的运输领取累计次数。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_redeliveries", "数据库记录的同代次补发累计次数。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_send_errors_total", "本进程入队失败次数。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_received_total", "本进程收到的合法引用次数。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_ignored_total", "本进程忽略的过期或重复消息次数。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_invalid_total", "本进程丢弃的非法协议消息次数。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_execution_errors_total", "本进程消费基础设施错误次数。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_publish_success_timestamp_seconds", "投递循环最近成功时间。", nil, nil),
-	prometheus.NewDesc("orbitops_release_dispatch_repair_success_timestamp_seconds", "补偿循环最近成功时间。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_pending", "当前有效的待投递意图数量。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_published", "已入队但尚未取得业务执行权的意图数量。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_quarantined", "需要受控修复的协议隔离意图数量。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_oldest_age_seconds", "最老有效待办年龄；数据库不可用时为 NaN。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_reservations", "数据库记录的运输领取累计次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_redeliveries", "数据库记录的同代次补发累计次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_send_errors_total", "本进程入队失败次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_received_total", "本进程收到的合法引用次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_ignored_total", "本进程忽略的过期或重复消息次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_invalid_total", "本进程丢弃的非法协议消息次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_execution_errors_total", "本进程消费基础设施错误次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_publish_success_timestamp_seconds", "投递循环最近成功时间。", nil, nil),
+	prometheus.NewDesc("orbit_devops_release_dispatch_repair_success_timestamp_seconds", "补偿循环最近成功时间。", nil, nil),
 }
 
 func (s *Service) Describe(ch chan<- *prometheus.Desc) {

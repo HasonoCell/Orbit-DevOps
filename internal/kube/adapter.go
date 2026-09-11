@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -22,11 +22,11 @@ import (
 
 const (
 	ManagedByLabel     = "app.kubernetes.io/managed-by"
-	ProjectIDLabel     = "orbitops.dev/project-id"
-	ApplicationIDLabel = "orbitops.dev/application-id"
-	TargetIDLabel      = "orbitops.dev/target-id"
-	ReleaseIDLabel     = "orbitops.dev/release-id"
-	ManagedByValue     = "orbitops"
+	ProjectIDLabel     = "orbit-devops.dev/project-id"
+	ApplicationIDLabel = "orbit-devops.dev/application-id"
+	TargetIDLabel      = "orbit-devops.dev/target-id"
+	ReleaseIDLabel     = "orbit-devops.dev/release-id"
+	ManagedByValue     = "orbit-devops"
 )
 
 type Config struct {
@@ -180,7 +180,7 @@ func (a *Adapter) InspectRecovery(
 			return releaseworker.RecoveryObservation{
 				Action:       releaseworker.RecoveryAttention,
 				ErrorCode:    "ownership_conflict",
-				ErrorSummary: fmt.Sprintf("%s %q exists without matching OrbitOps ownership", kind, name),
+				ErrorSummary: fmt.Sprintf("%s %q exists without matching Orbit-DevOps ownership", kind, name),
 			}, nil
 		}
 	}
@@ -197,7 +197,7 @@ func (a *Adapter) InspectRecovery(
 		return releaseworker.RecoveryObservation{
 			Action:       releaseworker.RecoveryAttention,
 			ErrorCode:    "release_identity_conflict",
-			ErrorSummary: "Kubernetes resources do not expose one consistent OrbitOps release identifier",
+			ErrorSummary: "Kubernetes resources do not expose one consistent Orbit-DevOps release identifier",
 		}, nil
 	}
 	observedReleaseID, err := uuid.Parse(releaseLabels[0])
@@ -205,7 +205,7 @@ func (a *Adapter) InspectRecovery(
 		return releaseworker.RecoveryObservation{
 			Action:       releaseworker.RecoveryAttention,
 			ErrorCode:    "release_identity_invalid",
-			ErrorSummary: "Kubernetes resources expose an invalid OrbitOps release identifier",
+			ErrorSummary: "Kubernetes resources expose an invalid Orbit-DevOps release identifier",
 		}, nil
 	}
 	if observedReleaseID != request.ReleaseID {
@@ -315,7 +315,7 @@ func (a *Adapter) waitForRollout(
 }
 
 func ResourceName(targetID uuid.UUID) string {
-	return "orbitops-" + strings.ReplaceAll(targetID.String(), "-", "")
+	return "orbit-devops-" + strings.ReplaceAll(targetID.String(), "-", "")
 }
 
 func ownershipLabels(request releaseworker.PublishRequest) map[string]string {
@@ -399,7 +399,7 @@ func podFailure(pods []corev1.Pod) error {
 func ownershipFailure(kind string, name string) error {
 	return releaseworker.NewFailure(
 		"ownership_conflict",
-		fmt.Sprintf("%s %q exists without matching OrbitOps ownership", kind, name),
+		fmt.Sprintf("%s %q exists without matching Orbit-DevOps ownership", kind, name),
 	)
 }
 

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
@@ -182,7 +182,7 @@ func createReleaseForTarget(
 		t,
 		"/api/v1/deployment-targets/"+targetID+"/releases",
 		"release-"+suffix,
-		`{"imageReference":"registry.example/orbitops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
+		`{"imageReference":"registry.example/orbit-devops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
 	)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusCreated {

@@ -10,20 +10,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/app"
-	"github.com/HasonoCell/OrbitOps/internal/githubsource"
-	"github.com/HasonoCell/OrbitOps/internal/kube"
-	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
-	processruntime "github.com/HasonoCell/OrbitOps/internal/platform/process"
-	"github.com/HasonoCell/OrbitOps/internal/webhook"
+	"github.com/HasonoCell/Orbit-DevOps/internal/app"
+	"github.com/HasonoCell/Orbit-DevOps/internal/githubsource"
+	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
+	processruntime "github.com/HasonoCell/Orbit-DevOps/internal/platform/process"
+	"github.com/HasonoCell/Orbit-DevOps/internal/webhook"
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger); err != nil {
-		logger.Error("OrbitOps API 退出", "error", err)
+		logger.Error("Orbit-DevOps API 退出", "error", err)
 		os.Exit(1)
 	}
 }
@@ -88,7 +88,7 @@ func run(logger *slog.Logger) error {
 		RecoveryPublisher:  adapter,
 		Logger:             logger,
 		Metrics:            metrics,
-		Tracer:             tracing.Provider.Tracer("orbitops-api"),
+		Tracer:             tracing.Provider.Tracer("orbit-devops-api"),
 		Propagator:         tracing.Propagator,
 	})
 	if err != nil {

@@ -13,13 +13,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	redisclient "github.com/redis/go-redis/v9"
 )
 
-const TaskType = "orbitops:release-dispatch:v1"
+const TaskType = "orbit-devops:release-dispatch:v1"
 
 // Executor 的实现负责数据库执行权与业务结果，返回值只描述本条意图是否已处理。
 type Executor interface {
@@ -73,7 +73,7 @@ func New(config Config, releaseOperations *releaseoperation.Module, executor Exe
 		return nil, errors.New("invalid release dispatch configuration")
 	}
 	if config.Queue == "" {
-		config.Queue = "orbitops-release"
+		config.Queue = "orbit-devops-release"
 	}
 	if strings.TrimSpace(config.Queue) == "" {
 		return nil, errors.New("invalid release dispatch queue name")

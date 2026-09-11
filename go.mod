@@ -1,4 +1,4 @@
-module github.com/HasonoCell/OrbitOps
+module github.com/HasonoCell/Orbit-DevOps
 
 go 1.26.0
 

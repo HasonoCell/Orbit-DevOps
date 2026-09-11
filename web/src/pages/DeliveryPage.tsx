@@ -36,7 +36,7 @@ import {
 const readyImage =
   "registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a";
 const failingImage =
-  "registry.invalid/orbitops/missing@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+  "registry.invalid/orbit-devops/missing@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
 const formSchema = z.object({
   projectName: z.string().trim().min(1, "请输入项目名称").max(100),
@@ -206,7 +206,7 @@ function Workspace(props: WorkspaceProps) {
             <div className="heading-meta">
               <span>目标</span>
               <strong>development</strong>
-              <small>kind-orbitops-s1 / orbitops-s1</small>
+              <small>kind-orbit-devops-s1 / orbit-devops-s1</small>
             </div>
           </div>
 
@@ -269,7 +269,7 @@ function Workspace(props: WorkspaceProps) {
 }
 
 function Brand() {
-  return <div className="brand"><span className="brand-mark"><span /></span><span><strong>OrbitOps</strong><small>DELIVERY CONTROL</small></span></div>;
+  return <div className="brand"><span className="brand-mark"><span /></span><span><strong>Orbit-DevOps</strong><small>DELIVERY CONTROL</small></span></div>;
 }
 
 function NavSection({ label, children }: { label: string; children: ReactNode }) {

@@ -2,7 +2,7 @@ import createClient from "openapi-fetch";
 import type { components, paths } from "./schema";
 
 const client = createClient<paths>({
-  baseUrl: import.meta.env.VITE_ORBITOPS_API_URL ?? "",
+  baseUrl: import.meta.env.VITE_ORBIT_DEVOPS_API_URL ?? "",
 });
 
 export type DeliveryInput = {

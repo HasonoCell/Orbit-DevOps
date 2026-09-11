@@ -13,13 +13,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	redisclient "github.com/redis/go-redis/v9"
 )
 
-const TaskType = "orbitops:build-dispatch:v1"
+const TaskType = "orbit-devops:build-dispatch:v1"
 
 // Executor 负责回 PostgreSQL 取得业务执行权；运输 Service 不判断构建状态。
 type Executor interface {
@@ -70,7 +70,7 @@ func New(config Config, operations *buildoperation.Module, executor Executor) (*
 		return nil, errors.New("invalid build dispatch configuration")
 	}
 	if config.Queue == "" {
-		config.Queue = "orbitops-build"
+		config.Queue = "orbit-devops-build"
 	}
 	if strings.TrimSpace(config.Queue) == "" {
 		return nil, errors.New("invalid build dispatch queue name")

@@ -93,7 +93,7 @@ func New(db *sqlx.DB, config Config, tracer trace.Tracer, propagator propagation
 		config.MaxBodyBytes = 1024 * 1024
 	}
 	if tracer == nil {
-		tracer = otel.Tracer("github.com/HasonoCell/OrbitOps/internal/webhook")
+		tracer = otel.Tracer("github.com/HasonoCell/Orbit-DevOps/internal/webhook")
 	}
 	if propagator == nil {
 		propagator = propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})

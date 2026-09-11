@@ -1,4 +1,4 @@
-// Package buildkube 把 OrbitOps 构建语义翻译为受限 Kubernetes Job。
+// Package buildkube 把 Orbit-DevOps 构建语义翻译为受限 Kubernetes Job。
 package buildkube
 
 import (
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/buildworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
 	"github.com/google/uuid"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -19,13 +19,13 @@ import (
 
 const (
 	ManagedByLabel        = "app.kubernetes.io/managed-by"
-	ManagedByValue        = "orbitops"
-	BuildIDLabel          = "orbitops.dev/build-id"
-	BuildOperationIDLabel = "orbitops.dev/build-operation-id"
-	BuildAttemptIDLabel   = "orbitops.dev/build-attempt-id"
-	ProjectIDLabel        = "orbitops.dev/project-id"
-	ApplicationIDLabel    = "orbitops.dev/application-id"
-	InputDigestAnnotation = "orbitops.dev/build-input-digest"
+	ManagedByValue        = "orbit-devops"
+	BuildIDLabel          = "orbit-devops.dev/build-id"
+	BuildOperationIDLabel = "orbit-devops.dev/build-operation-id"
+	BuildAttemptIDLabel   = "orbit-devops.dev/build-attempt-id"
+	ProjectIDLabel        = "orbit-devops.dev/project-id"
+	ApplicationIDLabel    = "orbit-devops.dev/application-id"
+	InputDigestAnnotation = "orbit-devops.dev/build-input-digest"
 	buildContainerName    = "buildkit"
 )
 
@@ -156,7 +156,7 @@ func (a *Adapter) RenderJob(execution buildworker.BuildExecution) *batchv1.Job {
 			TTLSecondsAfterFinished: &ttl,
 			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels,
 				Annotations: map[string]string{InputDigestAnnotation: execution.InputDigest}},
-				Spec: corev1.PodSpec{ServiceAccountName: "orbitops-build-executor", AutomountServiceAccountToken: &automount,
+				Spec: corev1.PodSpec{ServiceAccountName: "orbit-devops-build-executor", AutomountServiceAccountToken: &automount,
 					RestartPolicy: corev1.RestartPolicyNever, SecurityContext: &corev1.PodSecurityContext{FSGroup: &fsGroup},
 					InitContainers: []corev1.Container{initContainer}, Containers: []corev1.Container{container}, Volumes: volumes}}},
 	}
@@ -164,7 +164,7 @@ func (a *Adapter) RenderJob(execution buildworker.BuildExecution) *batchv1.Job {
 
 // ResourceName 让同一个 BuildAttempt 在 Worker 重启或消息重投后仍映射到同一个 Job。
 func ResourceName(attemptID uuid.UUID) string {
-	return "orbitops-build-" + attemptID.String()
+	return "orbit-devops-build-" + attemptID.String()
 }
 
 func ownershipLabels(execution buildworker.BuildExecution) map[string]string {

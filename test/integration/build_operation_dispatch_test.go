@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/builddispatch"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/test/testsupport"
+	"github.com/HasonoCell/Orbit-DevOps/internal/builddispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/test/testsupport"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -97,7 +97,7 @@ func TestBuildQueueDeliversAcceptedBuild(t *testing.T) {
 	operations := buildoperation.New(database)
 	executor := buildClaimExecutor{operations: operations}
 	service, err := builddispatch.New(builddispatch.Config{
-		RedisAddress: address, Queue: "orbitops-build-test", Concurrency: 2,
+		RedisAddress: address, Queue: "orbit-devops-build-test", Concurrency: 2,
 		PollInterval: 20 * time.Millisecond, RepairInterval: 50 * time.Millisecond,
 		ConsumptionGrace: time.Second, TaskTimeout: time.Second, ShutdownTimeout: time.Second,
 	}, operations, executor)
@@ -143,9 +143,9 @@ func TestBuildQueueDeliversAcceptedBuild(t *testing.T) {
 				t.Fatalf("gather build queue metrics: %v", err)
 			}
 			metrics := metricFamilyValues(families)
-			if metrics["orbitops_build_running"] != 1 ||
-				metrics["orbitops_build_dispatch_received_total"] < 1 ||
-				metrics["orbitops_build_dispatch_reservations"] < 1 {
+			if metrics["orbit_devops_build_running"] != 1 ||
+				metrics["orbit_devops_build_dispatch_received_total"] < 1 ||
+				metrics["orbit_devops_build_dispatch_reservations"] < 1 {
 				t.Fatalf("build queue metrics = %#v", metrics)
 			}
 			return

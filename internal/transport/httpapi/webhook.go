@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/HasonoCell/OrbitOps/internal/api"
-	"github.com/HasonoCell/OrbitOps/internal/webhook"
+	"github.com/HasonoCell/Orbit-DevOps/internal/api"
+	"github.com/HasonoCell/Orbit-DevOps/internal/webhook"
 	"github.com/gin-gonic/gin"
 )
 

@@ -62,7 +62,7 @@ func NewVerifiedLocalAdapter(ctx context.Context, kubeconfigPath, expectedContex
 	}
 	namespace, err := client.CoreV1().Namespaces().Get(ctx, config.Namespace, metav1.GetOptions{})
 	if err != nil || namespace.Labels[ManagedByLabel] != ManagedByValue {
-		return nil, fmt.Errorf("build namespace %q is unavailable or not OrbitOps-managed", config.Namespace)
+		return nil, fmt.Errorf("build namespace %q is unavailable or not Orbit-DevOps-managed", config.Namespace)
 	}
 	return New(client, config)
 }

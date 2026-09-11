@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 
-	"github.com/HasonoCell/OrbitOps/internal/api"
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/idempotency"
-	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/api"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 )
 
 // RetryReleaseOperation 将普通失败重新放到目标队尾；未知结果只有经 owner 只读确认后才能重试。

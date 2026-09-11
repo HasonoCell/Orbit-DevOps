@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )

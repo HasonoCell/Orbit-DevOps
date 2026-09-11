@@ -19,9 +19,9 @@ func TestProjectMemberMigrationBackfillsExistingCreators(t *testing.T) {
 	container, err := postgres.Run(
 		ctx,
 		"postgres:17-alpine",
-		postgres.WithDatabase("orbitops"),
-		postgres.WithUsername("orbitops"),
-		postgres.WithPassword("orbitops"),
+		postgres.WithDatabase("orbitdevops"),
+		postgres.WithUsername("orbitdevops"),
+		postgres.WithPassword("orbitdevops"),
 		postgres.BasicWaitStrategies(),
 	)
 	if err != nil {
@@ -78,9 +78,9 @@ func TestReliableReleaseOperationMigrationBackfillsSchedulingState(t *testing.T)
 	container, err := postgres.Run(
 		ctx,
 		"postgres:17-alpine",
-		postgres.WithDatabase("orbitops"),
-		postgres.WithUsername("orbitops"),
-		postgres.WithPassword("orbitops"),
+		postgres.WithDatabase("orbitdevops"),
+		postgres.WithUsername("orbitdevops"),
+		postgres.WithPassword("orbitdevops"),
 		postgres.BasicWaitStrategies(),
 	)
 	if err != nil {
@@ -121,7 +121,7 @@ func TestReliableReleaseOperationMigrationBackfillsSchedulingState(t *testing.T)
 		{`INSERT INTO deployment_targets
 		  (id, application_id, stage, cluster_ref, namespace, replicas, container_port,
 		   created_by, created_at, updated_at)
-		  VALUES ($1, $2, 'development', 'kind-orbitops-s1', 'orbitops-s1', 1, 8080,
+		  VALUES ($1, $2, 'development', 'kind-orbit-devops-s1', 'orbit-devops-s1', 1, 8080,
 		          'owner', $3, $3)`, []any{targetID, applicationID, createdAt}},
 		{`INSERT INTO releases
 		  (id, deployment_target_id, image_reference, target_snapshot, created_by, created_at)
@@ -203,9 +203,9 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 	container, err := postgres.Run(
 		ctx,
 		"postgres:17-alpine",
-		postgres.WithDatabase("orbitops"),
-		postgres.WithUsername("orbitops"),
-		postgres.WithPassword("orbitops"),
+		postgres.WithDatabase("orbitdevops"),
+		postgres.WithUsername("orbitdevops"),
+		postgres.WithPassword("orbitdevops"),
 		postgres.BasicWaitStrategies(),
 	)
 	if err != nil {
@@ -246,7 +246,7 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 		{`INSERT INTO deployment_targets
 		  (id, application_id, stage, cluster_ref, namespace, replicas, container_port,
 		   created_by, created_at, updated_at)
-		  VALUES ($1, $2, 'development', 'kind-orbitops-s1', 'orbitops-s1', 1, 8080,
+		  VALUES ($1, $2, 'development', 'kind-orbit-devops-s1', 'orbit-devops-s1', 1, 8080,
 		          'owner', $3, $3)`, []any{targetID, applicationID, createdAt}},
 		{`INSERT INTO releases
 		  (id, deployment_target_id, image_reference, target_snapshot, created_by, created_at)

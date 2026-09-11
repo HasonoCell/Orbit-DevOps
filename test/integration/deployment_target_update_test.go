@@ -12,7 +12,7 @@ func TestDeploymentTargetUpdateIsIdempotentAndDoesNotRewriteRelease(t *testing.T
 		t,
 		"/api/v1/deployment-targets/"+target.ID+"/releases",
 		"target-update-release",
-		`{"imageReference":"registry.example/orbitops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
+		`{"imageReference":"registry.example/orbit-devops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
 	)
 	defer releaseResponse.Body.Close()
 	if releaseResponse.StatusCode != http.StatusCreated {

@@ -14,16 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/build"
-	"github.com/HasonoCell/OrbitOps/internal/builddispatch"
-	"github.com/HasonoCell/OrbitOps/internal/buildkube"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/internal/buildworker"
-	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
-	"github.com/HasonoCell/OrbitOps/internal/internalevent"
-	"github.com/HasonoCell/OrbitOps/internal/pipeline"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/builddispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildkube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
+	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"k8s.io/client-go/tools/clientcmd"
@@ -61,16 +61,16 @@ func kindSourceIdentity() pipeline.SourceIdentity {
 
 // TestKindBuildExecutor 通过真实 Git Fetch、rootless BuildKit Job 和本地 Registry 验证执行边界。
 func TestKindBuildExecutor(t *testing.T) {
-	if os.Getenv("ORBITOPS_KIND_BUILD_E2E") != "1" {
-		t.Skip("set ORBITOPS_KIND_BUILD_E2E=1 to run the real source build acceptance")
+	if os.Getenv("ORBIT_DEVOPS_KIND_BUILD_E2E") != "1" {
+		t.Skip("set ORBIT_DEVOPS_KIND_BUILD_E2E=1 to run the real source build acceptance")
 	}
-	registryHost := os.Getenv("ORBITOPS_KIND_BUILD_REGISTRY")
+	registryHost := os.Getenv("ORBIT_DEVOPS_KIND_BUILD_REGISTRY")
 	if registryHost == "" {
-		t.Fatal("ORBITOPS_KIND_BUILD_REGISTRY is required")
+		t.Fatal("ORBIT_DEVOPS_KIND_BUILD_REGISTRY is required")
 	}
-	buildNamespace := environmentOrDefault("ORBITOPS_BUILD_NAMESPACE", "orbitops-s4-build")
+	buildNamespace := environmentOrDefault("ORBIT_DEVOPS_BUILD_NAMESPACE", "orbit-devops-s4-build")
 	adapter, err := buildkube.NewVerifiedLocalAdapter(context.Background(), clientcmd.RecommendedHomeFile, kindContext, buildkube.Config{
-		Namespace: buildNamespace, FieldManager: "orbitops-build-worker",
+		Namespace: buildNamespace, FieldManager: "orbit-devops-build-worker",
 		GitImage: kindBuildGitImage, BuildkitImage: kindBuildkitImage, RegistryInsecure: true,
 		ActiveDeadline: 5 * time.Minute, TTL: time.Hour, CPU: "1", Memory: "1Gi", PollInterval: 250 * time.Millisecond,
 	})
@@ -84,7 +84,7 @@ func TestKindBuildExecutor(t *testing.T) {
 		RepositoryURL:  "https://github.com/docker-library/hello-world.git",
 		SourceCommit:   "522bcd2faf422c60b9d20e64d7cd6d56600aec97",
 		DockerfilePath: "amd64/Dockerfile", ContextPath: "amd64", Platform: "linux/amd64",
-		DestinationRepository: registryHost + "/orbitops/kind/" + uuid.NewString(),
+		DestinationRepository: registryHost + "/orbit-devops/kind/" + uuid.NewString(),
 		InputDigest:           "sha256:" + strings.Repeat("a", 64),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
@@ -123,12 +123,12 @@ func TestKindBuildExecutor(t *testing.T) {
 
 // TestKindPushToReadyDelivery 验证真实签名 Push 经 Pipeline、BuildKit、OCI 和 Release 最终达到 Ready。
 func TestKindPushToReadyDelivery(t *testing.T) {
-	if os.Getenv("ORBITOPS_KIND_BUILD_E2E") != "1" {
-		t.Skip("set ORBITOPS_KIND_BUILD_E2E=1 to run the real source-to-release acceptance")
+	if os.Getenv("ORBIT_DEVOPS_KIND_BUILD_E2E") != "1" {
+		t.Skip("set ORBIT_DEVOPS_KIND_BUILD_E2E=1 to run the real source-to-release acceptance")
 	}
-	registryHost := os.Getenv("ORBITOPS_KIND_BUILD_REGISTRY")
+	registryHost := os.Getenv("ORBIT_DEVOPS_KIND_BUILD_REGISTRY")
 	if registryHost == "" {
-		t.Fatal("ORBITOPS_KIND_BUILD_REGISTRY is required")
+		t.Fatal("ORBIT_DEVOPS_KIND_BUILD_REGISTRY is required")
 	}
 	releaseAdapter, client := newKindAdapter(t)
 	environment := newKindControlPlane(t, releaseAdapter)
@@ -136,8 +136,8 @@ func TestKindPushToReadyDelivery(t *testing.T) {
 
 	operations := buildoperation.New(environment.runner.db)
 	builds := build.New(environment.runner.db, build.Config{
-		AllowedGitHosts: []string{"github.com"}, Platform: environmentOrDefault("ORBITOPS_KIND_BUILD_PLATFORM", "linux/amd64"),
-		RegistryHost: registryHost, RegistryPrefix: "orbitops",
+		AllowedGitHosts: []string{"github.com"}, Platform: environmentOrDefault("ORBIT_DEVOPS_KIND_BUILD_PLATFORM", "linux/amd64"),
+		RegistryHost: registryHost, RegistryPrefix: "orbit-devops",
 	}, operations, projectauth.New(environment.runner.db))
 	runner, err := buildworker.New(buildworker.Config{
 		WorkerID: "kind-build-worker", LeaseDuration: 30 * time.Second,
@@ -147,7 +147,7 @@ func TestKindPushToReadyDelivery(t *testing.T) {
 		t.Fatalf("create build runner: %v", err)
 	}
 	service, err := builddispatch.New(builddispatch.Config{
-		RedisAddress: environment.runner.address, Queue: "orbitops-build-kind", Concurrency: 1,
+		RedisAddress: environment.runner.address, Queue: "orbit-devops-build-kind", Concurrency: 1,
 		PollInterval: 50 * time.Millisecond, RepairInterval: 100 * time.Millisecond,
 		ConsumptionGrace: time.Second, TaskTimeout: 8 * time.Minute, ShutdownTimeout: 5 * time.Second,
 	}, operations, runner)
@@ -169,9 +169,9 @@ func TestKindPushToReadyDelivery(t *testing.T) {
 		}
 	})
 
-	pipelineModule := pipeline.New(environment.runner.db, pipeline.Config{Platform: environmentOrDefault("ORBITOPS_KIND_BUILD_PLATFORM", "linux/amd64")}, builds, environment.releases, projectauth.New(environment.runner.db), kindSourceInspector{})
+	pipelineModule := pipeline.New(environment.runner.db, pipeline.Config{Platform: environmentOrDefault("ORBIT_DEVOPS_KIND_BUILD_PLATFORM", "linux/amd64")}, builds, environment.releases, projectauth.New(environment.runner.db), kindSourceInspector{})
 	eventService, err := internalevent.NewService(internalevent.Config{
-		RedisAddress: environment.runner.address, Queue: "orbitops-pipeline-kind", Concurrency: 2,
+		RedisAddress: environment.runner.address, Queue: "orbit-devops-pipeline-kind", Concurrency: 2,
 		PollInterval: 50 * time.Millisecond, ConsumptionGrace: time.Second,
 		TaskTimeout: 30 * time.Second, ShutdownTimeout: 5 * time.Second,
 	}, internalevent.New(environment.runner.db), pipelineModule)
@@ -309,9 +309,9 @@ func eventuallyDeliveryPhase(t *testing.T, db *sqlx.DB, runID uuid.UUID, phase s
 func newKindBuildAdapter(t *testing.T) *buildkube.Adapter {
 	t.Helper()
 	adapter, err := buildkube.NewVerifiedLocalAdapter(context.Background(), clientcmd.RecommendedHomeFile, kindContext, buildkube.Config{
-		Namespace:    environmentOrDefault("ORBITOPS_BUILD_NAMESPACE", "orbitops-s4-build"),
-		FieldManager: "orbitops-build-worker", GitImage: kindBuildGitImage, BuildkitImage: kindBuildkitImage,
-		RegistryInsecure: true, DockerHubMirror: os.Getenv("ORBITOPS_KIND_BUILD_REGISTRY"),
+		Namespace:    environmentOrDefault("ORBIT_DEVOPS_BUILD_NAMESPACE", "orbit-devops-s4-build"),
+		FieldManager: "orbit-devops-build-worker", GitImage: kindBuildGitImage, BuildkitImage: kindBuildkitImage,
+		RegistryInsecure: true, DockerHubMirror: os.Getenv("ORBIT_DEVOPS_KIND_BUILD_REGISTRY"),
 		DockerHubMirrorInsecure: true, ActiveDeadline: 7 * time.Minute, TTL: time.Hour,
 		CPU: "1", Memory: "1Gi", PollInterval: 250 * time.Millisecond,
 	})
@@ -324,7 +324,7 @@ func newKindBuildAdapter(t *testing.T) *buildkube.Adapter {
 // assertRegistryManifest 从 Registry API 再读一次 tag，证明产物不只存在于 Job 的返回文本中。
 func assertRegistryManifest(t *testing.T, execution buildworker.BuildExecution, wantDigest string) {
 	t.Helper()
-	registryAPI := environmentOrDefault("ORBITOPS_KIND_BUILD_REGISTRY_API", "http://127.0.0.1:5001")
+	registryAPI := environmentOrDefault("ORBIT_DEVOPS_KIND_BUILD_REGISTRY_API", "http://127.0.0.1:5002")
 	repository := strings.TrimPrefix(execution.DestinationRepository, strings.SplitN(execution.DestinationRepository, "/", 2)[0]+"/")
 	request, err := http.NewRequest(http.MethodGet,
 		fmt.Sprintf("%s/v2/%s/manifests/build-%s", registryAPI, repository, execution.BuildID), nil)

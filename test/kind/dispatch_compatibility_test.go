@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
 // 显式传入固定 S2 基线编译的二进制，证明回退兼容性；不下载、不改写旧基线或清库。
 func TestKindS2RollbackAndQueueReentry(t *testing.T) {
-	apiBinary, workerBinary := os.Getenv("ORBITOPS_S2_API_BINARY"), os.Getenv("ORBITOPS_S2_WORKER_BINARY")
+	apiBinary, workerBinary := os.Getenv("ORBIT_DEVOPS_S2_API_BINARY"), os.Getenv("ORBIT_DEVOPS_S2_WORKER_BINARY")
 	if apiBinary == "" || workerBinary == "" {
 		t.Skip("set fixed S2 API/Worker binary paths for schema rollback acceptance")
 	}
@@ -43,9 +43,9 @@ func TestKindS2RollbackAndQueueReentry(t *testing.T) {
 	// 首先停 Q1 受理入口，期间没有 Q1 Worker；保留加法 Schema 与 Outbox。
 	environment.server.Close()
 	apiAddress, workerAddress := unusedLoopbackAddress(t), unusedLoopbackAddress(t)
-	common := []string{"ORBITOPS_DATABASE_URL=" + environment.databaseURL, "ORBITOPS_MIGRATE_ON_BOOT=false", "ORBITOPS_ACTOR_ID=kind-developer",
-		"ORBITOPS_KUBERNETES_CONTEXT=" + kindContext, "ORBITOPS_CLUSTER_REF=" + kindCluster, "ORBITOPS_NAMESPACE=" + kindNamespace,
-		"ORBITOPS_API_ADDRESS=" + apiAddress, "ORBITOPS_WORKER_ADDRESS=" + workerAddress, "ORBITOPS_WORKER_ID=s2-compat-worker"}
+	common := []string{"ORBIT_DEVOPS_DATABASE_URL=" + environment.databaseURL, "ORBIT_DEVOPS_MIGRATE_ON_BOOT=false", "ORBIT_DEVOPS_ACTOR_ID=kind-developer",
+		"ORBIT_DEVOPS_KUBERNETES_CONTEXT=" + kindContext, "ORBIT_DEVOPS_CLUSTER_REF=" + kindCluster, "ORBIT_DEVOPS_NAMESPACE=" + kindNamespace,
+		"ORBIT_DEVOPS_API_ADDRESS=" + apiAddress, "ORBIT_DEVOPS_WORKER_ADDRESS=" + workerAddress, "ORBIT_DEVOPS_WORKER_ID=s2-compat-worker"}
 	stopAPI := startCompatibilityProcess(t, apiBinary, common)
 	awaitCompatibilityHealth(t, "http://"+apiAddress+"/healthz")
 	endpoint, _ := url.Parse("http://" + apiAddress)

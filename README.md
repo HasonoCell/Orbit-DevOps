@@ -1,6 +1,6 @@
-# OrbitOps
+# Orbit-DevOps
 
-OrbitOps 是面向 Kubernetes 的应用交付控制平面。当前已经完成 S3 的后端运行时诊断闭环，并开始进入 S4。现有部署链路已经收敛为明确的 ReleaseOperation 领域：项目成员可以查询不可变发布历史，安全地重试、取消、重新检查和回滚；多个 Release Worker 在进程中断与结果未知时仍能保持目标队列有序，并从 Kubernetes 权威状态恢复或停止等待人工处理。S4 的 BuildOperation、Build Worker 和 OCI 制品链路尚未实现。
+Orbit-DevOps 是面向 Kubernetes 的应用交付控制平面。当前已经完成 S3 的后端运行时诊断闭环，并开始进入 S4。现有部署链路已经收敛为明确的 ReleaseOperation 领域：项目成员可以查询不可变发布历史，安全地重试、取消、重新检查和回滚；多个 Release Worker 在进程中断与结果未知时仍能保持目标队列有序，并从 Kubernetes 权威状态恢复或停止等待人工处理。S4 的 BuildOperation、Build Worker 和 OCI 制品链路尚未实现。
 
 ## 当前能力
 
@@ -13,7 +13,7 @@ OrbitOps 是面向 Kubernetes 的应用交付控制平面。当前已经完成 S
 - 回滚从历史 Release 的完整快照创建新的 Release 与 ReleaseOperation，不修改旧发布或执行历史。
 - 独立 Release Worker 使用数据库租约和完成围栏领取 ReleaseOperation，同一 Deployment Target 串行、不同目标可以并行，并为每次执行保留不可变 ReleaseAttempt。
 - Release Worker 失联后先读取 Kubernetes 再决定补记成功、继续观察或重新 Apply；无法安全解释的结果进入 `attention_required`，不会盲目覆盖。
-- Kubernetes 适配器只连接经过核验的本地 Kind context 和 OrbitOps 管理的 Namespace，使用固定 Field Manager 执行 Server-Side Apply。
+- Kubernetes 适配器只连接经过核验的本地 Kind context 和 Orbit-DevOps 管理的 Namespace，使用固定 Field Manager 执行 Server-Side Apply。
 - 运行时诊断只从 PostgreSQL 与 Kubernetes 权威来源组合证据；观测失败会明确返回 `partial` 或 `unavailable`，诊断信号保持确定性。
 - Web 控制台保留 Project → Application → Deployment Target → Release 验证入口，并通过 `/api/v1/release-operations/{releaseOperationId}` 持续展示 ReleaseOperation 与 Kubernetes 观测。
 - API 与 Release Worker 提供 JSON 日志、W3C Trace Context、Prometheus Metrics 和健康检查。
@@ -27,7 +27,7 @@ OrbitOps 是面向 Kubernetes 的应用交付控制平面。当前已经完成 S
 - kubectl
 - ripgrep
 
-Kind 节点镜像和 PostgreSQL 镜像在仓库脚本与 Compose 文件中固定到 Digest。当前本地环境仍沿用 `kind-orbitops-s1` context 和 `orbitops-s1` Namespace 名称；它们是受控的测试边界，不代表当前产品阶段仍为 S1。启动脚本会把当前 kubeconfig context 切换到这个本地集群。
+Kind 节点镜像和 PostgreSQL 镜像在仓库脚本与 Compose 文件中固定到 Digest。当前本地环境仍沿用 `kind-orbit-devops-s1` context 和 `orbit-devops-s1` Namespace 名称；它们是受控的测试边界，不代表当前产品阶段仍为 S1。启动脚本会把当前 kubeconfig context 切换到这个本地集群。
 
 ## 启动
 
@@ -92,37 +92,37 @@ Metrics 覆盖 HTTP 请求、各 ReleaseOperation 状态、ReleaseDispatch 队�
 
 | 变量 | 默认值 | 使用者 |
 | --- | --- | --- |
-| `ORBITOPS_DATABASE_URL` | `postgres://orbitops:orbitops@127.0.0.1:5432/orbitops?sslmode=disable` | API、Release Worker |
-| `ORBITOPS_API_ADDRESS` | `127.0.0.1:8080` | API |
-| `ORBITOPS_RELEASE_WORKER_ADDRESS` | `127.0.0.1:9091` | Release Worker |
-| `ORBITOPS_ACTOR_ID` | `local-developer` | API |
-| `ORBITOPS_MIGRATE_ON_BOOT` | `true` | API |
-| `ORBITOPS_RELEASE_WORKER_ID` | 当前主机名 | Release Worker |
-| `ORBITOPS_RELEASE_WORKER_POLL_INTERVAL` | `500ms` | Release Worker |
-| `ORBITOPS_RELEASE_WORKER_LEASE_DURATION` | `10s` | Release Worker |
-| `ORBITOPS_RELEASE_OPERATION_TIMEOUT` | `2m` | Release Worker |
-| `ORBITOPS_RELEASE_MAX_AUTOMATIC_RETRIES` | `2` | Release Worker |
-| `ORBITOPS_RELEASE_RETRY_BASE_DELAY` | `1s` | Release Worker |
-| `ORBITOPS_REDIS_ADDRESS` | `127.0.0.1:6379` | Release Worker |
-| `ORBITOPS_REDIS_USERNAME` | 空 | Release Worker |
-| `ORBITOPS_REDIS_PASSWORD` | 空 | Release Worker |
-| `ORBITOPS_REDIS_DB` | `0` | Release Worker |
-| `ORBITOPS_RELEASE_QUEUE_NAME` | `orbitops-release` | Release Worker |
-| `ORBITOPS_RELEASE_QUEUE_CONCURRENCY` | `4` | Release Worker |
-| `ORBITOPS_RELEASE_QUEUE_REPAIR_INTERVAL` | `5s` | Release Worker |
-| `ORBITOPS_RELEASE_QUEUE_CONSUMPTION_GRACE` | `30s` | Release Worker |
-| `ORBITOPS_RELEASE_QUEUE_TASK_TIMEOUT` | `2m30s` | Release Worker |
-| `ORBITOPS_RELEASE_QUEUE_SHUTDOWN_TIMEOUT` | `15s` | Release Worker |
-| `ORBITOPS_KUBERNETES_CONTEXT` | `kind-orbitops-s1` | API、Release Worker |
-| `ORBITOPS_CLUSTER_REF` | `kind-orbitops-s1` | API、Release Worker |
-| `ORBITOPS_NAMESPACE` | `orbitops-s1` | API、Release Worker |
-| `ORBITOPS_KUBECONFIG` | 当前用户默认 kubeconfig | API、Release Worker |
-| `ORBITOPS_FIELD_MANAGER` | `orbitops-worker` | API、Release Worker |
-| `ORBITOPS_KUBERNETES_POLL_INTERVAL` | `500ms` | API、Release Worker |
+| `ORBIT_DEVOPS_DATABASE_URL` | `postgres://orbitdevops:orbitdevops@127.0.0.1:5432/orbitdevops?sslmode=disable` | API、Release Worker |
+| `ORBIT_DEVOPS_API_ADDRESS` | `127.0.0.1:8080` | API |
+| `ORBIT_DEVOPS_RELEASE_WORKER_ADDRESS` | `127.0.0.1:9091` | Release Worker |
+| `ORBIT_DEVOPS_ACTOR_ID` | `local-developer` | API |
+| `ORBIT_DEVOPS_MIGRATE_ON_BOOT` | `true` | API |
+| `ORBIT_DEVOPS_RELEASE_WORKER_ID` | 当前主机名 | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_WORKER_POLL_INTERVAL` | `500ms` | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_WORKER_LEASE_DURATION` | `10s` | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_OPERATION_TIMEOUT` | `2m` | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_MAX_AUTOMATIC_RETRIES` | `2` | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_RETRY_BASE_DELAY` | `1s` | Release Worker |
+| `ORBIT_DEVOPS_REDIS_ADDRESS` | `127.0.0.1:6379` | Release Worker |
+| `ORBIT_DEVOPS_REDIS_USERNAME` | 空 | Release Worker |
+| `ORBIT_DEVOPS_REDIS_PASSWORD` | 空 | Release Worker |
+| `ORBIT_DEVOPS_REDIS_DB` | `0` | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_QUEUE_NAME` | `orbit-devops-release` | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_QUEUE_CONCURRENCY` | `4` | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_QUEUE_REPAIR_INTERVAL` | `5s` | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_QUEUE_CONSUMPTION_GRACE` | `30s` | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_QUEUE_TASK_TIMEOUT` | `2m30s` | Release Worker |
+| `ORBIT_DEVOPS_RELEASE_QUEUE_SHUTDOWN_TIMEOUT` | `15s` | Release Worker |
+| `ORBIT_DEVOPS_KUBERNETES_CONTEXT` | `kind-orbit-devops-s1` | API、Release Worker |
+| `ORBIT_DEVOPS_CLUSTER_REF` | `kind-orbit-devops-s1` | API、Release Worker |
+| `ORBIT_DEVOPS_NAMESPACE` | `orbit-devops-s1` | API、Release Worker |
+| `ORBIT_DEVOPS_KUBECONFIG` | 当前用户默认 kubeconfig | API、Release Worker |
+| `ORBIT_DEVOPS_FIELD_MANAGER` | `orbit-devops-worker` | API、Release Worker |
+| `ORBIT_DEVOPS_KUBERNETES_POLL_INTERVAL` | `500ms` | API、Release Worker |
 
-`ORBITOPS_FIELD_MANAGER` 的默认值暂时保留为 `orbitops-worker`，用于兼容已有 Kubernetes ManagedFields 所有权；它不是当前进程名称。旧的 `ORBITOPS_WORKER_*`、`ORBITOPS_OPERATION_TIMEOUT` 和 `ORBITOPS_QUEUE_*` 不会被新 Release Worker 静默读取。
+`ORBIT_DEVOPS_FIELD_MANAGER` 的默认值暂时保留为 `orbit-devops-worker`，用于兼容已有 Kubernetes ManagedFields 所有权；它不是当前进程名称。旧的 `ORBIT_DEVOPS_WORKER_*`、`ORBIT_DEVOPS_OPERATION_TIMEOUT` 和 `ORBIT_DEVOPS_QUEUE_*` 不会被新 Release Worker 静默读取。
 
-API 不接受客户端提供操作者、Cluster Ref、Namespace、kubeconfig、Secret 或任意 Kubernetes Manifest。当前已实现基于本地 Actor 的项目角色授权，但身份仍由服务端 `ORBITOPS_ACTOR_ID` 明确配置；正式 OIDC、生产集群治理、Secret 管理、BuildOperation 和完整管理前端不属于当前范围。
+API 不接受客户端提供操作者、Cluster Ref、Namespace、kubeconfig、Secret 或任意 Kubernetes Manifest。当前已实现基于本地 Actor 的项目角色授权，但身份仍由服务端 `ORBIT_DEVOPS_ACTOR_ID` 明确配置；正式 OIDC、生产集群治理、Secret 管理、BuildOperation 和完整管理前端不属于当前范围。
 
 ## 目录
 

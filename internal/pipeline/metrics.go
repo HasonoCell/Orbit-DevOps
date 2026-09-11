@@ -30,20 +30,20 @@ func NewMetrics(db *sqlx.DB) *Metrics {
 	return &Metrics{
 		db: db,
 		githubReads: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "orbitops", Name: "pipeline_github_reads_total", Help: "Pipeline Worker 按结论统计的 GitHub 权威回读次数。",
+			Namespace: "orbit_devops", Name: "pipeline_github_reads_total", Help: "Pipeline Worker 按结论统计的 GitHub 权威回读次数。",
 		}, []string{"outcome"}),
 		transitions: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "orbitops", Name: "delivery_run_transitions_total", Help: "DeliveryRun 按阶段、结果与稳定原因统计的推进次数。",
+			Namespace: "orbit_devops", Name: "delivery_run_transitions_total", Help: "DeliveryRun 按阶段、结果与稳定原因统计的推进次数。",
 		}, []string{"stage", "outcome", "reason"}),
 		stageDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "orbitops", Name: "delivery_run_stage_duration_seconds", Help: "DeliveryRun 已完成阶段的耗时。", Buckets: prometheus.ExponentialBuckets(0.1, 2, 16),
+			Namespace: "orbit_devops", Name: "delivery_run_stage_duration_seconds", Help: "DeliveryRun 已完成阶段的耗时。", Buckets: prometheus.ExponentialBuckets(0.1, 2, 16),
 		}, []string{"stage", "outcome"}),
 		maintenanceRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "orbitops", Name: "pipeline_maintenance_total", Help: "Pipeline 修复和保留期维护的运行结论。",
+			Namespace: "orbit_devops", Name: "pipeline_maintenance_total", Help: "Pipeline 修复和保留期维护的运行结论。",
 		}, []string{"outcome"}),
-		runStatus:      prometheus.NewDesc("orbitops_delivery_runs", "按对外投影状态统计的 DeliveryRun 当前数量。", []string{"status"}, nil),
-		blockedReasons: prometheus.NewDesc("orbitops_delivery_run_blocked_reasons", "按稳定原因统计的已阻塞 DeliveryRun 数量。", []string{"reason"}, nil),
-		webhookStates:  prometheus.NewDesc("orbitops_webhook_deliveries", "按状态统计的 WebhookDelivery 数量。", []string{"state"}, nil),
+		runStatus:      prometheus.NewDesc("orbit_devops_delivery_runs", "按对外投影状态统计的 DeliveryRun 当前数量。", []string{"status"}, nil),
+		blockedReasons: prometheus.NewDesc("orbit_devops_delivery_run_blocked_reasons", "按稳定原因统计的已阻塞 DeliveryRun 数量。", []string{"reason"}, nil),
+		webhookStates:  prometheus.NewDesc("orbit_devops_webhook_deliveries", "按状态统计的 WebhookDelivery 数量。", []string{"state"}, nil),
 	}
 }
 

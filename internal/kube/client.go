@@ -118,7 +118,7 @@ func verifyKindIdentity(
 	}
 	if existingNamespace.Labels[ManagedByLabel] != ManagedByValue {
 		return fmt.Errorf(
-			"Kubernetes namespace %q is not marked as OrbitOps-managed",
+			"Kubernetes namespace %q is not marked as Orbit-DevOps-managed",
 			namespace,
 		)
 	}

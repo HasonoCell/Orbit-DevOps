@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/audit"
-	"github.com/HasonoCell/OrbitOps/internal/build"
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/internalevent"
+	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
+	"github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
 	"github.com/google/uuid"
 )
 
-const systemActorID = "orbitops-pipeline"
+const systemActorID = "orbit-devops-pipeline"
 
 // HandleEvent 只把内部事件作为唤醒信号；每次处理都重新读取 PostgreSQL 权威事实。
 func (m *Module) HandleEvent(ctx context.Context, event internalevent.Ref) error {

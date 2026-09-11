@@ -10,8 +10,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -185,7 +185,7 @@ func New(
 	}
 	tracer := config.Tracer
 	if tracer == nil {
-		tracer = otel.Tracer("github.com/HasonoCell/OrbitOps/internal/releaseworker")
+		tracer = otel.Tracer("github.com/HasonoCell/Orbit-DevOps/internal/releaseworker")
 	}
 	propagator := config.Propagator
 	if propagator == nil {
@@ -258,10 +258,10 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 		"release delivery attempt",
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
-			attribute.String("orbitops.release_operation.id", lease.ReleaseOperationID.String()),
-			attribute.String("orbitops.release_attempt.id", lease.ReleaseAttemptID.String()),
-			attribute.Int("orbitops.release_attempt.number", lease.ReleaseAttemptNumber),
-			attribute.String("orbitops.release.id", lease.ReleaseID.String()),
+			attribute.String("orbit-devops.release_operation.id", lease.ReleaseOperationID.String()),
+			attribute.String("orbit-devops.release_attempt.id", lease.ReleaseAttemptID.String()),
+			attribute.Int("orbit-devops.release_attempt.number", lease.ReleaseAttemptNumber),
+			attribute.String("orbit-devops.release.id", lease.ReleaseID.String()),
 		),
 	)
 	defer span.End()
@@ -312,9 +312,9 @@ func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bo
 		ContainerPort:      release.TargetSnapshot.ContainerPort,
 	}
 	span.SetAttributes(
-		attribute.String("orbitops.project.id", request.ProjectID.String()),
-		attribute.String("orbitops.application.id", request.ApplicationID.String()),
-		attribute.String("orbitops.deployment_target.id", request.DeploymentTargetID.String()),
+		attribute.String("orbit-devops.project.id", request.ProjectID.String()),
+		attribute.String("orbit-devops.application.id", request.ApplicationID.String()),
+		attribute.String("orbit-devops.deployment_target.id", request.DeploymentTargetID.String()),
 	)
 	r.logger.InfoContext(attemptContext, "Worker 开始发布 Kubernetes 资源",
 		"release_operation_id", lease.ReleaseOperationID,

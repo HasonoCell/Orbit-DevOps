@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/app"
-	"github.com/HasonoCell/OrbitOps/internal/build"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/internalevent"
-	"github.com/HasonoCell/OrbitOps/internal/pipeline"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/app"
+	"github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
+	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -32,7 +32,7 @@ func TestAutomaticDeliveryOrchestratesExistingBuildAndReleaseDomains(t *testing.
 		t.Fatalf("create target status = %d", targetResponse.StatusCode)
 	}
 	target := decodeDeploymentTarget(t, targetResponse)
-	createPipeline := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/delivery-pipelines", "automatic-pipeline", `{"name":"main","endpointKey":"integration","repositoryUrl":"https://github.com/example/orbitops-demo.git","branch":"main","mode":"auto_release","deploymentTargetId":"`+target.ID+`"}`)
+	createPipeline := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/delivery-pipelines", "automatic-pipeline", `{"name":"main","endpointKey":"integration","repositoryUrl":"https://github.com/example/orbit-devops-demo.git","branch":"main","mode":"auto_release","deploymentTargetId":"`+target.ID+`"}`)
 	defer createPipeline.Body.Close()
 	if createPipeline.StatusCode != http.StatusCreated {
 		t.Fatalf("create pipeline status = %d", createPipeline.StatusCode)
@@ -45,7 +45,7 @@ func TestAutomaticDeliveryOrchestratesExistingBuildAndReleaseDomains(t *testing.
 	}
 
 	commit := strings.Repeat("a", 40)
-	payload := `{"ref":"refs/heads/main","before":"` + strings.Repeat("0", 40) + `","after":"` + commit + `","forced":false,"deleted":false,"repository":{"id":101,"full_name":"example/orbitops-demo","owner":{"id":202}}}`
+	payload := `{"ref":"refs/heads/main","before":"` + strings.Repeat("0", 40) + `","after":"` + commit + `","forced":false,"deleted":false,"repository":{"id":101,"full_name":"example/orbit-devops-demo","owner":{"id":202}}}`
 	webhookResponse := postGitHubWebhook(t, environment, "automatic-delivery-1", "push", payload, "integration-webhook-secret")
 	defer webhookResponse.Body.Close()
 	if webhookResponse.StatusCode != http.StatusAccepted {
@@ -60,7 +60,7 @@ func TestAutomaticDeliveryOrchestratesExistingBuildAndReleaseDomains(t *testing.
 	authorizer := projectauth.New(database)
 	buildOperations := buildoperation.New(database)
 	releaseOperations := releaseoperation.New(database)
-	builds := build.New(database, build.Config{AllowedGitHosts: []string{"github.com"}, Platform: "linux/amd64", RegistryHost: "registry.example", RegistryPrefix: "orbitops"}, buildOperations, authorizer)
+	builds := build.New(database, build.Config{AllowedGitHosts: []string{"github.com"}, Platform: "linux/amd64", RegistryHost: "registry.example", RegistryPrefix: "orbit-devops"}, buildOperations, authorizer)
 	releases := delivery.New(database, releaseOperations, authorizer)
 	pipelines := pipeline.New(database, pipeline.Config{Platform: "linux/amd64"}, builds, releases, authorizer, fixedSourceInspector{})
 
@@ -92,7 +92,7 @@ func TestAutomaticDeliveryOrchestratesExistingBuildAndReleaseDomains(t *testing.
 	now := time.Now().UTC()
 	digest := "sha256:" + strings.Repeat("c", 64)
 	if _, err := database.Exec(`INSERT INTO image_artifacts(id,build_id,project_id,application_id,repository,digest,image_reference,platform,created_by,created_at)
-		VALUES($1,$2,$3,$4,'registry.example/orbitops/demo',$5,'registry.example/orbitops/demo@'||$5,'linux/amd64','test',$6)`, uuid.New(), run.BuildID, project.ID, application.ID, digest, now); err != nil {
+		VALUES($1,$2,$3,$4,'registry.example/orbit-devops/demo',$5,'registry.example/orbit-devops/demo@'||$5,'linux/amd64','test',$6)`, uuid.New(), run.BuildID, project.ID, application.ID, digest, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.Exec(`UPDATE build_operations SET status='succeeded',updated_at=$2,finished_at=$2 WHERE id=$1`, buildOperationID, now); err != nil {

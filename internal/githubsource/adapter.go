@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/pipeline"
+	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
 )
 
 type Config struct {

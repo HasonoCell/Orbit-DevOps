@@ -10,17 +10,17 @@ import (
 )
 
 var eventDescriptors = []*prometheus.Desc{
-	prometheus.NewDesc("orbitops_internal_event_pending", "当前等待入队的内部事件数量。", nil, nil),
-	prometheus.NewDesc("orbitops_internal_event_published", "已经入队但尚未消费的内部事件数量。", nil, nil),
-	prometheus.NewDesc("orbitops_internal_event_quarantined", "协议隔离的内部事件数量。", nil, nil),
-	prometheus.NewDesc("orbitops_internal_event_oldest_age_seconds", "最老未消费内部事件的年龄。", nil, nil),
-	prometheus.NewDesc("orbitops_internal_event_reservations_total", "数据库记录的内部事件运输领取次数。", nil, nil),
-	prometheus.NewDesc("orbitops_internal_event_send_errors_total", "本进程向 Redis 入队失败的次数。", nil, nil),
-	prometheus.NewDesc("orbitops_internal_event_received_total", "本进程收到的合法内部事件引用次数。", nil, nil),
-	prometheus.NewDesc("orbitops_internal_event_ignored_total", "本进程忽略的重复或过期事件次数。", nil, nil),
-	prometheus.NewDesc("orbitops_internal_event_invalid_total", "本进程拒绝的非法事件协议次数。", nil, nil),
-	prometheus.NewDesc("orbitops_internal_event_processing_errors_total", "本进程处理内部事件失败的次数。", nil, nil),
-	prometheus.NewDesc("orbitops_internal_event_publish_success_timestamp_seconds", "事件发布循环最近成功时间。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_pending", "当前等待入队的内部事件数量。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_published", "已经入队但尚未消费的内部事件数量。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_quarantined", "协议隔离的内部事件数量。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_oldest_age_seconds", "最老未消费内部事件的年龄。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_reservations_total", "数据库记录的内部事件运输领取次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_send_errors_total", "本进程向 Redis 入队失败的次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_received_total", "本进程收到的合法内部事件引用次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_ignored_total", "本进程忽略的重复或过期事件次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_invalid_total", "本进程拒绝的非法事件协议次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_processing_errors_total", "本进程处理内部事件失败的次数。", nil, nil),
+	prometheus.NewDesc("orbit_devops_internal_event_publish_success_timestamp_seconds", "事件发布循环最近成功时间。", nil, nil),
 }
 
 func (s *Service) Describe(channel chan<- *prometheus.Desc) {

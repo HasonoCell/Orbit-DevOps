@@ -17,7 +17,7 @@ import (
 	redisclient "github.com/redis/go-redis/v9"
 )
 
-const TaskType = "orbitops:internal-event:v1"
+const TaskType = "orbit-devops:internal-event:v1"
 
 type Executor interface {
 	HandleEvent(context.Context, Ref) error
@@ -57,7 +57,7 @@ func NewService(config Config, events *Module, executor Executor) (*Service, err
 		return nil, errors.New("invalid internal event service configuration")
 	}
 	if config.Queue == "" {
-		config.Queue = "orbitops-pipeline"
+		config.Queue = "orbit-devops-pipeline"
 	}
 	if strings.TrimSpace(config.Queue) == "" {
 		return nil, errors.New("invalid internal event queue")

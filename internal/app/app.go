@@ -9,21 +9,21 @@ import (
 	"os"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/api"
-	"github.com/HasonoCell/OrbitOps/internal/build"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/internal/catalog"
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
-	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/pipeline"
-	"github.com/HasonoCell/OrbitOps/internal/platform/database"
-	"github.com/HasonoCell/OrbitOps/internal/project"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
-	"github.com/HasonoCell/OrbitOps/internal/transport/httpapi"
-	"github.com/HasonoCell/OrbitOps/internal/webhook"
+	"github.com/HasonoCell/Orbit-DevOps/internal/api"
+	"github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/catalog"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
+	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
+	"github.com/HasonoCell/Orbit-DevOps/internal/project"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/transport/httpapi"
+	"github.com/HasonoCell/Orbit-DevOps/internal/webhook"
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -134,7 +134,7 @@ func NewWithDependencies(
 	metrics.RegisterReleaseOperations(releaseOperationModule.ReadMetricsSnapshot)
 	tracer := dependencies.Tracer
 	if tracer == nil {
-		tracer = otel.Tracer("github.com/HasonoCell/OrbitOps/internal/app")
+		tracer = otel.Tracer("github.com/HasonoCell/Orbit-DevOps/internal/app")
 	}
 	propagator := dependencies.Propagator
 	if propagator == nil {

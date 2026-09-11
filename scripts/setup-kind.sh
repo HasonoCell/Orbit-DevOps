@@ -2,12 +2,13 @@
 
 set -euo pipefail
 
-cluster_name="${ORBITOPS_KIND_CLUSTER_NAME:-orbitops-s1}"
+cluster_name="${ORBIT_DEVOPS_KIND_CLUSTER_NAME:-orbit-devops-s1}"
 context_name="kind-${cluster_name}"
-namespace="${ORBITOPS_NAMESPACE:-orbitops-s3}"
-build_namespace="${ORBITOPS_BUILD_NAMESPACE:-orbitops-s4-build}"
+namespace="${ORBIT_DEVOPS_NAMESPACE:-orbit-devops-s3}"
+build_namespace="${ORBIT_DEVOPS_BUILD_NAMESPACE:-orbit-devops-s4-build}"
 node_image="kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5"
-registry_name="orbitops-s4-registry"
+registry_name="orbit-devops-s4-registry"
+registry_port="${ORBIT_DEVOPS_KIND_REGISTRY_PORT:-5002}"
 registry_image="registry@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e"
 registry_service="${registry_name}.${build_namespace}.svc.cluster.local:5000"
 git_image="alpine/git:v2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26"
@@ -34,7 +35,7 @@ if ! docker inspect "${registry_name}" >/dev/null 2>&1; then
     --restart unless-stopped \
     --name "${registry_name}" \
     --network kind \
-    -p 127.0.0.1:5001:5000 \
+    -p "127.0.0.1:${registry_port}:5000" \
     "${registry_image}" >/dev/null
 fi
 if [ "$(docker inspect "${registry_name}" --format '{{.Config.Image}}')" != "${registry_image}" ]; then
@@ -61,30 +62,30 @@ case "$(docker exec "${kind_node}" uname -m)" in
   *) echo "无法识别 Kind 节点架构" >&2; exit 1 ;;
 esac
 docker pull --platform "linux/${kind_architecture}" "${nginx_image}" >/dev/null
-docker tag "${nginx_image}" 127.0.0.1:5001/library/nginx:mainline-alpine
-docker push 127.0.0.1:5001/library/nginx:mainline-alpine >/dev/null
-docker tag "${git_image}" orbitops-local/alpine-git:s4
-docker tag "${buildkit_image}" orbitops-local/buildkit:s4
+docker tag "${nginx_image}" "127.0.0.1:${registry_port}/library/nginx:mainline-alpine"
+docker push "127.0.0.1:${registry_port}/library/nginx:mainline-alpine" >/dev/null
+docker tag "${git_image}" orbit-devops-local/alpine-git:s4
+docker tag "${buildkit_image}" orbit-devops-local/buildkit:s4
 build_image_directory="$(mktemp -d)"
 trap 'rm -rf "${build_image_directory}"' EXIT
 docker save -o "${build_image_directory}/build-images.tar" \
-  orbitops-local/alpine-git:s4 \
-  orbitops-local/buildkit:s4
+  orbit-devops-local/alpine-git:s4 \
+  orbit-devops-local/buildkit:s4
 
 kubectl config use-context "${context_name}" >/dev/null
 if ! kubectl --context "${context_name}" get namespace "${namespace}" >/dev/null 2>&1; then
   kubectl --context "${context_name}" create namespace "${namespace}" >/dev/null
 fi
 kubectl --context "${context_name}" label namespace "${namespace}" \
-  app.kubernetes.io/managed-by=orbitops \
+  app.kubernetes.io/managed-by=orbit-devops \
   --overwrite >/dev/null
 
 if ! kubectl --context "${context_name}" get namespace "${build_namespace}" >/dev/null 2>&1; then
   kubectl --context "${context_name}" create namespace "${build_namespace}" >/dev/null
 fi
 kubectl --context "${context_name}" label namespace "${build_namespace}" \
-  app.kubernetes.io/managed-by=orbitops \
-  orbitops.dev/scope=source-build \
+  app.kubernetes.io/managed-by=orbit-devops \
+  orbit-devops.dev/scope=source-build \
   --overwrite >/dev/null
 
 # Pod 通过稳定的 Service DNS 推送；无 Selector Service 把流量送到同一 Docker 网络的 Registry。
@@ -120,9 +121,9 @@ for node_name in $(kind get nodes --name "${cluster_name}"); do
 	docker exec -i "${node_name}" ctr --namespace=k8s.io images import --digests --snapshotter=overlayfs - \
 	  < "${build_image_directory}/build-images.tar" >/dev/null
 	docker exec "${node_name}" ctr --namespace=k8s.io images tag --force \
-	  docker.io/orbitops-local/alpine-git:s4 "docker.io/alpine/git@${git_image##*@}" >/dev/null
+	  docker.io/orbit-devops-local/alpine-git:s4 "docker.io/alpine/git@${git_image##*@}" >/dev/null
 	docker exec "${node_name}" ctr --namespace=k8s.io images tag --force \
-	  docker.io/orbitops-local/buildkit:s4 "docker.io/moby/buildkit@${buildkit_image##*@}" >/dev/null
+	  docker.io/orbit-devops-local/buildkit:s4 "docker.io/moby/buildkit@${buildkit_image##*@}" >/dev/null
   if ! docker exec "${node_name}" grep -Fq 'config_path = "/etc/containerd/certs.d"' /etc/containerd/config.toml; then
     docker exec "${node_name}" sh -c \
       'printf '\''\n[plugins."io.containerd.grpc.v1.cri".registry]\n  config_path = "/etc/containerd/certs.d"\n'\'' >> /etc/containerd/config.toml'
@@ -138,18 +139,18 @@ kubectl --context "${context_name}" --namespace "${build_namespace}" apply -f - 
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: orbitops-build-executor
+  name: orbit-devops-build-executor
 automountServiceAccountToken: false
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: orbitops-build-worker
+  name: orbit-devops-build-worker
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: orbitops-build-worker
+  name: orbit-devops-build-worker
 rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
@@ -164,15 +165,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: orbitops-build-worker
+  name: orbit-devops-build-worker
 subjects:
   - kind: ServiceAccount
-    name: orbitops-build-worker
+    name: orbit-devops-build-worker
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: orbitops-build-worker
+  name: orbit-devops-build-worker
 YAML
 
 echo "Kind 已就绪：context=${context_name} namespace=${namespace} build_namespace=${build_namespace} registry=${registry_service}"
-echo "真实构建验收：ORBITOPS_KIND_BUILD_PLATFORM=linux/${kind_architecture} ORBITOPS_KIND_BUILD_REGISTRY=${registry_service} ORBITOPS_KIND_BUILD_REGISTRY_API=http://127.0.0.1:5001"
+echo "真实构建验收：ORBIT_DEVOPS_KIND_BUILD_PLATFORM=linux/${kind_architecture} ORBIT_DEVOPS_KIND_BUILD_REGISTRY=${registry_service} ORBIT_DEVOPS_KIND_BUILD_REGISTRY_API=http://127.0.0.1:${registry_port}"

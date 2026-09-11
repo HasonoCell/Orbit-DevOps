@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
-	"github.com/HasonoCell/OrbitOps/test/testsupport"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releasedispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/test/testsupport"
 	"github.com/hibiken/asynq"
 )
 
@@ -41,7 +41,7 @@ func TestQueueRecoversAcrossProcessInterruptions(t *testing.T) {
 				payload, _ := json.Marshal(ref)
 				client := asynq.NewClient(asynq.RedisClientOpt{Addr: address})
 				defer client.Close()
-				if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue("orbitops-release")); err != nil {
+				if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue("orbit-devops-release")); err != nil {
 					t.Fatal(err)
 				}
 			}

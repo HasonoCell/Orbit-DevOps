@@ -81,7 +81,7 @@ func TestBuildAcceptanceAtomicallyCreatesPendingBuildOperation(t *testing.T) {
 	if acceptance.Build.Platform != "linux/amd64" {
 		t.Fatalf("build platform = %q, want linux/amd64", acceptance.Build.Platform)
 	}
-	wantRepository := "registry.example/orbitops/" + project.ID + "/" + application.ID
+	wantRepository := "registry.example/orbit-devops/" + project.ID + "/" + application.ID
 	if acceptance.Build.DestinationRepository != wantRepository {
 		t.Fatalf("destination repository = %q, want %q", acceptance.Build.DestinationRepository, wantRepository)
 	}

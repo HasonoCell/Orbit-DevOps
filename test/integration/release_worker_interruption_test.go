@@ -11,18 +11,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releasedispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 	"github.com/jmoiron/sqlx"
 )
 
 const (
-	workerInterruptionModeEnv   = "ORBITOPS_TEST_WORKER_INTERRUPTION_MODE"
-	workerInterruptionDBEnv     = "ORBITOPS_TEST_WORKER_INTERRUPTION_DATABASE_URL"
-	workerInterruptionMarkerEnv = "ORBITOPS_TEST_WORKER_INTERRUPTION_MARKER"
+	workerInterruptionModeEnv   = "ORBIT_DEVOPS_TEST_WORKER_INTERRUPTION_MODE"
+	workerInterruptionDBEnv     = "ORBIT_DEVOPS_TEST_WORKER_INTERRUPTION_DATABASE_URL"
+	workerInterruptionMarkerEnv = "ORBIT_DEVOPS_TEST_WORKER_INTERRUPTION_MARKER"
 )
 
 func TestReleaseWorkerRecoversAcrossRealProcessInterruptions(t *testing.T) {
@@ -147,7 +147,7 @@ func TestReleaseWorkerInterruptionHelper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create helper Worker: %v", err)
 	}
-	if address := os.Getenv("ORBITOPS_TEST_INTERRUPTION_REDIS_ADDRESS"); address != "" {
+	if address := os.Getenv("ORBIT_DEVOPS_TEST_INTERRUPTION_REDIS_ADDRESS"); address != "" {
 		config := queueConfig(address)
 		config.AfterEnqueue = func(releaseoperation.Dispatch) {
 			if mode == "after_enqueue" {
@@ -178,7 +178,7 @@ func runInterruptedWorkerProcess(t *testing.T, databaseURL string, mode string, 
 		workerInterruptionMarkerEnv+"="+marker,
 	)
 	if len(queueAddress) > 0 {
-		command.Env = append(command.Env, "ORBITOPS_TEST_INTERRUPTION_REDIS_ADDRESS="+queueAddress[0])
+		command.Env = append(command.Env, "ORBIT_DEVOPS_TEST_INTERRUPTION_REDIS_ADDRESS="+queueAddress[0])
 	}
 	var output bytes.Buffer
 	command.Stdout = &output

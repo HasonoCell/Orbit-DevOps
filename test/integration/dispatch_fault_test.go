@@ -14,19 +14,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
-	"github.com/HasonoCell/OrbitOps/test/testsupport"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releasedispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/test/testsupport"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 func queueConfig(address string) releasedispatch.Config {
-	return releasedispatch.Config{RedisAddress: address, Queue: "orbitops-release", PollInterval: 20 * time.Millisecond, RepairInterval: 50 * time.Millisecond,
+	return releasedispatch.Config{RedisAddress: address, Queue: "orbit-devops-release", PollInterval: 20 * time.Millisecond, RepairInterval: 50 * time.Millisecond,
 		ConsumptionGrace: 250 * time.Millisecond, TaskTimeout: 10 * time.Second, ShutdownTimeout: time.Second, Concurrency: 4}
 }
 
@@ -147,11 +147,11 @@ func TestQueueRepairsPublishedMessageLoss(t *testing.T) {
 	}
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: address})
 	defer inspector.Close()
-	tasks, err := inspector.ListPendingTasks("orbitops-release")
+	tasks, err := inspector.ListPendingTasks("orbit-devops-release")
 	if err != nil || len(tasks) != 1 || tasks[0].MaxRetry != 5 {
 		t.Fatalf("published tasks: %d %v", len(tasks), err)
 	}
-	if err := inspector.DeleteTask("orbitops-release", tasks[0].ID); err != nil {
+	if err := inspector.DeleteTask("orbit-devops-release", tasks[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	startQueueTest(t, service)

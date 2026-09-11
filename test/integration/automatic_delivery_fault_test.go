@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/app"
-	"github.com/HasonoCell/OrbitOps/internal/build"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/internalevent"
-	"github.com/HasonoCell/OrbitOps/internal/pipeline"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/test/testsupport"
+	"github.com/HasonoCell/Orbit-DevOps/internal/app"
+	"github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
+	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/test/testsupport"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
@@ -31,8 +31,8 @@ type configurableSourceInspector struct {
 }
 
 func (s *configurableSourceInspector) Resolve(_ context.Context, request pipeline.SourceRequest) (pipeline.SourceIdentity, error) {
-	return pipeline.SourceIdentity{RepositoryID: 101, OwnerID: 202, RepositoryName: "example/orbitops-demo",
-		RepositoryURL: "https://github.com/example/orbitops-demo.git", GitRef: "refs/heads/" + request.Branch, HeadCommit: s.currentHead()}, nil
+	return pipeline.SourceIdentity{RepositoryID: 101, OwnerID: 202, RepositoryName: "example/orbit-devops-demo",
+		RepositoryURL: "https://github.com/example/orbit-devops-demo.git", GitRef: "refs/heads/" + request.Branch, HeadCommit: s.currentHead()}, nil
 }
 
 func (s *configurableSourceInspector) Head(_ context.Context, request pipeline.HeadRequest) (pipeline.SourceIdentity, error) {
@@ -42,7 +42,7 @@ func (s *configurableSourceInspector) Head(_ context.Context, request pipeline.H
 		return pipeline.SourceIdentity{}, s.headErr
 	}
 	return pipeline.SourceIdentity{RepositoryID: request.RepositoryID, OwnerID: request.OwnerID,
-		RepositoryName: "example/orbitops-demo", RepositoryURL: request.RepositoryURL,
+		RepositoryName: "example/orbit-devops-demo", RepositoryURL: request.RepositoryURL,
 		GitRef: request.GitRef, HeadCommit: s.head}, nil
 }
 
@@ -75,7 +75,7 @@ func newAutomaticPipelineFixture(t *testing.T, inspector *configurableSourceInsp
 	targetResponse := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/deployment-targets", "automatic-fault-target", `{"stage":"development","replicas":1,"containerPort":8080}`)
 	target := decodeDeploymentTarget(t, targetResponse)
 	targetResponse.Body.Close()
-	createResponse := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/delivery-pipelines", "automatic-fault-pipeline", `{"name":"main","endpointKey":"integration","repositoryUrl":"https://github.com/example/orbitops-demo.git","branch":"main","mode":"auto_release","deploymentTargetId":"`+target.ID+`"}`)
+	createResponse := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/delivery-pipelines", "automatic-fault-pipeline", `{"name":"main","endpointKey":"integration","repositoryUrl":"https://github.com/example/orbit-devops-demo.git","branch":"main","mode":"auto_release","deploymentTargetId":"`+target.ID+`"}`)
 	created := decodeDeliveryPipeline(t, createResponse)
 	createResponse.Body.Close()
 	enableResponse := environment.postJSON(t, "/api/v1/delivery-pipelines/"+created.Pipeline.ID+"/enable", "automatic-fault-enable", "")
@@ -87,7 +87,7 @@ func newAutomaticPipelineFixture(t *testing.T, inspector *configurableSourceInsp
 	authorizer := projectauth.New(db)
 	buildOperations := buildoperation.New(db)
 	releaseOperations := releaseoperation.New(db)
-	builds := build.New(db, build.Config{AllowedGitHosts: []string{"github.com"}, Platform: "linux/amd64", RegistryHost: "registry.example", RegistryPrefix: "orbitops"}, buildOperations, authorizer)
+	builds := build.New(db, build.Config{AllowedGitHosts: []string{"github.com"}, Platform: "linux/amd64", RegistryHost: "registry.example", RegistryPrefix: "orbit-devops"}, buildOperations, authorizer)
 	releases := delivery.New(db, releaseOperations, authorizer)
 	return &automaticPipelineFixture{environment: environment, db: db,
 		pipelines:  pipeline.New(db, pipeline.Config{Platform: "linux/amd64", SourceRetryBaseDelay: 10 * time.Millisecond}, builds, releases, authorizer, inspector),
@@ -96,7 +96,7 @@ func newAutomaticPipelineFixture(t *testing.T, inspector *configurableSourceInsp
 
 func (f *automaticPipelineFixture) acceptPush(t *testing.T, deliveryID, commit string) internalevent.Ref {
 	t.Helper()
-	payload := `{"ref":"refs/heads/main","before":"` + strings.Repeat("0", 40) + `","after":"` + commit + `","forced":false,"deleted":false,"repository":{"id":101,"full_name":"example/orbitops-demo","owner":{"id":202}}}`
+	payload := `{"ref":"refs/heads/main","before":"` + strings.Repeat("0", 40) + `","after":"` + commit + `","forced":false,"deleted":false,"repository":{"id":101,"full_name":"example/orbit-devops-demo","owner":{"id":202}}}`
 	response := postGitHubWebhook(t, f.environment, deliveryID, "push", payload, "integration-webhook-secret")
 	response.Body.Close()
 	if response.StatusCode != 202 {
@@ -112,7 +112,7 @@ func (f *automaticPipelineFixture) acceptPush(t *testing.T, deliveryID, commit s
 }
 
 func internalEventConfig(address string) internalevent.Config {
-	return internalevent.Config{RedisAddress: address, Queue: "orbitops-pipeline-test", Concurrency: 2,
+	return internalevent.Config{RedisAddress: address, Queue: "orbit-devops-pipeline-test", Concurrency: 2,
 		PollInterval: 20 * time.Millisecond, ConsumptionGrace: 100 * time.Millisecond,
 		TaskTimeout: 5 * time.Second, ShutdownTimeout: time.Second}
 }
@@ -167,7 +167,7 @@ func (f *automaticPipelineFixture) completeBuild(t *testing.T, commit string) uu
 	digest := "sha256:" + strings.Repeat(string(commit[0]), 64)
 	now := time.Now().UTC()
 	if _, err := f.db.Exec(`INSERT INTO image_artifacts(id,build_id,project_id,application_id,repository,digest,image_reference,platform,created_by,created_at)
-		VALUES($1,$2,$3,$4,'registry.example/orbitops/demo',$5,'registry.example/orbitops/demo@'||$5,'linux/amd64','test',$6)`, uuid.New(), row.BuildID, f.projectID, f.appID, digest, now); err != nil {
+		VALUES($1,$2,$3,$4,'registry.example/orbit-devops/demo',$5,'registry.example/orbit-devops/demo@'||$5,'linux/amd64','test',$6)`, uuid.New(), row.BuildID, f.projectID, f.appID, digest, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.db.Exec(`UPDATE build_operations SET status='succeeded',updated_at=$2,finished_at=$2 WHERE id=$1`, row.OperationID, now); err != nil {
@@ -225,11 +225,11 @@ func TestInternalEventsRepairLossAndIgnoreDuplicateMessages(t *testing.T) {
 	}
 	queueInspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: address})
 	defer queueInspector.Close()
-	tasks, err := queueInspector.ListPendingTasks("orbitops-pipeline-test")
+	tasks, err := queueInspector.ListPendingTasks("orbit-devops-pipeline-test")
 	if err != nil || len(tasks) != 1 {
 		t.Fatalf("published internal events = %d, error = %v", len(tasks), err)
 	}
-	if err := queueInspector.DeleteTask("orbitops-pipeline-test", tasks[0].ID); err != nil {
+	if err := queueInspector.DeleteTask("orbit-devops-pipeline-test", tasks[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(120 * time.Millisecond)
@@ -239,7 +239,7 @@ func TestInternalEventsRepairLossAndIgnoreDuplicateMessages(t *testing.T) {
 	payload, _ := json.Marshal(event)
 	client := asynq.NewClient(asynq.RedisClientOpt{Addr: address})
 	defer client.Close()
-	if _, err := client.Enqueue(asynq.NewTask(internalevent.TaskType, payload), asynq.Queue("orbitops-pipeline-test")); err != nil {
+	if _, err := client.Enqueue(asynq.NewTask(internalevent.TaskType, payload), asynq.Queue("orbit-devops-pipeline-test")); err != nil {
 		t.Fatal(err)
 	}
 	startInternalEvents(t, service)
@@ -286,7 +286,7 @@ func TestAutomaticDeliveryOnlyReleasesCurrentHead(t *testing.T) {
 		digest := "sha256:" + strings.Repeat(string(row.Commit[0]), 64)
 		now := time.Now().UTC()
 		if _, err := fixture.db.Exec(`INSERT INTO image_artifacts(id,build_id,project_id,application_id,repository,digest,image_reference,platform,created_by,created_at)
-			VALUES($1,$2,$3,$4,'registry.example/orbitops/demo',$5,'registry.example/orbitops/demo@'||$5,'linux/amd64','test',$6)`, uuid.New(), row.BuildID, fixture.projectID, fixture.appID, digest, now); err != nil {
+			VALUES($1,$2,$3,$4,'registry.example/orbit-devops/demo',$5,'registry.example/orbit-devops/demo@'||$5,'linux/amd64','test',$6)`, uuid.New(), row.BuildID, fixture.projectID, fixture.appID, digest, now); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := fixture.db.Exec(`UPDATE build_operations SET status='succeeded',updated_at=$2,finished_at=$2 WHERE id=$1`, row.OperationID, now); err != nil {
@@ -420,7 +420,7 @@ func TestAutomaticDeliveryConcurrentAdvanceCreatesOneRelease(t *testing.T) {
 	now := time.Now().UTC()
 	digest := "sha256:" + strings.Repeat("9", 64)
 	if _, err := fixture.db.Exec(`INSERT INTO image_artifacts(id,build_id,project_id,application_id,repository,digest,image_reference,platform,created_by,created_at)
-		VALUES($1,$2,$3,$4,'registry.example/orbitops/demo',$5,'registry.example/orbitops/demo@'||$5,'linux/amd64','test',$6)`, uuid.New(), row.BuildID, fixture.projectID, fixture.appID, digest, now); err != nil {
+		VALUES($1,$2,$3,$4,'registry.example/orbit-devops/demo',$5,'registry.example/orbit-devops/demo@'||$5,'linux/amd64','test',$6)`, uuid.New(), row.BuildID, fixture.projectID, fixture.appID, digest, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := fixture.db.Exec(`UPDATE build_operations SET status='succeeded',updated_at=$2,finished_at=$2 WHERE id=$1`, row.OperationID, now); err != nil {
@@ -471,7 +471,7 @@ func TestAutomaticDeliveryRetainsTriggerAfterWebhookCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.Run.WebhookDeliveryID != nil || detail.Trigger.EventType != "push" || detail.Trigger.RepositoryFullName != "example/orbitops-demo" || detail.Trigger.GitRef != "refs/heads/main" {
+	if detail.Run.WebhookDeliveryID != nil || detail.Trigger.EventType != "push" || detail.Trigger.RepositoryFullName != "example/orbit-devops-demo" || detail.Trigger.GitRef != "refs/heads/main" {
 		t.Fatalf("retained run trigger = %#v", detail)
 	}
 }

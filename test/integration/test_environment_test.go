@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/app"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/webhook"
+	"github.com/HasonoCell/Orbit-DevOps/internal/app"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/webhook"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
@@ -29,23 +29,23 @@ func (e *testEnvironment) serverForActor(t *testing.T, actorID string) *httptest
 	runtime, err := app.NewWithDependencies(context.Background(), app.Config{
 		DatabaseURL:          e.databaseURL,
 		LocalActorID:         actorID,
-		LocalClusterRef:      "kind-orbitops-s1",
-		LocalNamespace:       "orbitops-s1",
+		LocalClusterRef:      "kind-orbit-devops-s1",
+		LocalNamespace:       "orbit-devops-s1",
 		BuildAllowedGitHosts: []string{"github.com"},
 		BuildPlatform:        "linux/amd64",
 		BuildRegistryHost:    "registry.example",
-		BuildRegistryPrefix:  "orbitops",
+		BuildRegistryPrefix:  "orbit-devops",
 		WebhookConfig: webhook.Config{Endpoints: map[string]webhook.EndpointSecrets{
 			"integration": {Current: "integration-webhook-secret"},
 		}},
 		MigrateOnBoot: false,
 	}, e.dependencies)
 	if err != nil {
-		t.Fatalf("start OrbitOps for actor %q: %v", actorID, err)
+		t.Fatalf("start Orbit-DevOps for actor %q: %v", actorID, err)
 	}
 	t.Cleanup(func() {
 		if err := runtime.Close(); err != nil {
-			t.Errorf("close OrbitOps for actor %q: %v", actorID, err)
+			t.Errorf("close Orbit-DevOps for actor %q: %v", actorID, err)
 		}
 	})
 
@@ -205,9 +205,9 @@ func newTestEnvironmentWithDependencies(
 	postgresContainer, err := postgres.Run(
 		ctx,
 		"postgres:17-alpine",
-		postgres.WithDatabase("orbitops"),
-		postgres.WithUsername("orbitops"),
-		postgres.WithPassword("orbitops"),
+		postgres.WithDatabase("orbitdevops"),
+		postgres.WithUsername("orbitdevops"),
+		postgres.WithPassword("orbitdevops"),
 		postgres.BasicWaitStrategies(),
 	)
 	if err != nil {
@@ -227,23 +227,23 @@ func newTestEnvironmentWithDependencies(
 	runtime, err := app.NewWithDependencies(ctx, app.Config{
 		DatabaseURL:          databaseURL,
 		LocalActorID:         "local-developer",
-		LocalClusterRef:      "kind-orbitops-s1",
-		LocalNamespace:       "orbitops-s1",
+		LocalClusterRef:      "kind-orbit-devops-s1",
+		LocalNamespace:       "orbit-devops-s1",
 		BuildAllowedGitHosts: []string{"github.com"},
 		BuildPlatform:        "linux/amd64",
 		BuildRegistryHost:    "registry.example",
-		BuildRegistryPrefix:  "orbitops",
+		BuildRegistryPrefix:  "orbit-devops",
 		WebhookConfig: webhook.Config{Endpoints: map[string]webhook.EndpointSecrets{
 			"integration": {Current: "integration-webhook-secret"},
 		}},
 		MigrateOnBoot: true,
 	}, dependencies)
 	if err != nil {
-		t.Fatalf("start OrbitOps: %v", err)
+		t.Fatalf("start Orbit-DevOps: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := runtime.Close(); err != nil {
-			t.Errorf("close OrbitOps: %v", err)
+			t.Errorf("close Orbit-DevOps: %v", err)
 		}
 	})
 

@@ -38,10 +38,10 @@ func TestUserCanCreateAndRetrieveDevelopmentTarget(t *testing.T) {
 	if created.Stage != "development" {
 		t.Errorf("stage = %q, want %q", created.Stage, "development")
 	}
-	if created.ClusterRef != "kind-orbitops-s1" {
+	if created.ClusterRef != "kind-orbit-devops-s1" {
 		t.Errorf("clusterRef = %q, want server-managed cluster", created.ClusterRef)
 	}
-	if created.Namespace != "orbitops-s1" {
+	if created.Namespace != "orbit-devops-s1" {
 		t.Errorf("namespace = %q, want server-managed namespace", created.Namespace)
 	}
 	if created.Replicas != 2 {

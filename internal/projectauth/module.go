@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/HasonoCell/OrbitOps/internal/audit"
-	"github.com/HasonoCell/OrbitOps/internal/idempotency"
+	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
+	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"

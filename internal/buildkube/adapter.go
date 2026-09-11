@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/internal/buildworker"
-	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

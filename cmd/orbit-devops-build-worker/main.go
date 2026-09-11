@@ -10,14 +10,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/build"
-	"github.com/HasonoCell/OrbitOps/internal/builddispatch"
-	"github.com/HasonoCell/OrbitOps/internal/buildkube"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/internal/buildworker"
-	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
-	processruntime "github.com/HasonoCell/OrbitOps/internal/platform/process"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/builddispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildkube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
+	processruntime "github.com/HasonoCell/Orbit-DevOps/internal/platform/process"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,7 +28,7 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger); err != nil {
-		logger.Error("OrbitOps Build Worker 退出", "error", err)
+		logger.Error("Orbit-DevOps Build Worker 退出", "error", err)
 		os.Exit(1)
 	}
 }

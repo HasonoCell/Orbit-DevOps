@@ -11,7 +11,7 @@ import (
 func TestReleaseAcceptanceAtomicallyCreatesPendingReleaseOperation(t *testing.T) {
 	environment := newTestEnvironment(t)
 	target := createDeploymentTarget(t, environment)
-	imageReference := "registry.example/orbitops/demo@sha256:" + strings.Repeat("a", 64)
+	imageReference := "registry.example/orbit-devops/demo@sha256:" + strings.Repeat("a", 64)
 
 	createResponse := environment.postJSON(
 		t,

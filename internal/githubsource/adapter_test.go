@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/HasonoCell/OrbitOps/internal/pipeline"
+	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
 )
 
 func TestAdapterResolvesPublicRepositoryAndBranch(t *testing.T) {

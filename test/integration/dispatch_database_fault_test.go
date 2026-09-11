@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"errors"
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
-	"github.com/HasonoCell/OrbitOps/test/testsupport"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releasedispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/test/testsupport"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus"
@@ -42,7 +42,7 @@ func TestQueueWaitsForDatabaseRecovery(t *testing.T) {
 	}
 	nanFound := false
 	for _, metric := range metrics {
-		if metric.GetName() == "orbitops_release_dispatch_pending" {
+		if metric.GetName() == "orbit_devops_release_dispatch_pending" {
 			nanFound = math.IsNaN(metric.Metric[0].Gauge.GetValue())
 		}
 	}

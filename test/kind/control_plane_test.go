@@ -10,16 +10,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/app"
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
-	"github.com/HasonoCell/OrbitOps/internal/kube"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
-	"github.com/HasonoCell/OrbitOps/internal/webhook"
-	"github.com/HasonoCell/OrbitOps/test/testsupport"
+	"github.com/HasonoCell/Orbit-DevOps/internal/app"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releasedispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/webhook"
+	"github.com/HasonoCell/Orbit-DevOps/test/testsupport"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -71,7 +71,7 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 	})
 
 	t.Run("failed release", func(t *testing.T) {
-		image := "registry.invalid/orbitops/missing@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+		image := "registry.invalid/orbit-devops/missing@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 		acceptance := environment.acceptRelease(t, "failure", image)
 		targetID := uuid.MustParse(acceptance.TargetID)
 		cleanupResources(t, client, targetID)
@@ -142,7 +142,7 @@ func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 	})
 
 	t.Run("running release cancellation", func(t *testing.T) {
-		image := "registry.invalid/orbitops/cancel@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+		image := "registry.invalid/orbit-devops/cancel@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 		acceptance := environment.acceptRelease(t, "cancel", image)
 		targetID := uuid.MustParse(acceptance.TargetID)
 		cleanupResources(t, client, targetID)
@@ -299,9 +299,9 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 	postgresContainer, err := postgres.Run(
 		ctx,
 		"postgres:17-alpine",
-		postgres.WithDatabase("orbitops"),
-		postgres.WithUsername("orbitops"),
-		postgres.WithPassword("orbitops"),
+		postgres.WithDatabase("orbitdevops"),
+		postgres.WithUsername("orbitdevops"),
+		postgres.WithPassword("orbitdevops"),
 		postgres.BasicWaitStrategies(),
 	)
 	if err != nil {
@@ -323,9 +323,9 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 		LocalClusterRef:      kindCluster,
 		LocalNamespace:       kindNamespace,
 		BuildAllowedGitHosts: []string{"github.com"},
-		BuildPlatform:        environmentOrDefault("ORBITOPS_KIND_BUILD_PLATFORM", "linux/amd64"),
-		BuildRegistryHost:    environmentOrDefault("ORBITOPS_KIND_BUILD_REGISTRY", "orbitops-s4-registry.orbitops-s4-build.svc.cluster.local:5000"),
-		BuildRegistryPrefix:  "orbitops",
+		BuildPlatform:        environmentOrDefault("ORBIT_DEVOPS_KIND_BUILD_PLATFORM", "linux/amd64"),
+		BuildRegistryHost:    environmentOrDefault("ORBIT_DEVOPS_KIND_BUILD_REGISTRY", "orbit-devops-s4-registry.orbit-devops-s4-build.svc.cluster.local:5000"),
+		BuildRegistryPrefix:  "orbit-devops",
 		WebhookConfig: webhook.Config{Endpoints: map[string]webhook.EndpointSecrets{
 			"kind": {Current: "kind-webhook-secret"},
 		}},

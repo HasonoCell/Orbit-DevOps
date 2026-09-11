@@ -10,7 +10,7 @@ func TestReleaseAcceptanceIsIdempotent(t *testing.T) {
 	environment := newTestEnvironment(t)
 	target := createDeploymentTarget(t, environment)
 	idempotencyKey := "release-idempotent-demo"
-	requestBody := `{"imageReference":"registry.example/orbitops/demo@sha256:` +
+	requestBody := `{"imageReference":"registry.example/orbit-devops/demo@sha256:` +
 		strings.Repeat("a", 64) + `"}`
 
 	firstResponse := environment.postJSON(
@@ -44,7 +44,7 @@ func TestReleaseAcceptanceIsIdempotent(t *testing.T) {
 		t.Errorf("replayed operation id = %q, want %q", replayed.ReleaseOperation.ID, first.ReleaseOperation.ID)
 	}
 
-	conflictBody := `{"imageReference":"registry.example/orbitops/demo@sha256:` +
+	conflictBody := `{"imageReference":"registry.example/orbit-devops/demo@sha256:` +
 		strings.Repeat("b", 64) + `"}`
 	conflictResponse := environment.postJSON(
 		t,
@@ -70,12 +70,12 @@ func TestReleaseRejectsInvalidImageReferences(t *testing.T) {
 		{
 			name:           "mutable tag",
 			idempotencyKey: "release-mutable-image",
-			requestBody:    `{"imageReference":"registry.example/orbitops/demo:latest"}`,
+			requestBody:    `{"imageReference":"registry.example/orbit-devops/demo:latest"}`,
 		},
 		{
 			name:           "invalid repository name",
 			idempotencyKey: "release-invalid-repository",
-			requestBody: `{"imageReference":"registry.example/OrbitOps/demo@sha256:` +
+			requestBody: `{"imageReference":"registry.example/Orbit-DevOps/demo@sha256:` +
 				strings.Repeat("a", 64) + `"}`,
 		},
 	}

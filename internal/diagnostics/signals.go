@@ -3,7 +3,7 @@ package diagnostics
 import (
 	"sort"
 
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 )
 
@@ -80,7 +80,7 @@ func deriveSignals(report Report) []Signal {
 		appendSignal(
 			SignalResourceOwnershipConflict,
 			"error",
-			"发现不属于当前 OrbitOps 目标的 Kubernetes 资源",
+			"发现不属于当前 Orbit-DevOps 目标的 Kubernetes 资源",
 			EvidenceReference{Source: SourceKubernetes, Kind: "Observation", ID: "ownership"},
 		)
 	}

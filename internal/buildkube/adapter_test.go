@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/buildkube"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/internal/buildworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildkube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
 	"github.com/google/uuid"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -172,10 +172,10 @@ func TestBuildAdapterCancellationUsesJobUID(t *testing.T) {
 func newAdapter(t *testing.T, client *fake.Clientset) *buildkube.Adapter {
 	t.Helper()
 	adapter, err := buildkube.New(client, buildkube.Config{
-		Namespace: "orbitops-build", FieldManager: "orbitops-build-worker",
+		Namespace: "orbit-devops-build", FieldManager: "orbit-devops-build-worker",
 		GitImage:           "alpine/git:v2.49.1@sha256:" + strings.Repeat("a", 64),
 		BuildkitImage:      "moby/buildkit:v0.33.0-rootless@sha256:" + strings.Repeat("b", 64),
-		RegistrySecretName: "orbitops-registry", ActiveDeadline: 20 * time.Minute,
+		RegistrySecretName: "orbit-devops-registry", ActiveDeadline: 20 * time.Minute,
 		TTL: time.Hour, CPU: "1", Memory: "1Gi", PollInterval: time.Millisecond,
 	})
 	if err != nil {
@@ -189,6 +189,6 @@ func buildExecution() buildworker.BuildExecution {
 		BuildOperationID: uuid.New(), BuildAttemptID: uuid.New(), BuildID: uuid.New(),
 		ProjectID: uuid.New(), ApplicationID: uuid.New(), RepositoryURL: "https://github.com/example/demo.git",
 		SourceCommit: strings.Repeat("c", 40), DockerfilePath: "Dockerfile", ContextPath: ".",
-		Platform: "linux/amd64", DestinationRepository: "registry.example/orbitops/demo", InputDigest: "sha256:" + strings.Repeat("d", 64),
+		Platform: "linux/amd64", DestinationRepository: "registry.example/orbit-devops/demo", InputDigest: "sha256:" + strings.Repeat("d", 64),
 	}
 }

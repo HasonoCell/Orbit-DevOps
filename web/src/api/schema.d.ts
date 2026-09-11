@@ -807,7 +807,7 @@ export interface components {
             imageReference: string;
             /**
              * Format: uuid
-             * @description 可选的 OrbitOps ImageArtifact；服务端会核验其项目、应用和镜像引用。
+             * @description 可选的 Orbit-DevOps ImageArtifact；服务端会核验其项目、应用和镜像引用。
              */
             imageArtifactId?: string;
         };

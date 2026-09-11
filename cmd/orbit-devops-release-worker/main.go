@@ -10,15 +10,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/kube"
-	"github.com/HasonoCell/OrbitOps/internal/observability"
-	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
-	processruntime "github.com/HasonoCell/OrbitOps/internal/platform/process"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
+	processruntime "github.com/HasonoCell/Orbit-DevOps/internal/platform/process"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releasedispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 )
@@ -26,7 +26,7 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger); err != nil {
-		logger.Error("OrbitOps Release Worker 退出", "error", err)
+		logger.Error("Orbit-DevOps Release Worker 退出", "error", err)
 		os.Exit(1)
 	}
 }
@@ -103,7 +103,7 @@ func run(logger *slog.Logger) error {
 		ReleaseOperationTimeout: config.ReleaseOperationTimeout,
 		Logger:                  logger,
 		Recorder:                metrics,
-		Tracer:                  tracing.Provider.Tracer("orbitops-release-worker"),
+		Tracer:                  tracing.Provider.Tracer("orbit-devops-release-worker"),
 		Propagator:              tracing.Propagator,
 	}, releaseOperations, releases, adapter)
 	if err != nil {

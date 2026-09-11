@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/buildkube"
-	"github.com/HasonoCell/OrbitOps/internal/buildworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildkube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -14,20 +14,20 @@ import (
 
 func TestBuildJobUsesPinnedRootlessImagesAndIsolatedRuntime(t *testing.T) {
 	adapter, err := buildkube.New(nil, buildkube.Config{
-		Namespace: "orbitops-build", FieldManager: "orbitops-build-worker",
+		Namespace: "orbit-devops-build", FieldManager: "orbit-devops-build-worker",
 		GitImage:           "alpine/git:v2.49.1@sha256:" + strings.Repeat("a", 64),
 		BuildkitImage:      "moby/buildkit:v0.33.0-rootless@sha256:" + strings.Repeat("b", 64),
-		RegistrySecretName: "orbitops-registry", ActiveDeadline: 20 * time.Minute,
+		RegistrySecretName: "orbit-devops-registry", ActiveDeadline: 20 * time.Minute,
 		TTL: time.Hour, CPU: "1", Memory: "1Gi",
 	})
 	if err == nil || adapter != nil {
 		t.Fatal("nil Kubernetes client must be rejected")
 	}
 	adapter, err = buildkube.New(fake.NewClientset(), buildkube.Config{
-		Namespace: "orbitops-build", FieldManager: "orbitops-build-worker",
+		Namespace: "orbit-devops-build", FieldManager: "orbit-devops-build-worker",
 		GitImage:           "alpine/git:v2.49.1@sha256:" + strings.Repeat("a", 64),
 		BuildkitImage:      "moby/buildkit:v0.33.0-rootless@sha256:" + strings.Repeat("b", 64),
-		RegistrySecretName: "orbitops-registry", ActiveDeadline: 20 * time.Minute,
+		RegistrySecretName: "orbit-devops-registry", ActiveDeadline: 20 * time.Minute,
 		TTL: time.Hour, CPU: "1", Memory: "1Gi",
 	})
 	if err != nil {
@@ -37,10 +37,10 @@ func TestBuildJobUsesPinnedRootlessImagesAndIsolatedRuntime(t *testing.T) {
 		BuildOperationID: uuid.New(), BuildAttemptID: uuid.New(), BuildID: uuid.New(),
 		ProjectID: uuid.New(), ApplicationID: uuid.New(), RepositoryURL: "https://github.com/example/demo.git",
 		SourceCommit: strings.Repeat("c", 40), DockerfilePath: "deploy/Dockerfile", ContextPath: "deploy",
-		Platform: "linux/amd64", DestinationRepository: "registry.example/orbitops/demo", InputDigest: "sha256:" + strings.Repeat("d", 64),
+		Platform: "linux/amd64", DestinationRepository: "registry.example/orbit-devops/demo", InputDigest: "sha256:" + strings.Repeat("d", 64),
 	}
 	job := adapter.RenderJob(execution)
-	if job.Namespace != "orbitops-build" || job.Spec.ActiveDeadlineSeconds == nil || *job.Spec.ActiveDeadlineSeconds != 1200 {
+	if job.Namespace != "orbit-devops-build" || job.Spec.ActiveDeadlineSeconds == nil || *job.Spec.ActiveDeadlineSeconds != 1200 {
 		t.Fatalf("job boundary = %s/%v", job.Namespace, job.Spec.ActiveDeadlineSeconds)
 	}
 	pod := job.Spec.Template.Spec
@@ -86,7 +86,7 @@ func hasEnvironment(environment []corev1.EnvVar, name, value string) bool {
 
 func TestBuildJobConfiguresExplicitInsecureRegistryWithoutExposingCredentials(t *testing.T) {
 	adapter, err := buildkube.New(fake.NewClientset(), buildkube.Config{
-		Namespace: "orbitops-build", FieldManager: "orbitops-build-worker",
+		Namespace: "orbit-devops-build", FieldManager: "orbit-devops-build-worker",
 		GitImage:         "alpine/git:v2.49.1@sha256:" + strings.Repeat("a", 64),
 		BuildkitImage:    "moby/buildkit:v0.33.0-rootless@sha256:" + strings.Repeat("b", 64),
 		RegistryInsecure: true, DockerHubMirror: "registry.local:5000",
@@ -100,7 +100,7 @@ func TestBuildJobConfiguresExplicitInsecureRegistryWithoutExposingCredentials(t 
 		BuildOperationID: uuid.New(), BuildAttemptID: uuid.New(), BuildID: uuid.New(),
 		ProjectID: uuid.New(), ApplicationID: uuid.New(), RepositoryURL: "https://github.com/example/demo.git",
 		SourceCommit: strings.Repeat("c", 40), DockerfilePath: "Dockerfile", ContextPath: ".",
-		Platform: "linux/amd64", DestinationRepository: "registry.local:5000/orbitops/demo",
+		Platform: "linux/amd64", DestinationRepository: "registry.local:5000/orbit-devops/demo",
 		InputDigest: "sha256:" + strings.Repeat("d", 64),
 	})
 	container := job.Spec.Template.Spec.Containers[0]

@@ -92,7 +92,7 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		http.MethodPost,
 		"/api/v1/deployment-targets/"+target.ID+"/releases",
 		"developer-create-release",
-		`{"imageReference":"registry.example/orbitops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
+		`{"imageReference":"registry.example/orbit-devops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
 	)
 	defer createRelease.Body.Close()
 	if createRelease.StatusCode != http.StatusCreated {
@@ -156,7 +156,7 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		http.MethodPost,
 		"/api/v1/deployment-targets/"+target.ID+"/releases",
 		"viewer-create-release",
-		`{"imageReference":"registry.example/orbitops/demo@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
+		`{"imageReference":"registry.example/orbit-devops/demo@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
 	)
 	defer viewerRelease.Body.Close()
 	assertError(t, viewerRelease, http.StatusForbidden, "project_permission_denied")

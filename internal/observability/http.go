@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/idempotency"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const projectIDContextKey = "orbitops.project_id"
+const projectIDContextKey = "orbit-devops.project_id"
 
 func SetRequestProjectID(ctx context.Context, projectID uuid.UUID) {
 	if ginContext, ok := ctx.(*gin.Context); ok {

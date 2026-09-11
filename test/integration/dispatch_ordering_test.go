@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/releasedispatch"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
-	"github.com/HasonoCell/OrbitOps/test/testsupport"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releasedispatch"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/test/testsupport"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
@@ -41,7 +41,7 @@ func TestQueueFIFOAndAttentionReleaseAcrossWorkers(t *testing.T) {
 	defer client.Close()
 	payload, _ := json.Marshal(tail)
 	for n := 0; n < 12; n++ {
-		if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue("orbitops-release")); err != nil {
+		if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue("orbit-devops-release")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -60,7 +60,7 @@ func TestQueueFIFOAndAttentionReleaseAcrossWorkers(t *testing.T) {
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: address})
 	defer inspector.Close()
 	awaitQueueCondition(t, 5*time.Second, func() bool {
-		info, err := inspector.GetQueueInfo("orbitops-release")
+		info, err := inspector.GetQueueInfo("orbit-devops-release")
 		return err == nil && info.Pending == 0 && info.Active == 0 && info.Scheduled == 0 && info.Retry == 0
 	})
 	addMember(t, environment.server, target.ProjectID, "queue-developer", "developer", "queue-member")
@@ -129,7 +129,7 @@ func TestQueueCancellationAndLostCancellation(t *testing.T) {
 				client := asynq.NewClient(asynq.RedisClientOpt{Addr: address})
 				defer client.Close()
 				payload, _ := json.Marshal(items[0].DispatchRef)
-				if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue("orbitops-release")); err != nil {
+				if _, err := client.Enqueue(asynq.NewTask(releasedispatch.TaskType, payload), asynq.Queue("orbit-devops-release")); err != nil {
 					t.Fatal(err)
 				}
 				startQueueTest(t, service)

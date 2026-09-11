@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
 	"github.com/google/uuid"
 )
 
@@ -35,7 +35,7 @@ func TestBuildOperationRetriesAndAtomicallyCreatesArtifact(t *testing.T) {
 		buildoperation.WithAutomaticRetryPolicy(1, func(int) time.Duration { return 100 * time.Millisecond }))
 	first := claimBuildDispatch(t, operations, "build-worker-first")
 	if err := operations.RecordExecutorIdentity(context.Background(), first, buildoperation.ExecutorIdentity{
-		Name: "orbitops-build-" + first.BuildAttemptID.String(), UID: "job-uid-first",
+		Name: "orbit-devops-build-" + first.BuildAttemptID.String(), UID: "job-uid-first",
 	}); err != nil {
 		t.Fatal(err)
 	}

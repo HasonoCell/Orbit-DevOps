@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/build"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
 	"github.com/google/uuid"
 )
 
@@ -58,7 +58,7 @@ type ExecutionObservation struct {
 	LogTruncated bool
 }
 
-// Executor 返回 OrbitOps 构建语义，避免 Runner 依赖 Pod 或 client-go 类型；Cancel 只接收 Start 或 Observe 已确认的身份。
+// Executor 返回 Orbit-DevOps 构建语义，避免 Runner 依赖 Pod 或 client-go 类型；Cancel 只接收 Start 或 Observe 已确认的身份。
 type Executor interface {
 	Start(context.Context, BuildExecution) (ExecutionIdentity, error)
 	Observe(context.Context, BuildExecution, ExecutionIdentity) (ExecutionObservation, error)
@@ -178,7 +178,7 @@ func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Leas
 	if lease.Recovery && lease.RecoveredFromAttemptID != nil {
 		previousExecution := execution
 		previousExecution.BuildAttemptID = *lease.RecoveredFromAttemptID
-		name := "orbitops-build-" + lease.RecoveredFromAttemptID.String()
+		name := "orbit-devops-build-" + lease.RecoveredFromAttemptID.String()
 		if lease.PreviousExecutorName != nil {
 			name = *lease.PreviousExecutorName
 		}

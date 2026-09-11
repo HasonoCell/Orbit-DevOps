@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -43,55 +43,55 @@ func NewMetrics(pending ReleaseOperationPendingCounter) *Metrics {
 	metrics := &Metrics{
 		registry: prometheus.NewRegistry(),
 		httpRequests: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "orbitops",
+			Namespace: "orbit_devops",
 			Name:      "http_requests_total",
-			Help:      "OrbitOps HTTP 请求总数。",
+			Help:      "Orbit-DevOps HTTP 请求总数。",
 		}, []string{"method", "route", "status"}),
 		httpDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "orbitops",
+			Namespace: "orbit_devops",
 			Name:      "http_request_duration_seconds",
-			Help:      "OrbitOps HTTP 请求耗时。",
+			Help:      "Orbit-DevOps HTTP 请求耗时。",
 			Buckets:   prometheus.DefBuckets,
 		}, []string{"method", "route"}),
 		releaseOperationDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "orbitops",
+			Namespace: "orbit_devops",
 			Name:      "release_operation_duration_seconds",
-			Help:      "OrbitOps ReleaseOperation 尝试耗时。",
+			Help:      "Orbit-DevOps ReleaseOperation 尝试耗时。",
 			Buckets:   prometheus.ExponentialBuckets(0.1, 2, 12),
 		}, []string{"status", "category"}),
 		releaseOperationPhase: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "orbitops",
+			Namespace: "orbit_devops",
 			Name:      "release_operation_phase_duration_seconds",
 			Help:      "ReleaseOperation 领取、执行、恢复与端到端阶段耗时。",
 			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 18),
 		}, []string{"phase"}),
 		releaseOperationTerminal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "orbitops",
+			Namespace: "orbit_devops",
 			Name:      "release_operation_terminal_total",
-			Help:      "OrbitOps ReleaseOperation 终态分类总数。",
+			Help:      "Orbit-DevOps ReleaseOperation 终态分类总数。",
 		}, []string{"status", "category"}),
 		kubernetesReadFail: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "orbitops",
+			Namespace: "orbit_devops",
 			Name:      "kubernetes_read_failures_total",
-			Help:      "OrbitOps Kubernetes 回读失败总数。",
+			Help:      "Orbit-DevOps Kubernetes 回读失败总数。",
 		}),
 		releaseOperationStatus: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "release_operation_status", Help: "按状态统计的 ReleaseOperation 当前数量。",
+			Namespace: "orbit_devops", Name: "release_operation_status", Help: "按状态统计的 ReleaseOperation 当前数量。",
 		}, []string{"status"}),
 		pendingReleaseOperationState: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "pending_release_operation_state", Help: "按可领取性统计的 pending ReleaseOperation 数量。",
+			Namespace: "orbit_devops", Name: "pending_release_operation_state", Help: "按可领取性统计的 pending ReleaseOperation 数量。",
 		}, []string{"availability"}),
 		releaseOperationEvents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "release_operation_events", Help: "PostgreSQL 审计中持久化的 ReleaseOperation 事件累计数量。",
+			Namespace: "orbit_devops", Name: "release_operation_events", Help: "PostgreSQL 审计中持久化的 ReleaseOperation 事件累计数量。",
 		}, []string{"event"}),
 		releaseAttemptErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "orbitops", Name: "release_attempt_errors", Help: "按稳定错误代码统计的 Attempt 累计数量。",
+			Namespace: "orbit_devops", Name: "release_attempt_errors", Help: "按稳定错误代码统计的 Attempt 累计数量。",
 		}, []string{"error_code"}),
 		authorizationDeny: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "orbitops", Name: "authorization_denials_total", Help: "按受控原因统计的项目授权拒绝数量。",
+			Namespace: "orbit_devops", Name: "authorization_denials_total", Help: "按受控原因统计的项目授权拒绝数量。",
 		}, []string{"reason"}),
 		idempotencyConflict: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "orbitops", Name: "idempotency_conflicts_total", Help: "按命令类型统计的幂等指纹冲突数量。",
+			Namespace: "orbit_devops", Name: "idempotency_conflicts_total", Help: "按命令类型统计的幂等指纹冲突数量。",
 		}, []string{"command"}),
 	}
 	metrics.registry.MustRegister(
@@ -128,7 +128,7 @@ func (m *Metrics) RegisterReleaseOperationPending(pending ReleaseOperationPendin
 	}
 	m.pendingOnce.Do(func() {
 		m.registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Namespace: "orbitops",
+			Namespace: "orbit_devops",
 			Name:      "pending_release_operations",
 			Help:      "当前等待 Worker 领取的 ReleaseOperation 数量。",
 		}, func() float64 {

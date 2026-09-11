@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/app"
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/app"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -86,16 +86,16 @@ func TestHealthAndMetricsExposeControlPlaneState(t *testing.T) {
 	}
 	text := string(payload)
 	for _, want := range []string{
-		"orbitops_http_requests_total",
-		"orbitops_http_request_duration_seconds",
-		"orbitops_pending_release_operations 2",
-		`orbitops_release_operation_status{status="pending"} 2`,
-		`orbitops_pending_release_operation_state{availability="available"} 1`,
-		`orbitops_pending_release_operation_state{availability="delayed"} 1`,
-		`orbitops_release_operation_events{event="operation.claimed"} 1`,
-		`orbitops_release_attempt_errors{error_code="temporary_outage"} 1`,
-		`orbitops_authorization_denials_total{reason="not_member"} 1`,
-		`orbitops_idempotency_conflicts_total{command="project.create"} 1`,
+		"orbit_devops_http_requests_total",
+		"orbit_devops_http_request_duration_seconds",
+		"orbit_devops_pending_release_operations 2",
+		`orbit_devops_release_operation_status{status="pending"} 2`,
+		`orbit_devops_pending_release_operation_state{availability="available"} 1`,
+		`orbit_devops_pending_release_operation_state{availability="delayed"} 1`,
+		`orbit_devops_release_operation_events{event="operation.claimed"} 1`,
+		`orbit_devops_release_attempt_errors{error_code="temporary_outage"} 1`,
+		`orbit_devops_authorization_denials_total{reason="not_member"} 1`,
+		`orbit_devops_idempotency_conflicts_total{command="project.create"} 1`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("metrics do not contain %q", want)
@@ -115,7 +115,7 @@ func TestReleaseRequestLogIncludesControlPlaneCorrelations(t *testing.T) {
 		t,
 		"/api/v1/deployment-targets/"+target.ID+"/releases",
 		"correlated-release",
-		`{"imageReference":"registry.example/orbitops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
+		`{"imageReference":"registry.example/orbit-devops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
 	)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusCreated {
@@ -153,7 +153,7 @@ func TestReleaseTraceContinuesIntoWorkerAttempt(t *testing.T) {
 		}
 	})
 	propagator := propagation.TraceContext{}
-	tracer := provider.Tracer("orbitops-test")
+	tracer := provider.Tracer("orbit-devops-test")
 	environment := newTestEnvironmentWithDependencies(t, app.Dependencies{
 		Tracer:     tracer,
 		Propagator: propagator,
@@ -166,7 +166,7 @@ func TestReleaseTraceContinuesIntoWorkerAttempt(t *testing.T) {
 		context.Background(),
 		http.MethodPost,
 		environment.server.URL+"/api/v1/deployment-targets/"+target.ID+"/releases",
-		bytes.NewBufferString(`{"imageReference":"registry.example/orbitops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`),
+		bytes.NewBufferString(`{"imageReference":"registry.example/orbit-devops/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`),
 	)
 	if err != nil {
 		t.Fatalf("build release request: %v", err)

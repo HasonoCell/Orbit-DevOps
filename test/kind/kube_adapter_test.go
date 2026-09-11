@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
-	"github.com/HasonoCell/OrbitOps/internal/kube"
-	"github.com/HasonoCell/OrbitOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -20,10 +20,10 @@ import (
 )
 
 var (
-	kindClusterName = environmentOrDefault("ORBITOPS_KIND_CLUSTER_NAME", "orbitops-s1")
+	kindClusterName = environmentOrDefault("ORBIT_DEVOPS_KIND_CLUSTER_NAME", "orbit-devops-s1")
 	kindContext     = "kind-" + kindClusterName
 	kindCluster     = kindContext
-	kindNamespace   = environmentOrDefault("ORBITOPS_NAMESPACE", "orbitops-s3")
+	kindNamespace   = environmentOrDefault("ORBIT_DEVOPS_NAMESPACE", "orbit-devops-s3")
 )
 
 const readyImage = "registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a"
@@ -89,7 +89,7 @@ func TestKindDeliveryScenarios(t *testing.T) {
 
 	t.Run("image pull failure", func(t *testing.T) {
 		request := kindPublishRequest(
-			"registry.invalid/orbitops/missing@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			"registry.invalid/orbit-devops/missing@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		)
 		cleanupResources(t, client, request.DeploymentTargetID)
 
@@ -179,7 +179,7 @@ func TestKindDeliveryScenarios(t *testing.T) {
 func TestKindRuntimeLogsReadsPreviousContainerInstance(t *testing.T) {
 	adapter, client := newKindAdapter(t)
 	request := kindPublishRequest(readyImage)
-	podName := "orbitops-log-" + request.ReleaseID.String()[:8]
+	podName := "orbit-devops-log-" + request.ReleaseID.String()[:8]
 	labels := map[string]string{
 		kube.ManagedByLabel:     kube.ManagedByValue,
 		kube.ProjectIDLabel:     request.ProjectID.String(),
@@ -243,8 +243,8 @@ func TestKindRuntimeLogsReadsPreviousContainerInstance(t *testing.T) {
 
 func newKindAdapter(t *testing.T) (*kube.Adapter, kubernetes.Interface) {
 	t.Helper()
-	if os.Getenv("ORBITOPS_KIND_E2E") != "1" {
-		t.Skip("set ORBITOPS_KIND_E2E=1 to run task-local Kind acceptance")
+	if os.Getenv("ORBIT_DEVOPS_KIND_E2E") != "1" {
+		t.Skip("set ORBIT_DEVOPS_KIND_E2E=1 to run task-local Kind acceptance")
 	}
 	kubeconfigPath := clientcmd.RecommendedHomeFile
 	adapter, err := kube.NewVerifiedLocalAdapter(
@@ -254,7 +254,7 @@ func newKindAdapter(t *testing.T) (*kube.Adapter, kubernetes.Interface) {
 		kube.Config{
 			ClusterRef:   kindCluster,
 			Namespace:    kindNamespace,
-			FieldManager: "orbitops-delivery",
+			FieldManager: "orbit-devops-delivery",
 			PollInterval: 250 * time.Millisecond,
 		},
 	)

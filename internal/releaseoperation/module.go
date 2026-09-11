@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/HasonoCell/OrbitOps/internal/audit"
+	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )

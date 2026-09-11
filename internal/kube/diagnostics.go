@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
 	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"

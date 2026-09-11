@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/app"
-	"github.com/HasonoCell/OrbitOps/internal/diagnostics"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/app"
+	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
 )
 
@@ -105,7 +105,7 @@ func TestReleaseReportDistinguishesAnOlderRunningRelease(t *testing.T) {
 					Status:     diagnostics.ObservationComplete,
 				},
 				Deployment: &diagnostics.DeploymentEvidence{
-					Name:             "orbitops-" + target.ID,
+					Name:             "orbit-devops-" + target.ID,
 					OwnershipMatches: true,
 					ReleaseID:        &olderReleaseID,
 				},

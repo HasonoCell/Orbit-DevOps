@@ -1,4 +1,4 @@
-// orbitops-pipeline-worker 消费内部状态事件并编排 Build 与 Release，不持有 Kubernetes 权限。
+// orbit-devops-pipeline-worker 消费内部状态事件并编排 Build 与 Release，不持有 Kubernetes 权限。
 package main
 
 import (
@@ -11,16 +11,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/build"
-	"github.com/HasonoCell/OrbitOps/internal/buildoperation"
-	"github.com/HasonoCell/OrbitOps/internal/delivery"
-	"github.com/HasonoCell/OrbitOps/internal/githubsource"
-	"github.com/HasonoCell/OrbitOps/internal/internalevent"
-	"github.com/HasonoCell/OrbitOps/internal/pipeline"
-	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
-	processruntime "github.com/HasonoCell/OrbitOps/internal/platform/process"
-	"github.com/HasonoCell/OrbitOps/internal/projectauth"
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/githubsource"
+	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
+	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
+	processruntime "github.com/HasonoCell/Orbit-DevOps/internal/platform/process"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,7 +31,7 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger); err != nil {
-		logger.Error("OrbitOps Pipeline Worker 退出", "error", err)
+		logger.Error("Orbit-DevOps Pipeline Worker 退出", "error", err)
 		os.Exit(1)
 	}
 }

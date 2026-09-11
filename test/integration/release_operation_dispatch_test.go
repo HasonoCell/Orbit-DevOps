@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 )
 
 // 发布受理必须留下可投递的持久化意图，而不是依赖请求结束后的入队动作。

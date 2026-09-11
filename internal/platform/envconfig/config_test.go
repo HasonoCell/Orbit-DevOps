@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HasonoCell/OrbitOps/internal/platform/envconfig"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
 )
 
 func TestReleaseQueueDefaultsReserveBusinessCompletionTime(t *testing.T) {
-	t.Setenv("ORBITOPS_RELEASE_OPERATION_TIMEOUT", "3m")
-	t.Setenv("ORBITOPS_REDIS_ADDRESS", "")
-	t.Setenv("ORBITOPS_RELEASE_QUEUE_TASK_TIMEOUT", "")
+	t.Setenv("ORBIT_DEVOPS_RELEASE_OPERATION_TIMEOUT", "3m")
+	t.Setenv("ORBIT_DEVOPS_REDIS_ADDRESS", "")
+	t.Setenv("ORBIT_DEVOPS_RELEASE_QUEUE_TASK_TIMEOUT", "")
 	config, err := envconfig.LoadReleaseWorker()
 	if err != nil {
 		t.Fatal(err)
@@ -19,7 +19,7 @@ func TestReleaseQueueDefaultsReserveBusinessCompletionTime(t *testing.T) {
 	if config.ReleaseQueue.RedisAddress != "127.0.0.1:6379" || config.ReleaseQueue.TaskTimeout < 3*time.Minute+30*time.Second || config.ReleaseQueue.Concurrency != 4 {
 		t.Fatalf("queue defaults do not reserve completion time")
 	}
-	t.Setenv("ORBITOPS_RELEASE_QUEUE_TASK_TIMEOUT", "3m")
+	t.Setenv("ORBIT_DEVOPS_RELEASE_QUEUE_TASK_TIMEOUT", "3m")
 	if _, err := envconfig.LoadReleaseWorker(); err == nil {
 		t.Fatal("queue timeout shorter than business envelope accepted")
 	}
@@ -27,13 +27,13 @@ func TestReleaseQueueDefaultsReserveBusinessCompletionTime(t *testing.T) {
 
 func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 	for _, name := range []string{
-		"ORBITOPS_API_ADDRESS",
-		"ORBITOPS_RELEASE_WORKER_ADDRESS",
-		"ORBITOPS_KUBERNETES_CONTEXT",
-		"ORBITOPS_CLUSTER_REF",
-		"ORBITOPS_NAMESPACE",
-		"ORBITOPS_RELEASE_MAX_AUTOMATIC_RETRIES",
-		"ORBITOPS_RELEASE_RETRY_BASE_DELAY",
+		"ORBIT_DEVOPS_API_ADDRESS",
+		"ORBIT_DEVOPS_RELEASE_WORKER_ADDRESS",
+		"ORBIT_DEVOPS_KUBERNETES_CONTEXT",
+		"ORBIT_DEVOPS_CLUSTER_REF",
+		"ORBIT_DEVOPS_NAMESPACE",
+		"ORBIT_DEVOPS_RELEASE_MAX_AUTOMATIC_RETRIES",
+		"ORBIT_DEVOPS_RELEASE_RETRY_BASE_DELAY",
 	} {
 		t.Setenv(name, "")
 	}
@@ -52,9 +52,9 @@ func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 	if workerConfig.Address != "127.0.0.1:9091" {
 		t.Errorf("ReleaseWorker address = %q, want loopback default", workerConfig.Address)
 	}
-	if apiConfig.Kubernetes.Context != "kind-orbitops-s1" ||
-		apiConfig.Kubernetes.ClusterRef != "kind-orbitops-s1" ||
-		apiConfig.Kubernetes.Namespace != "orbitops-s1" {
+	if apiConfig.Kubernetes.Context != "kind-orbit-devops-s1" ||
+		apiConfig.Kubernetes.ClusterRef != "kind-orbit-devops-s1" ||
+		apiConfig.Kubernetes.Namespace != "orbit-devops-s1" {
 		t.Errorf("API Kubernetes defaults = %#v, want S1 local boundary", apiConfig.Kubernetes)
 	}
 	if workerConfig.MaximumAutomaticRetries != 2 || workerConfig.RetryBaseDelay.String() != "1s" {
@@ -63,24 +63,24 @@ func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 }
 
 func TestReleaseWorkerRejectsNegativeAutomaticRetryCount(t *testing.T) {
-	t.Setenv("ORBITOPS_RELEASE_MAX_AUTOMATIC_RETRIES", "-1")
+	t.Setenv("ORBIT_DEVOPS_RELEASE_MAX_AUTOMATIC_RETRIES", "-1")
 	if _, err := envconfig.LoadReleaseWorker(); err == nil {
 		t.Fatal("negative automatic retry count was accepted")
 	}
 }
 
 func TestReleaseWorkerRejectsInvalidDuration(t *testing.T) {
-	t.Setenv("ORBITOPS_RELEASE_WORKER_LEASE_DURATION", "forever")
+	t.Setenv("ORBIT_DEVOPS_RELEASE_WORKER_LEASE_DURATION", "forever")
 	if _, err := envconfig.LoadReleaseWorker(); err == nil {
 		t.Fatal("invalid ReleaseWorker lease duration was accepted")
 	}
 }
 
 func TestReleaseWorkerDoesNotReadLegacyEnvironmentNames(t *testing.T) {
-	t.Setenv("ORBITOPS_WORKER_ADDRESS", "127.0.0.1:19091")
-	t.Setenv("ORBITOPS_WORKER_ID", "legacy-worker")
-	t.Setenv("ORBITOPS_RELEASE_WORKER_ADDRESS", "")
-	t.Setenv("ORBITOPS_RELEASE_WORKER_ID", "")
+	t.Setenv("ORBIT_DEVOPS_WORKER_ADDRESS", "127.0.0.1:19091")
+	t.Setenv("ORBIT_DEVOPS_WORKER_ID", "legacy-worker")
+	t.Setenv("ORBIT_DEVOPS_RELEASE_WORKER_ADDRESS", "")
+	t.Setenv("ORBIT_DEVOPS_RELEASE_WORKER_ID", "")
 
 	config, err := envconfig.LoadReleaseWorker()
 	if err != nil {
@@ -95,16 +95,16 @@ func TestReleaseWorkerDoesNotReadLegacyEnvironmentNames(t *testing.T) {
 }
 
 func TestBuildWorkerDefaultsUseIndependentQueueAndPinnedImages(t *testing.T) {
-	for _, name := range []string{"ORBITOPS_BUILD_QUEUE_NAME", "ORBITOPS_BUILD_GIT_IMAGE", "ORBITOPS_BUILDKIT_IMAGE",
-		"ORBITOPS_BUILD_OPERATION_TIMEOUT", "ORBITOPS_BUILD_QUEUE_TASK_TIMEOUT", "ORBITOPS_BUILD_NAMESPACE",
-		"ORBITOPS_BUILD_DOCKERHUB_MIRROR", "ORBITOPS_BUILD_DOCKERHUB_MIRROR_INSECURE"} {
+	for _, name := range []string{"ORBIT_DEVOPS_BUILD_QUEUE_NAME", "ORBIT_DEVOPS_BUILD_GIT_IMAGE", "ORBIT_DEVOPS_BUILDKIT_IMAGE",
+		"ORBIT_DEVOPS_BUILD_OPERATION_TIMEOUT", "ORBIT_DEVOPS_BUILD_QUEUE_TASK_TIMEOUT", "ORBIT_DEVOPS_BUILD_NAMESPACE",
+		"ORBIT_DEVOPS_BUILD_DOCKERHUB_MIRROR", "ORBIT_DEVOPS_BUILD_DOCKERHUB_MIRROR_INSECURE"} {
 		t.Setenv(name, "")
 	}
 	config, err := envconfig.LoadBuildWorker()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.BuildQueue.Name != "orbitops-build" || config.Namespace != "orbitops-s4-build" ||
+	if config.BuildQueue.Name != "orbit-devops-build" || config.Namespace != "orbit-devops-s4-build" ||
 		config.BuildQueue.TaskTimeout < config.BuildOperationTimeout+time.Minute {
 		t.Fatalf("build worker defaults = %#v", config)
 	}
@@ -114,15 +114,15 @@ func TestBuildWorkerDefaultsUseIndependentQueueAndPinnedImages(t *testing.T) {
 }
 
 func TestBuildWorkerRejectsMutableRuntimeImage(t *testing.T) {
-	t.Setenv("ORBITOPS_BUILDKIT_IMAGE", "moby/buildkit:v0.33.0-rootless")
+	t.Setenv("ORBIT_DEVOPS_BUILDKIT_IMAGE", "moby/buildkit:v0.33.0-rootless")
 	if _, err := envconfig.LoadBuildWorker(); err == nil {
 		t.Fatal("mutable BuildKit image was accepted")
 	}
 }
 
 func TestAPILoadsWebhookSecretRotationWithoutDefaultSecret(t *testing.T) {
-	t.Setenv("ORBITOPS_GITHUB_WEBHOOK_ENDPOINTS", `{"public":{"currentSecret":"current","previousSecret":"previous"}}`)
-	t.Setenv("ORBITOPS_GITHUB_WEBHOOK_MAX_BODY_BYTES", "2048")
+	t.Setenv("ORBIT_DEVOPS_GITHUB_WEBHOOK_ENDPOINTS", `{"public":{"currentSecret":"current","previousSecret":"previous"}}`)
+	t.Setenv("ORBIT_DEVOPS_GITHUB_WEBHOOK_MAX_BODY_BYTES", "2048")
 	config, err := envconfig.LoadAPI()
 	if err != nil {
 		t.Fatal(err)
@@ -132,21 +132,21 @@ func TestAPILoadsWebhookSecretRotationWithoutDefaultSecret(t *testing.T) {
 		t.Fatalf("webhook config = %#v", config.GitHubWebhook)
 	}
 
-	t.Setenv("ORBITOPS_GITHUB_WEBHOOK_ENDPOINTS", `{"public":{"previousSecret":"previous"}}`)
+	t.Setenv("ORBIT_DEVOPS_GITHUB_WEBHOOK_ENDPOINTS", `{"public":{"previousSecret":"previous"}}`)
 	if _, err := envconfig.LoadAPI(); err == nil {
 		t.Fatal("endpoint without current secret was accepted")
 	}
 }
 
 func TestPipelineWorkerDefaultsKeepIndependentQueue(t *testing.T) {
-	for _, name := range []string{"ORBITOPS_PIPELINE_WORKER_ADDRESS", "ORBITOPS_PIPELINE_QUEUE_NAME", "ORBITOPS_PIPELINE_SOURCE_RECOVERY_WINDOW"} {
+	for _, name := range []string{"ORBIT_DEVOPS_PIPELINE_WORKER_ADDRESS", "ORBIT_DEVOPS_PIPELINE_QUEUE_NAME", "ORBIT_DEVOPS_PIPELINE_SOURCE_RECOVERY_WINDOW"} {
 		t.Setenv(name, "")
 	}
 	config, err := envconfig.LoadPipelineWorker()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Address != "127.0.0.1:9093" || config.Queue.Name != "orbitops-pipeline" || config.SourceRecoveryWindow != 15*time.Minute {
+	if config.Address != "127.0.0.1:9093" || config.Queue.Name != "orbit-devops-pipeline" || config.SourceRecoveryWindow != 15*time.Minute {
 		t.Fatalf("pipeline worker defaults = %#v", config)
 	}
 }

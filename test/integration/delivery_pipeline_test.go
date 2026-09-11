@@ -6,22 +6,22 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/HasonoCell/OrbitOps/internal/app"
-	"github.com/HasonoCell/OrbitOps/internal/pipeline"
+	"github.com/HasonoCell/Orbit-DevOps/internal/app"
+	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
 )
 
 type fixedSourceInspector struct{}
 
 func (fixedSourceInspector) Resolve(_ context.Context, request pipeline.SourceRequest) (pipeline.SourceIdentity, error) {
 	return pipeline.SourceIdentity{
-		RepositoryID: 101, OwnerID: 202, RepositoryName: "example/orbitops-demo",
-		RepositoryURL: "https://github.com/example/orbitops-demo.git",
+		RepositoryID: 101, OwnerID: 202, RepositoryName: "example/orbit-devops-demo",
+		RepositoryURL: "https://github.com/example/orbit-devops-demo.git",
 		GitRef:        "refs/heads/" + request.Branch, HeadCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	}, nil
 }
 
 func (fixedSourceInspector) Head(_ context.Context, request pipeline.HeadRequest) (pipeline.SourceIdentity, error) {
-	return pipeline.SourceIdentity{RepositoryID: request.RepositoryID, OwnerID: request.OwnerID, RepositoryName: "example/orbitops-demo", RepositoryURL: request.RepositoryURL, GitRef: request.GitRef, HeadCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, nil
+	return pipeline.SourceIdentity{RepositoryID: request.RepositoryID, OwnerID: request.OwnerID, RepositoryName: "example/orbit-devops-demo", RepositoryURL: request.RepositoryURL, GitRef: request.GitRef, HeadCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, nil
 }
 
 type deliveryPipelineDocument struct {
@@ -53,7 +53,7 @@ func TestDeliveryPipelineRevisionAndActivationGeneration(t *testing.T) {
 	}
 	target := decodeDeploymentTarget(t, targetResponse)
 
-	createBody := `{"name":"main","endpointKey":"public","repositoryUrl":"https://github.com/example/orbitops-demo.git","branch":"main","mode":"auto_release","deploymentTargetId":"` + target.ID + `"}`
+	createBody := `{"name":"main","endpointKey":"public","repositoryUrl":"https://github.com/example/orbit-devops-demo.git","branch":"main","mode":"auto_release","deploymentTargetId":"` + target.ID + `"}`
 	createResponse := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/delivery-pipelines", "pipeline-create-v1", createBody)
 	defer createResponse.Body.Close()
 	if createResponse.StatusCode != http.StatusCreated {
@@ -64,7 +64,7 @@ func TestDeliveryPipelineRevisionAndActivationGeneration(t *testing.T) {
 		t.Fatalf("created pipeline = %#v", created)
 	}
 
-	updateBody := `{"expectedRevision":1,"endpointKey":"public","repositoryUrl":"https://github.com/example/orbitops-demo.git","branch":"release","mode":"build_only"}`
+	updateBody := `{"expectedRevision":1,"endpointKey":"public","repositoryUrl":"https://github.com/example/orbit-devops-demo.git","branch":"release","mode":"build_only"}`
 	updateResponse := environment.putJSON(t, "/api/v1/delivery-pipelines/"+created.Pipeline.ID, "pipeline-update-v1", updateBody)
 	defer updateResponse.Body.Close()
 	if updateResponse.StatusCode != http.StatusOK {
