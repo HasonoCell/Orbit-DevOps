@@ -18,14 +18,18 @@ import (
 )
 
 var (
-	ErrUnavailable            = errors.New("identity dependency unavailable")
-	ErrInvalidCommand         = errors.New("invalid identity command")
-	ErrInvalidPassword        = errors.New("password does not meet policy")
-	ErrAlreadyInitialized     = errors.New("identity already initialized")
-	ErrTransactionMode        = errors.New("identity requires read committed transaction")
-	ErrUnauthenticated        = errors.New("authentication required")
-	ErrPasswordChangeRequired = errors.New("password change required")
-	ErrRateLimited            = errors.New("authentication rate limited")
+	ErrUnavailable                  = errors.New("identity dependency unavailable")
+	ErrInvalidCommand               = errors.New("invalid identity command")
+	ErrInvalidPassword              = errors.New("password does not meet policy")
+	ErrAlreadyInitialized           = errors.New("identity already initialized")
+	ErrTransactionMode              = errors.New("identity requires read committed transaction")
+	ErrUnauthenticated              = errors.New("authentication required")
+	ErrPasswordChangeRequired       = errors.New("password change required")
+	ErrRateLimited                  = errors.New("authentication rate limited")
+	ErrForbidden                    = errors.New("identity permission denied")
+	ErrRecentAuthenticationRequired = errors.New("recent authentication required")
+	ErrLoginNameConflict            = errors.New("login name already in use")
+	ErrUserNotFound                 = errors.New("user not found")
 )
 
 const (

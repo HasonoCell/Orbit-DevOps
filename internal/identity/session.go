@@ -52,6 +52,8 @@ type CurrentUser struct {
 type LoginResult struct {
 	CurrentUser CurrentUser  `json:"currentUser"`
 	Token       SessionToken `json:"-"`
+	// ExpiresAt 只供 Cookie 写入者同步服务端期限，不是客户端授权依据。
+	ExpiresAt time.Time `json:"-"`
 }
 
 // LocalLoginCommand 的密码既不进入 JSON，也不得参与幂等 Fingerprint。
@@ -144,14 +146,16 @@ func (m *Module) LoginLocal(ctx context.Context, command LocalLoginCommand) (Log
 	if err := tx.Commit(); err != nil {
 		return LoginResult{}, dependencyError(err)
 	}
-	return LoginResult{CurrentUser: current.public(), Token: token}, nil
+	return LoginResult{CurrentUser: current.public(), Token: token, ExpiresAt: now.Add(sessionAbsoluteLifetime)}, nil
 }
 
 type currentRecord struct {
 	User
-	MustChangePassword bool      `db:"must_change_password"`
-	SessionID          uuid.UUID `db:"session_id"`
-	AuthVersion        int64     `db:"auth_version"`
+	MustChangePassword     bool         `db:"must_change_password"`
+	SessionID              uuid.UUID    `db:"session_id"`
+	AuthVersion            int64        `db:"auth_version"`
+	PrimaryAuthenticatedAt sql.NullTime `db:"primary_authenticated_at"`
+	ExpiresAt              time.Time    `db:"expires_at"`
 }
 
 func (r currentRecord) public() CurrentUser {
@@ -159,8 +163,10 @@ func (r currentRecord) public() CurrentUser {
 }
 
 const currentSessionQuery = `SELECT u.id, u.display_name, u.status, u.platform_role, u.created_at,
-	lc.must_change_password, s.id AS session_id, u.auth_version
-	FROM auth_sessions s JOIN users u ON u.id = s.user_id
+	lc.must_change_password, s.id AS session_id, u.auth_version, s.primary_authenticated_at, s.expires_at` + currentSessionFacts
+
+// 凭据证明读取与最终 Caller 校验共享会话有效性条件，但证明读取不持锁等 Hash。
+const currentSessionFacts = ` FROM auth_sessions s JOIN users u ON u.id = s.user_id
 	JOIN local_credentials lc ON lc.user_id = u.id
 	WHERE u.status = 'active' AND s.revoked_at IS NULL AND s.auth_version = u.auth_version
 	AND s.expires_at > clock_timestamp() AND s.last_seen_at > clock_timestamp() - interval '30 minutes'`
