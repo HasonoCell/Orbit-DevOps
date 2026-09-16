@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -107,7 +108,8 @@ type Module struct {
 
 // Authorizer 把 BuildOperation 用户命令的权限检查保持在状态事务内。
 type Authorizer interface {
-	RequireInTransaction(context.Context, *sqlx.Tx, uuid.UUID, string, projectauth.Permission) error
+	AuthorizeUserInTransaction(context.Context, *sqlx.Tx, identity.Caller) error
+	RequireAuthorizedInTransaction(context.Context, *sqlx.Tx, uuid.UUID, identity.Caller, projectauth.Permission) error
 }
 
 // Option 配置所有 Build Worker 必须保持一致的重试策略或测试时钟。
@@ -218,6 +220,74 @@ func (m *Module) GetAttemptLog(ctx context.Context, id uuid.UUID) (AttemptLog, e
 			return AttemptLog{}, ErrNotFound
 		}
 		return AttemptLog{}, fmt.Errorf("get build attempt log: %w", err)
+	}
+	return log, nil
+}
+
+// GetAuthorized 在同一身份控制事务中追溯 Build 的 Project 后返回完整 Operation。
+func (m *Module) GetAuthorized(ctx context.Context, id uuid.UUID, caller identity.Caller) (Record, error) {
+	if m.authorizer == nil {
+		return Record{}, ErrAuthorizerUnavailable
+	}
+	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return Record{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, caller); err != nil {
+		return Record{}, err
+	}
+	projectID, err := locateUserCommandProject(ctx, tx, id)
+	if err != nil {
+		return Record{}, err
+	}
+	if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, projectID, caller, projectauth.PermissionRead); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return Record{}, ErrNotFound
+		}
+		return Record{}, err
+	}
+	record, err := getInTransaction(ctx, tx, id)
+	if err != nil {
+		return Record{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Record{}, err
+	}
+	return record, nil
+}
+
+// GetAttemptLogAuthorized 将日志能力与一般元数据读取分开，viewer 不可通过 Attempt ID 绕过。
+func (m *Module) GetAttemptLogAuthorized(ctx context.Context, id uuid.UUID, caller identity.Caller) (AttemptLog, error) {
+	if m.authorizer == nil {
+		return AttemptLog{}, ErrAuthorizerUnavailable
+	}
+	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return AttemptLog{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, caller); err != nil {
+		return AttemptLog{}, err
+	}
+	var log AttemptLog
+	var projectID uuid.UUID
+	if err := tx.QueryRowxContext(ctx, `SELECT o.build_id,a.id,a.log_excerpt,a.log_truncated,b.project_id
+		FROM build_attempts a JOIN build_operations o ON o.id=a.build_operation_id JOIN builds b ON b.id=o.build_id
+		WHERE a.id=$1`, id).Scan(&log.BuildID, &log.AttemptID, &log.Excerpt, &log.Truncated, &projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return AttemptLog{}, ErrNotFound
+		}
+		return AttemptLog{}, err
+	}
+	if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, projectID, caller, projectauth.PermissionReadLogs); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return AttemptLog{}, ErrNotFound
+		}
+		return AttemptLog{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return AttemptLog{}, err
 	}
 	return log, nil
 }

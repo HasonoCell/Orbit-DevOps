@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,32 +24,32 @@ var (
 
 type CancelCommand struct {
 	BuildOperationID uuid.UUID
-	ActorID          string
+	Caller           identity.Caller
 	IdempotencyKey   string
 }
 
 type RetryCommand struct {
 	BuildOperationID uuid.UUID
-	ActorID          string
+	Caller           identity.Caller
 	IdempotencyKey   string
 }
 
 type ReconcileCommand struct {
 	BuildOperationID uuid.UUID
-	ActorID          string
+	Caller           identity.Caller
 	IdempotencyKey   string
 }
 
 type ForceFailCommand struct {
 	BuildOperationID uuid.UUID
-	ActorID          string
+	Caller           identity.Caller
 	IdempotencyKey   string
 	Reason           string
 }
 
 // Cancel 对 pending 构建立即终结；running 构建只记录请求，等待 Worker 确认 Job 已停止。
 func (m *Module) Cancel(ctx context.Context, command CancelCommand) (Record, error) {
-	return m.executeUserCommand(ctx, command.BuildOperationID, command.ActorID, command.IdempotencyKey,
+	return m.executeUserCommand(ctx, command.BuildOperationID, command.Caller, command.IdempotencyKey,
 		"build_operation.cancel", projectauth.PermissionDevelop, command.BuildOperationID,
 		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
 			switch current.Status {
@@ -68,7 +69,7 @@ func (m *Module) Cancel(ctx context.Context, command CancelCommand) (Record, err
 
 // Retry 复用失败 Build 的冻结输入和历史，并建立新的调度序列。
 func (m *Module) Retry(ctx context.Context, command RetryCommand) (Record, error) {
-	return m.executeUserCommand(ctx, command.BuildOperationID, command.ActorID, command.IdempotencyKey,
+	return m.executeUserCommand(ctx, command.BuildOperationID, command.Caller, command.IdempotencyKey,
 		"build_operation.retry", projectauth.PermissionDevelop, command.BuildOperationID,
 		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
 			if current.Status != StatusFailed {
@@ -84,7 +85,7 @@ func (m *Module) Retry(ctx context.Context, command RetryCommand) (Record, error
 
 // Reconcile 将 attention_required 放回只读恢复路径；Runner 必须先观察旧 Job。
 func (m *Module) Reconcile(ctx context.Context, command ReconcileCommand) (Record, error) {
-	return m.executeUserCommand(ctx, command.BuildOperationID, command.ActorID, command.IdempotencyKey,
+	return m.executeUserCommand(ctx, command.BuildOperationID, command.Caller, command.IdempotencyKey,
 		"build_operation.reconcile", projectauth.PermissionDevelop, command.BuildOperationID,
 		func(ctx context.Context, tx *sqlx.Tx, current Record, now time.Time) error {
 			if current.Status != StatusAttentionRequired {
@@ -103,7 +104,7 @@ func (m *Module) ForceFail(ctx context.Context, command ForceFailCommand) (Recor
 	if reason == "" || utf8.RuneCountInString(reason) > 512 {
 		return Record{}, errors.New("invalid build manual failure reason")
 	}
-	return m.executeUserCommand(ctx, command.BuildOperationID, command.ActorID, command.IdempotencyKey,
+	return m.executeUserCommand(ctx, command.BuildOperationID, command.Caller, command.IdempotencyKey,
 		"build_operation.force_fail", projectauth.PermissionResolveUnknown,
 		struct {
 			ID     uuid.UUID `json:"buildOperationId"`
@@ -123,8 +124,9 @@ func (m *Module) ForceFail(ctx context.Context, command ForceFailCommand) (Recor
 type userTransition func(context.Context, *sqlx.Tx, Record, time.Time) error
 
 // executeUserCommand 集中锁、授权、幂等、状态转换、Dispatch 和审计事务。
-func (m *Module) executeUserCommand(ctx context.Context, id uuid.UUID, actorID, key, action string,
+func (m *Module) executeUserCommand(ctx context.Context, id uuid.UUID, caller identity.Caller, key, action string,
 	permission projectauth.Permission, fingerprint any, transition userTransition) (Record, error) {
+	actorID := caller.ActorID()
 	if m.authorizer == nil {
 		return Record{}, ErrAuthorizerUnavailable
 	}
@@ -134,11 +136,23 @@ func (m *Module) executeUserCommand(ctx context.Context, id uuid.UUID, actorID, 
 		return Record{}, fmt.Errorf("begin %s: %w", action, err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	current, projectID, err := lockUserCommand(ctx, tx, id)
+	projectID, err := locateUserCommandProject(ctx, tx, id)
 	if err != nil {
 		return Record{}, err
 	}
-	if err := m.authorizer.RequireInTransaction(ctx, tx, projectID, actorID, permission); err != nil {
+	// 控制共享锁必须先于操作锁，避免与账号/成员排他撤销发生反向等待。
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, caller); err != nil {
+		return Record{}, err
+	}
+	current, err := getInTransactionForUpdate(ctx, tx, id)
+	if err != nil {
+		return Record{}, err
+	}
+	lockedProjectID, err := locateUserCommandProject(ctx, tx, id)
+	if err != nil || lockedProjectID != projectID {
+		return Record{}, ErrNotFound
+	}
+	if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, projectID, caller, permission); err != nil {
 		return Record{}, err
 	}
 	hash, err := idempotency.Fingerprint(fingerprint)
@@ -185,17 +199,16 @@ func (m *Module) executeUserCommand(ctx context.Context, id uuid.UUID, actorID, 
 	return updated, nil
 }
 
-func lockUserCommand(ctx context.Context, tx *sqlx.Tx, id uuid.UUID) (Record, uuid.UUID, error) {
-	current, err := getInTransactionForUpdate(ctx, tx, id)
-	if err != nil {
-		return Record{}, uuid.Nil, err
-	}
+func locateUserCommandProject(ctx context.Context, tx *sqlx.Tx, id uuid.UUID) (uuid.UUID, error) {
 	var projectID uuid.UUID
 	if err := tx.GetContext(ctx, &projectID, `SELECT b.project_id FROM builds b
 	 JOIN build_operations o ON o.build_id = b.id WHERE o.id = $1`, id); err != nil {
-		return Record{}, uuid.Nil, fmt.Errorf("resolve build operation project: %w", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return uuid.Nil, ErrNotFound
+		}
+		return uuid.Nil, fmt.Errorf("resolve build operation project: %w", err)
 	}
-	return current, projectID, nil
+	return projectID, nil
 }
 
 func getInTransactionForUpdate(ctx context.Context, tx *sqlx.Tx, id uuid.UUID) (Record, error) {

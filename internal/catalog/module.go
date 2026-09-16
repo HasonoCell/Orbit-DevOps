@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
@@ -40,7 +41,7 @@ type CreateApplicationCommand struct {
 	ProjectID      uuid.UUID
 	Name           string
 	Slug           string
-	ActorID        string
+	Caller         identity.Caller
 	IdempotencyKey string
 }
 
@@ -63,7 +64,7 @@ type CreateDeploymentTargetCommand struct {
 	Stage          string
 	Replicas       int
 	ContainerPort  int
-	ActorID        string
+	Caller         identity.Caller
 	IdempotencyKey string
 }
 
@@ -72,7 +73,7 @@ type UpdateDeploymentTargetCommand struct {
 	Stage          string
 	Replicas       int
 	ContainerPort  int
-	ActorID        string
+	Caller         identity.Caller
 	IdempotencyKey string
 }
 
@@ -111,7 +112,7 @@ func (m *Module) CreateApplication(
 		ProjectID: command.ProjectID,
 		Name:      command.Name,
 		Slug:      command.Slug,
-		CreatedBy: command.ActorID,
+		CreatedBy: command.Caller.ActorID(),
 		CreatedAt: createdAt,
 	}
 
@@ -122,6 +123,9 @@ func (m *Module) CreateApplication(
 	defer func() {
 		_ = tx.Rollback()
 	}()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, command.Caller); err != nil {
+		return Application{}, err
+	}
 
 	var projectExists bool
 	if err := tx.GetContext(
@@ -139,7 +143,7 @@ func (m *Module) CreateApplication(
 		ctx,
 		tx,
 		command.ProjectID,
-		command.ActorID,
+		command.Caller,
 		projectauth.PermissionDevelop,
 	); err != nil {
 		return Application{}, err
@@ -149,7 +153,7 @@ func (m *Module) CreateApplication(
 		ctx,
 		tx,
 		idempotency.Scope{
-			ActorID:     command.ActorID,
+			ActorID:     command.Caller.ActorID(),
 			CommandType: "application.create",
 			Key:         command.IdempotencyKey,
 		},
@@ -183,7 +187,7 @@ func (m *Module) CreateApplication(
 		ctx,
 		tx,
 		audit.Entry{
-			ActorID:    command.ActorID,
+			ActorID:    command.Caller.ActorID(),
 			Action:     "application.create",
 			TargetType: "application",
 			TargetID:   created.ID,
@@ -205,21 +209,21 @@ func (m *Module) CreateApplication(
 	return created, nil
 }
 
-// GetApplication 读取应用及其所属项目，权限由调用入口统一判断。
-func (m *Module) GetApplication(ctx context.Context, id uuid.UUID) (Application, error) {
+// GetApplication 在一个身份控制快照内读取应用及核验项目可见性。
+func (m *Module) GetApplication(ctx context.Context, id uuid.UUID, caller identity.Caller) (Application, error) {
 	var application Application
-	if err := m.db.GetContext(
-		ctx,
-		&application,
-		`SELECT id, project_id, name, slug, created_by, created_at
-		 FROM applications
-		 WHERE id = $1`,
-		id,
-	); err != nil {
+	err := m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		if err := tx.GetContext(ctx, &application, `SELECT id, project_id, name, slug, created_by, created_at
+			FROM applications WHERE id = $1`, id); err != nil {
+			return err
+		}
+		return m.authorizer.RequireAuthorizedInTransaction(ctx, tx, application.ProjectID, caller, projectauth.PermissionRead)
+	})
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Application{}, ErrApplicationNotFound
 		}
-		return Application{}, fmt.Errorf("get application: %w", err)
+		return Application{}, err
 	}
 
 	return application, nil
@@ -254,7 +258,7 @@ func (m *Module) CreateDeploymentTarget(
 		Namespace:     m.config.Namespace,
 		Replicas:      command.Replicas,
 		ContainerPort: command.ContainerPort,
-		CreatedBy:     command.ActorID,
+		CreatedBy:     command.Caller.ActorID(),
 		CreatedAt:     createdAt,
 		UpdatedAt:     createdAt,
 	}
@@ -266,6 +270,9 @@ func (m *Module) CreateDeploymentTarget(
 	defer func() {
 		_ = tx.Rollback()
 	}()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, command.Caller); err != nil {
+		return DeploymentTarget{}, err
+	}
 
 	var projectID uuid.UUID
 	if err := tx.GetContext(
@@ -284,7 +291,7 @@ func (m *Module) CreateDeploymentTarget(
 		ctx,
 		tx,
 		projectID,
-		command.ActorID,
+		command.Caller,
 		projectauth.PermissionDevelop,
 	); err != nil {
 		return DeploymentTarget{}, err
@@ -294,7 +301,7 @@ func (m *Module) CreateDeploymentTarget(
 		ctx,
 		tx,
 		idempotency.Scope{
-			ActorID:     command.ActorID,
+			ActorID:     command.Caller.ActorID(),
 			CommandType: "deployment_target.create",
 			Key:         command.IdempotencyKey,
 		},
@@ -333,7 +340,7 @@ func (m *Module) CreateDeploymentTarget(
 		ctx,
 		tx,
 		audit.Entry{
-			ActorID:    command.ActorID,
+			ActorID:    command.Caller.ActorID(),
 			Action:     "deployment_target.create",
 			TargetType: "deployment_target",
 			TargetID:   created.ID,
@@ -359,12 +366,12 @@ func (m *Module) CreateDeploymentTarget(
 func (m *Module) GetDeploymentTarget(
 	ctx context.Context,
 	id uuid.UUID,
+	caller identity.Caller,
 ) (DeploymentTarget, error) {
 	var target DeploymentTarget
-	if err := m.db.GetContext(
-		ctx,
-		&target,
-		`SELECT deployment_targets.id, applications.project_id,
+	err := m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		if err := tx.GetContext(ctx, &target,
+			`SELECT deployment_targets.id, applications.project_id,
 		        deployment_targets.application_id, deployment_targets.stage,
 		        deployment_targets.cluster_ref, deployment_targets.namespace,
 		        deployment_targets.replicas, deployment_targets.container_port,
@@ -373,12 +380,16 @@ func (m *Module) GetDeploymentTarget(
 		 FROM deployment_targets
 		 JOIN applications ON applications.id = deployment_targets.application_id
 		 WHERE deployment_targets.id = $1`,
-		id,
-	); err != nil {
+			id); err != nil {
+			return err
+		}
+		return m.authorizer.RequireAuthorizedInTransaction(ctx, tx, target.ProjectID, caller, projectauth.PermissionRead)
+	})
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return DeploymentTarget{}, ErrDeploymentTargetNotFound
 		}
-		return DeploymentTarget{}, fmt.Errorf("get deployment target: %w", err)
+		return DeploymentTarget{}, err
 	}
 
 	return target, nil
@@ -411,6 +422,9 @@ func (m *Module) UpdateDeploymentTarget(
 	defer func() {
 		_ = tx.Rollback()
 	}()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, command.Caller); err != nil {
+		return DeploymentTarget{}, err
+	}
 
 	var current DeploymentTarget
 	if err := tx.GetContext(
@@ -437,14 +451,14 @@ func (m *Module) UpdateDeploymentTarget(
 		ctx,
 		tx,
 		current.ProjectID,
-		command.ActorID,
+		command.Caller,
 		projectauth.PermissionDevelop,
 	); err != nil {
 		return DeploymentTarget{}, err
 	}
 
 	scope := idempotency.Scope{
-		ActorID:     command.ActorID,
+		ActorID:     command.Caller.ActorID(),
 		CommandType: "deployment_target.update",
 		Key:         command.IdempotencyKey,
 	}
@@ -496,7 +510,7 @@ func (m *Module) UpdateDeploymentTarget(
 		ctx,
 		tx,
 		audit.Entry{
-			ActorID:    command.ActorID,
+			ActorID:    command.Caller.ActorID(),
 			Action:     "deployment_target.update",
 			TargetType: "deployment_target",
 			TargetID:   updated.ID,

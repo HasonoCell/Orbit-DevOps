@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"net/url"
 	"path"
 	"strings"
@@ -65,7 +66,7 @@ type CreateCommand struct {
 	SourceCommit   string
 	DockerfilePath string
 	ContextPath    string
-	ActorID        string
+	Caller         identity.Caller
 	IdempotencyKey string
 	TraceParent    string
 	TraceState     string
@@ -99,6 +100,9 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Acceptance,
 		return Acceptance{}, fmt.Errorf("begin create build: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, command.Caller); err != nil {
+		return Acceptance{}, err
+	}
 
 	var owner struct {
 		ProjectID uuid.UUID `db:"project_id"`
@@ -109,7 +113,7 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Acceptance,
 		}
 		return Acceptance{}, fmt.Errorf("load build application: %w", err)
 	}
-	if err := m.authorizer.RequireInTransaction(ctx, tx, owner.ProjectID, command.ActorID, projectauth.PermissionDevelop); err != nil {
+	if err := m.authorizer.RequireInTransaction(ctx, tx, owner.ProjectID, command.Caller, projectauth.PermissionDevelop); err != nil {
 		return Acceptance{}, err
 	}
 
@@ -123,7 +127,7 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Acceptance,
 	}
 	createdAt := time.Now().UTC()
 	buildID := uuid.New()
-	scope := idempotency.Scope{ActorID: command.ActorID, CommandType: "build.create", Key: command.IdempotencyKey}
+	scope := idempotency.Scope{ActorID: command.Caller.ActorID(), CommandType: "build.create", Key: command.IdempotencyKey}
 	resourceID, isNew, err := idempotency.Claim(ctx, tx, scope, requestHash, buildID, createdAt)
 	if err != nil {
 		return Acceptance{}, err
@@ -137,7 +141,7 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Acceptance,
 		RepositoryURL: input.RepositoryURL, SourceCommit: input.SourceCommit,
 		DockerfilePath: input.DockerfilePath, ContextPath: input.ContextPath,
 		Platform: input.Platform, DestinationRepository: input.DestinationRepository,
-		InputDigest: digestInput(requestHash), CreatedBy: command.ActorID, CreatedAt: createdAt,
+		InputDigest: digestInput(requestHash), CreatedBy: command.Caller.ActorID(), CreatedAt: createdAt,
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO builds
 	 (id, project_id, application_id, repository_url, source_commit, dockerfile_path,
@@ -149,7 +153,7 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Acceptance,
 		return Acceptance{}, fmt.Errorf("insert build: %w", err)
 	}
 	operation, err := m.buildOperations.CreatePending(ctx, tx, buildoperation.CreatePendingCommand{
-		ID: uuid.New(), BuildID: record.ID, ActorID: command.ActorID,
+		ID: uuid.New(), BuildID: record.ID, ActorID: command.Caller.ActorID(),
 		IdempotencyKey: command.IdempotencyKey, TraceParent: command.TraceParent,
 		TraceState: command.TraceState, CreatedAt: createdAt,
 	})
@@ -157,7 +161,7 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Acceptance,
 		return Acceptance{}, err
 	}
 	if err := audit.Append(ctx, tx, audit.Entry{
-		ActorID: command.ActorID, Action: "build.create", TargetType: "build", TargetID: record.ID,
+		ActorID: command.Caller.ActorID(), Action: "build.create", TargetType: "build", TargetID: record.ID,
 		Summary:   map[string]string{"applicationId": record.ApplicationID.String(), "buildOperationId": operation.ID.String(), "sourceCommit": record.SourceCommit},
 		CreatedAt: createdAt,
 	}); err != nil {
@@ -170,35 +174,50 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Acceptance,
 }
 
 // Get 返回一个 Build 及其当前 Operation；权限从冻结的 Project 归属判断。
-func (m *Module) Get(ctx context.Context, id uuid.UUID, actorID string) (Acceptance, error) {
-	record, err := m.GetForExecution(ctx, id)
-	if err != nil {
-		return Acceptance{}, err
-	}
-	if err := m.authorizer.Require(ctx, record.ProjectID, actorID, projectauth.PermissionRead); err != nil {
-		return Acceptance{}, err
-	}
+func (m *Module) Get(ctx context.Context, id uuid.UUID, caller identity.Caller) (Acceptance, error) {
+	var record Record
 	var operation buildoperation.Record
-	if err := m.db.GetContext(ctx, &operation, buildOperationSelect+` WHERE build_id = $1`, record.ID); err != nil {
-		return Acceptance{}, fmt.Errorf("get build operation: %w", err)
-	}
-	artifact, err := m.getArtifactForBuild(ctx, record.ID)
+	var artifact *ImageArtifact
+	err := m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		if err := tx.GetContext(ctx, &record, buildSelect+` WHERE id = $1`, id); err != nil {
+			return err
+		}
+		if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, record.ProjectID, caller, projectauth.PermissionRead); err != nil {
+			return err
+		}
+		if err := tx.GetContext(ctx, &operation, buildOperationSelect+` WHERE build_id = $1`, record.ID); err != nil {
+			return err
+		}
+		var item ImageArtifact
+		if err := tx.GetContext(ctx, &item, imageArtifactSelect+` WHERE build_id = $1`, record.ID); err == nil {
+			artifact = &item
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Acceptance{}, ErrNotFound
+		}
 		return Acceptance{}, err
 	}
 	return Acceptance{Build: record, BuildOperation: operation, ImageArtifact: artifact}, nil
 }
 
 // GetArtifact 通过制品自身冻结的 Project 归属授权，不接受调用方提供归属提示。
-func (m *Module) GetArtifact(ctx context.Context, id uuid.UUID, actorID string) (ImageArtifact, error) {
+func (m *Module) GetArtifact(ctx context.Context, id uuid.UUID, caller identity.Caller) (ImageArtifact, error) {
 	var artifact ImageArtifact
-	if err := m.db.GetContext(ctx, &artifact, imageArtifactSelect+` WHERE id = $1`, id); err != nil {
+	err := m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		if err := tx.GetContext(ctx, &artifact, imageArtifactSelect+` WHERE id = $1`, id); err != nil {
+			return err
+		}
+		return m.authorizer.RequireAuthorizedInTransaction(ctx, tx, artifact.ProjectID, caller, projectauth.PermissionRead)
+	})
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ImageArtifact{}, ErrArtifactNotFound
 		}
-		return ImageArtifact{}, fmt.Errorf("get image artifact: %w", err)
-	}
-	if err := m.authorizer.Require(ctx, artifact.ProjectID, actorID, projectauth.PermissionRead); err != nil {
 		return ImageArtifact{}, err
 	}
 	return artifact, nil
