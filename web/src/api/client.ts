@@ -3,6 +3,17 @@ import type { components, paths } from "./schema";
 
 const client = createClient<paths>({
   baseUrl: import.meta.env.VITE_ORBIT_DEVOPS_API_URL ?? "",
+  credentials: "include",
+});
+
+// Cookie 会话由浏览器持有；所有写请求都携带固定非简单 Header，服务端再校验精确 Origin。
+client.use({
+  onRequest({ request }) {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      request.headers.set("X-Orbit-CSRF", "1");
+    }
+    return request;
+  },
 });
 
 export type DeliveryInput = {

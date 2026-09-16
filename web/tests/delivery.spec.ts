@@ -84,6 +84,7 @@ async function mockControlPlane(
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
     if (request.method() === "POST") {
+	  expect(request.headers()["x-orbit-csrf"]).toBe("1");
       const idempotencyKey = request.headers()["idempotency-key"];
       if (idempotencyKey === undefined || idempotencyKey.length < 8) {
         await json(route, 400, { code: "invalid_idempotency_key", message: "missing key" });
