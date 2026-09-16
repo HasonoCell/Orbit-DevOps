@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
@@ -82,7 +83,7 @@ type CreateReleaseCommand struct {
 	DeploymentTargetID uuid.UUID
 	ImageReference     string
 	ImageArtifactID    *uuid.UUID
-	ActorID            string
+	Caller             identity.Caller
 	IdempotencyKey     string
 	TraceParent        string
 	TraceState         string
@@ -142,6 +143,9 @@ func (m *Module) CreateRelease(
 	defer func() {
 		_ = tx.Rollback()
 	}()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, command.Caller); err != nil {
+		return Acceptance{}, err
+	}
 
 	var target targetRecord
 	if err := tx.GetContext(
@@ -165,7 +169,7 @@ func (m *Module) CreateRelease(
 		ctx,
 		tx,
 		target.ProjectID,
-		command.ActorID,
+		command.Caller,
 		projectauth.PermissionDevelop,
 	); err != nil {
 		return Acceptance{}, err
@@ -207,14 +211,14 @@ func (m *Module) CreateRelease(
 			Replicas:      target.Replicas,
 			ContainerPort: target.ContainerPort,
 		},
-		CreatedBy: command.ActorID,
+		CreatedBy: command.Caller.ActorID(),
 		CreatedAt: createdAt,
 	}
 	resourceID, isNew, err := idempotency.Claim(
 		ctx,
 		tx,
 		idempotency.Scope{
-			ActorID:     command.ActorID,
+			ActorID:     command.Caller.ActorID(),
 			CommandType: "release.create",
 			Key:         command.IdempotencyKey,
 		},
@@ -254,7 +258,7 @@ func (m *Module) CreateRelease(
 			ID:                 uuid.New(),
 			ReleaseID:          release.ID,
 			DeploymentTargetID: release.DeploymentTargetID,
-			ActorID:            command.ActorID,
+			ActorID:            command.Caller.ActorID(),
 			IdempotencyKey:     command.IdempotencyKey,
 			TraceParent:        command.TraceParent,
 			TraceState:         command.TraceState,
@@ -269,7 +273,7 @@ func (m *Module) CreateRelease(
 		ctx,
 		tx,
 		audit.Entry{
-			ActorID:    command.ActorID,
+			ActorID:    command.Caller.ActorID(),
 			Action:     "release.create",
 			TargetType: "release",
 			TargetID:   release.ID,

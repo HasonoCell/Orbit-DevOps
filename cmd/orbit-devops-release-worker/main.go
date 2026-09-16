@@ -71,7 +71,7 @@ func run(logger *slog.Logger) error {
 			},
 		),
 	)
-	releases := delivery.New(db, releaseOperations, projectauth.New(db))
+	releases := delivery.New(db, releaseOperations, projectauth.New(db, nil))
 	metrics := observability.NewMetrics(releaseOperations.CountPending)
 	metrics.RegisterReleaseOperations(releaseOperations.ReadMetricsSnapshot)
 	tracing := observability.NewTracing(logger)

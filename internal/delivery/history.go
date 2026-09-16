@@ -6,13 +6,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 )
 
 const maximumReleaseHistoryPageSize = 100
@@ -40,6 +42,7 @@ type HistoryPage struct {
 
 type ListHistoryQuery struct {
 	DeploymentTargetID uuid.UUID
+	Caller             identity.Caller
 	Limit              int
 	Cursor             string
 }
@@ -58,8 +61,9 @@ type Detail struct {
 }
 
 type historyCursor struct {
-	CreatedAt time.Time `json:"createdAt"`
-	ID        uuid.UUID `json:"id"`
+	DeploymentTargetID uuid.UUID `json:"deploymentTargetId"`
+	CreatedAt          time.Time `json:"createdAt"`
+	ID                 uuid.UUID `json:"id"`
 }
 
 type historyRow struct {
@@ -74,7 +78,7 @@ func (m *Module) ListHistory(ctx context.Context, query ListHistoryQuery) (Histo
 	}
 	var cursor *historyCursor
 	if query.Cursor != "" {
-		decoded, err := decodeHistoryCursor(query.Cursor)
+		decoded, err := decodeHistoryCursor(query.Cursor, query.DeploymentTargetID)
 		if err != nil {
 			return HistoryPage{}, err
 		}
@@ -93,33 +97,42 @@ func (m *Module) ListHistory(ctx context.Context, query ListHistoryQuery) (Histo
 	       o.finished_at AS operation_finished_at
 	 FROM releases AS r
 	 JOIN release_operations AS o ON o.release_id = r.id`
-	if cursor == nil {
-		if err := m.db.SelectContext(
-			ctx,
-			&rows,
-			selection+`
+	err := m.authorizer.Read(ctx, query.Caller, func(tx *sqlx.Tx) error {
+		var projectID uuid.UUID
+		if err := tx.GetContext(ctx, &projectID, `SELECT a.project_id FROM deployment_targets d JOIN applications a ON a.id=d.application_id WHERE d.id=$1`, query.DeploymentTargetID); err != nil {
+			return err
+		}
+		if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, projectID, query.Caller, projectauth.PermissionRead); err != nil {
+			return err
+		}
+		if cursor == nil {
+			return tx.SelectContext(
+				ctx,
+				&rows,
+				selection+`
 			 WHERE r.deployment_target_id = $1
 			 ORDER BY r.created_at DESC, r.id DESC
 			 LIMIT $2`,
-			query.DeploymentTargetID,
-			query.Limit+1,
-		); err != nil {
-			return HistoryPage{}, fmt.Errorf("list release history: %w", err)
+				query.DeploymentTargetID,
+				query.Limit+1,
+			)
 		}
-	} else if err := m.db.SelectContext(
-		ctx,
-		&rows,
-		selection+`
+		return tx.SelectContext(ctx, &rows, selection+`
 		 WHERE r.deployment_target_id = $1
 		   AND (r.created_at, r.id) < ($2, $3)
 		 ORDER BY r.created_at DESC, r.id DESC
 		 LIMIT $4`,
-		query.DeploymentTargetID,
-		cursor.CreatedAt,
-		cursor.ID,
-		query.Limit+1,
-	); err != nil {
-		return HistoryPage{}, fmt.Errorf("list release history after cursor: %w", err)
+			query.DeploymentTargetID,
+			cursor.CreatedAt,
+			cursor.ID,
+			query.Limit+1,
+		)
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return HistoryPage{}, ErrDeploymentTargetNotFound
+		}
+		return HistoryPage{}, err
 	}
 
 	hasMore := len(rows) > query.Limit
@@ -133,8 +146,9 @@ func (m *Module) ListHistory(ctx context.Context, query ListHistoryQuery) (Histo
 	page := HistoryPage{Items: items}
 	if hasMore {
 		next := encodeHistoryCursor(historyCursor{
-			CreatedAt: rows[len(rows)-1].CreatedAt,
-			ID:        rows[len(rows)-1].Release.ID,
+			DeploymentTargetID: query.DeploymentTargetID,
+			CreatedAt:          rows[len(rows)-1].CreatedAt,
+			ID:                 rows[len(rows)-1].Release.ID,
 		})
 		page.NextCursor = &next
 	}
@@ -142,48 +156,45 @@ func (m *Module) ListHistory(ctx context.Context, query ListHistoryQuery) (Histo
 }
 
 // GetDetail 在同一个可重复读快照中组合 Release、ReleaseOperation、快照差异与审计时间线。
-func (m *Module) GetDetail(ctx context.Context, releaseID uuid.UUID) (Detail, error) {
-	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{
-		Isolation: sql.LevelRepeatableRead,
-		ReadOnly:  true,
-	})
-	if err != nil {
-		return Detail{}, fmt.Errorf("begin release detail query: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
+func (m *Module) GetDetail(ctx context.Context, releaseID uuid.UUID, caller identity.Caller) (Detail, error) {
 	var release Release
-	if err := tx.GetContext(ctx, &release, releaseSelect+` WHERE id = $1`, releaseID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Detail{}, ErrReleaseNotFound
-		}
-		return Detail{}, fmt.Errorf("get release detail: %w", err)
-	}
-	releaseOperationRecord, err := m.releaseOperations.GetByReleaseInTransaction(ctx, tx, releaseID)
-	if err != nil {
-		return Detail{}, err
-	}
+	var releaseOperationRecord releaseoperation.Record
 	var current targetRecord
-	if err := tx.GetContext(
-		ctx,
-		&current,
-		`SELECT applications.project_id, deployment_targets.application_id,
+	var timeline []audit.Record
+	err := m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		if err := tx.GetContext(ctx, &release, releaseSelect+` WHERE id = $1`, releaseID); err != nil {
+			return err
+		}
+		if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, release.TargetSnapshot.ProjectID, caller, projectauth.PermissionRead); err != nil {
+			return err
+		}
+		var err error
+		releaseOperationRecord, err = m.releaseOperations.GetByReleaseInTransaction(ctx, tx, releaseID)
+		if err != nil {
+			return err
+		}
+		if err := tx.GetContext(
+			ctx,
+			&current,
+			`SELECT applications.project_id, deployment_targets.application_id,
 		        deployment_targets.stage, deployment_targets.cluster_ref,
 		        deployment_targets.namespace, deployment_targets.replicas,
 		        deployment_targets.container_port
 		 FROM deployment_targets
 		 JOIN applications ON applications.id = deployment_targets.application_id
 		 WHERE deployment_targets.id = $1`,
-		release.DeploymentTargetID,
-	); err != nil {
-		return Detail{}, fmt.Errorf("load current target for release detail: %w", err)
-	}
-	timeline, err := audit.ListReleaseTimeline(ctx, tx, release.ID, releaseOperationRecord.ID)
+			release.DeploymentTargetID,
+		); err != nil {
+			return err
+		}
+		timeline, err = audit.ListReleaseTimeline(ctx, tx, release.ID, releaseOperationRecord.ID)
+		return err
+	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Detail{}, ErrReleaseNotFound
+		}
 		return Detail{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Detail{}, fmt.Errorf("commit release detail query: %w", err)
 	}
 	return Detail{
 		Release:             release,
@@ -198,16 +209,17 @@ func encodeHistoryCursor(cursor historyCursor) string {
 	return base64.RawURLEncoding.EncodeToString(payload)
 }
 
-func decodeHistoryCursor(value string) (historyCursor, error) {
+func decodeHistoryCursor(value string, deploymentTargetID uuid.UUID) (historyCursor, error) {
 	if len(value) > 512 {
 		return historyCursor{}, ErrInvalidCursor
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(value)
+	payload, err := base64.RawURLEncoding.Strict().DecodeString(value)
 	if err != nil {
 		return historyCursor{}, ErrInvalidCursor
 	}
 	var cursor historyCursor
-	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.CreatedAt.IsZero() || cursor.ID == uuid.Nil {
+	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.DeploymentTargetID != deploymentTargetID ||
+		cursor.CreatedAt.IsZero() || cursor.ID == uuid.Nil {
 		return historyCursor{}, ErrInvalidCursor
 	}
 	return cursor, nil

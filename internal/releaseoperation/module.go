@@ -11,6 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -308,6 +310,39 @@ func (m *Module) Get(ctx context.Context, id uuid.UUID) (Record, error) {
 	record.Attempts = attempts
 	if err := tx.Commit(); err != nil {
 		return Record{}, fmt.Errorf("commit operation query: %w", err)
+	}
+	return record, nil
+}
+
+// GetAuthorized 在短 READ COMMITTED 事务里先验证 Caller，再按真实 Target 归属授权。
+func (m *Module) GetAuthorized(ctx context.Context, id uuid.UUID, caller identity.Caller) (Record, error) {
+	if m.authorizer == nil {
+		return Record{}, ErrAuthorizerUnavailable
+	}
+	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return Record{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, caller); err != nil {
+		return Record{}, err
+	}
+	projectID, err := locateUserCommandProject(ctx, tx, id)
+	if err != nil {
+		return Record{}, err
+	}
+	if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, projectID, caller, projectauth.PermissionRead); err != nil {
+		if errors.Is(err, projectauth.ErrNotMember) {
+			return Record{}, ErrNotFound
+		}
+		return Record{}, err
+	}
+	record, err := getInTransaction(ctx, tx, id)
+	if err != nil {
+		return Record{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Record{}, err
 	}
 	return record, nil
 }

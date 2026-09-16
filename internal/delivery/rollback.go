@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
@@ -16,7 +17,7 @@ import (
 
 type RollbackCommand struct {
 	SourceReleaseID uuid.UUID
-	ActorID         string
+	Caller          identity.Caller
 	IdempotencyKey  string
 	TraceParent     string
 	TraceState      string
@@ -35,6 +36,9 @@ func (m *Module) Rollback(ctx context.Context, command RollbackCommand) (Accepta
 		return Acceptance{}, fmt.Errorf("begin release rollback: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, command.Caller); err != nil {
+		return Acceptance{}, err
+	}
 
 	var source Release
 	if err := tx.GetContext(
@@ -52,7 +56,7 @@ func (m *Module) Rollback(ctx context.Context, command RollbackCommand) (Accepta
 		ctx,
 		tx,
 		source.TargetSnapshot.ProjectID,
-		command.ActorID,
+		command.Caller,
 		projectauth.PermissionDevelop,
 	); err != nil {
 		return Acceptance{}, err
@@ -67,14 +71,14 @@ func (m *Module) Rollback(ctx context.Context, command RollbackCommand) (Accepta
 		ImageArtifactID:     source.ImageArtifactID,
 		TargetSnapshot:      source.TargetSnapshot,
 		RollbackOfReleaseID: &rollbackOf,
-		CreatedBy:           command.ActorID,
+		CreatedBy:           command.Caller.ActorID(),
 		CreatedAt:           createdAt,
 	}
 	resourceID, isNew, err := idempotency.Claim(
 		ctx,
 		tx,
 		idempotency.Scope{
-			ActorID: command.ActorID, CommandType: "release.rollback", Key: command.IdempotencyKey,
+			ActorID: command.Caller.ActorID(), CommandType: "release.rollback", Key: command.IdempotencyKey,
 		},
 		requestHash,
 		release.ID,
@@ -108,7 +112,7 @@ func (m *Module) Rollback(ctx context.Context, command RollbackCommand) (Accepta
 		ID:                 uuid.New(),
 		ReleaseID:          release.ID,
 		DeploymentTargetID: release.DeploymentTargetID,
-		ActorID:            command.ActorID,
+		ActorID:            command.Caller.ActorID(),
 		IdempotencyKey:     command.IdempotencyKey,
 		TraceParent:        command.TraceParent,
 		TraceState:         command.TraceState,
@@ -118,7 +122,7 @@ func (m *Module) Rollback(ctx context.Context, command RollbackCommand) (Accepta
 		return Acceptance{}, err
 	}
 	if err := audit.Append(ctx, tx, audit.Entry{
-		ActorID:    command.ActorID,
+		ActorID:    command.Caller.ActorID(),
 		Action:     "release.rollback",
 		TargetType: "release",
 		TargetID:   release.ID,

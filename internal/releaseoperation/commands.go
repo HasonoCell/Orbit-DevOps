@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -24,18 +25,19 @@ var (
 
 // Authorizer 把项目角色校验保持在 ReleaseOperation 状态事务内，避免授权与写入之间出现竞态。
 type Authorizer interface {
-	RequireInTransaction(
+	AuthorizeUserInTransaction(context.Context, *sqlx.Tx, identity.Caller) error
+	RequireAuthorizedInTransaction(
 		ctx context.Context,
 		tx *sqlx.Tx,
 		projectID uuid.UUID,
-		actorID string,
+		caller identity.Caller,
 		permission projectauth.Permission,
 	) error
 }
 
 type RetryCommand struct {
 	ReleaseOperationID uuid.UUID
-	ActorID            string
+	Caller             identity.Caller
 	IdempotencyKey     string
 	AttentionConfirmed bool
 	ExpectedUpdatedAt  time.Time
@@ -43,7 +45,7 @@ type RetryCommand struct {
 
 type CancelCommand struct {
 	ReleaseOperationID uuid.UUID
-	ActorID            string
+	Caller             identity.Caller
 	IdempotencyKey     string
 }
 
@@ -58,7 +60,7 @@ func (m *Module) Retry(ctx context.Context, command RetryCommand) (Record, error
 	return m.executeUserCommand(
 		ctx,
 		command.ReleaseOperationID,
-		command.ActorID,
+		command.Caller,
 		command.IdempotencyKey,
 		"operation.retry",
 		permission,
@@ -97,7 +99,7 @@ func (m *Module) Cancel(ctx context.Context, command CancelCommand) (Record, err
 	return m.executeUserCommand(
 		ctx,
 		command.ReleaseOperationID,
-		command.ActorID,
+		command.Caller,
 		command.IdempotencyKey,
 		"operation.cancel",
 		projectauth.PermissionDevelop,
@@ -152,7 +154,7 @@ type ReconcileEvidence struct {
 
 type ReconcileCommand struct {
 	ReleaseOperationID uuid.UUID
-	ActorID            string
+	Caller             identity.Caller
 	IdempotencyKey     string
 	Evidence           ReconcileEvidence
 }
@@ -170,7 +172,7 @@ func (m *Module) ReconcileAttention(
 	return m.executeUserCommand(
 		ctx,
 		command.ReleaseOperationID,
-		command.ActorID,
+		command.Caller,
 		command.IdempotencyKey,
 		"operation.reconcile",
 		projectauth.PermissionDevelop,
@@ -233,7 +235,7 @@ func (m *Module) ReconcileAttention(
 
 type ForceFailCommand struct {
 	ReleaseOperationID uuid.UUID
-	ActorID            string
+	Caller             identity.Caller
 	IdempotencyKey     string
 	Reason             string
 }
@@ -249,7 +251,7 @@ func (m *Module) ForceFailAttention(
 	return m.executeUserCommand(
 		ctx,
 		command.ReleaseOperationID,
-		command.ActorID,
+		command.Caller,
 		command.IdempotencyKey,
 		"operation.fail",
 		projectauth.PermissionResolveUnknown,
@@ -290,13 +292,14 @@ type userTransition func(
 func (m *Module) executeUserCommand(
 	ctx context.Context,
 	releaseOperationID uuid.UUID,
-	actorID string,
+	caller identity.Caller,
 	idempotencyKey string,
 	commandType string,
 	permission projectauth.Permission,
 	fingerprintValue any,
 	transition userTransition,
 ) (Record, error) {
+	actorID := caller.ActorID()
 	if m.authorizer == nil {
 		return Record{}, ErrAuthorizerUnavailable
 	}
@@ -306,16 +309,28 @@ func (m *Module) executeUserCommand(
 		return Record{}, fmt.Errorf("begin %s: %w", commandType, err)
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	current, projectID, err := lockForUserCommand(ctx, tx, releaseOperationID)
+	projectID, err := locateUserCommandProject(ctx, tx, releaseOperationID)
 	if err != nil {
 		return Record{}, err
 	}
-	if err := m.authorizer.RequireInTransaction(
+	// 先身份控制共享锁，再锁操作；等待后最终权限/幂等仍在本事务内重读。
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, caller); err != nil {
+		return Record{}, err
+	}
+
+	current, err := lockForUserCommand(ctx, tx, releaseOperationID)
+	if err != nil {
+		return Record{}, err
+	}
+	lockedProjectID, err := locateUserCommandProject(ctx, tx, releaseOperationID)
+	if err != nil || lockedProjectID != projectID {
+		return Record{}, ErrNotFound
+	}
+	if err := m.authorizer.RequireAuthorizedInTransaction(
 		ctx,
 		tx,
 		projectID,
-		actorID,
+		caller,
 		permission,
 	); err != nil {
 		return Record{}, err
@@ -387,7 +402,7 @@ func lockForUserCommand(
 	ctx context.Context,
 	tx *sqlx.Tx,
 	releaseOperationID uuid.UUID,
-) (Record, uuid.UUID, error) {
+) (Record, error) {
 	var current Record
 	if err := tx.GetContext(
 		ctx,
@@ -396,23 +411,31 @@ func lockForUserCommand(
 		releaseOperationID,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Record{}, uuid.Nil, ErrNotFound
+			return Record{}, ErrNotFound
 		}
-		return Record{}, uuid.Nil, fmt.Errorf("lock operation command: %w", err)
+		return Record{}, fmt.Errorf("lock operation command: %w", err)
 	}
+	return current, nil
+}
+
+func locateUserCommandProject(ctx context.Context, tx *sqlx.Tx, releaseOperationID uuid.UUID) (uuid.UUID, error) {
 	var projectID uuid.UUID
 	if err := tx.GetContext(
 		ctx,
 		&projectID,
 		`SELECT applications.project_id
-		 FROM deployment_targets
+		 FROM release_operations
+		 JOIN deployment_targets ON deployment_targets.id = release_operations.deployment_target_id
 		 JOIN applications ON applications.id = deployment_targets.application_id
-		 WHERE deployment_targets.id = $1`,
-		current.DeploymentTargetID,
+		 WHERE release_operations.id = $1`,
+		releaseOperationID,
 	); err != nil {
-		return Record{}, uuid.Nil, fmt.Errorf("resolve operation project: %w", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return uuid.Nil, ErrNotFound
+		}
+		return uuid.Nil, fmt.Errorf("resolve operation project: %w", err)
 	}
-	return current, projectID, nil
+	return projectID, nil
 }
 
 func getInTransaction(ctx context.Context, tx *sqlx.Tx, releaseOperationID uuid.UUID) (Record, error) {
