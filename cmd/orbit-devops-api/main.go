@@ -12,10 +12,12 @@ import (
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/app"
 	"github.com/HasonoCell/Orbit-DevOps/internal/githubsource"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
 	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/Orbit-DevOps/internal/platform/process"
+	"github.com/HasonoCell/Orbit-DevOps/internal/transport/httpapi"
 	"github.com/HasonoCell/Orbit-DevOps/internal/webhook"
 	"github.com/gin-gonic/gin"
 )
@@ -68,9 +70,21 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	var oidcConfig *identity.OIDCConfig
+	if len(config.OIDC.EncryptionKey) > 0 {
+		oidcConfig = &identity.OIDCConfig{Adapter: identity.NewCoreOSOIDCAdapter(config.OIDC.HTTPTimeout),
+			ClientSecrets: config.OIDC.ClientSecrets, RedirectURL: config.OIDC.RedirectURL,
+			EncryptionKey: config.OIDC.EncryptionKey}
+	}
 	runtime, err := app.NewWithDependencies(ctx, app.Config{
-		DatabaseURL:          config.DatabaseURL,
-		LocalActorID:         config.ActorID,
+		DatabaseURL: config.DatabaseURL,
+		BrowserSecurity: httpapi.BrowserSecurityConfig{
+			ExternalURL:         config.Browser.ExternalURL,
+			TrustedOrigins:      config.Browser.TrustedOrigins,
+			AllowLoopbackHTTP:   config.Browser.AllowLoopbackHTTP,
+			WebhookMaxBodyBytes: config.GitHubWebhook.MaxBodyBytes,
+		},
+		OIDC:                 oidcConfig,
 		LocalClusterRef:      config.Kubernetes.ClusterRef,
 		LocalNamespace:       config.Kubernetes.Namespace,
 		BuildAllowedGitHosts: config.SourceBuild.AllowedGitHosts,

@@ -15,6 +15,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/catalog"
 	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
 	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
@@ -35,7 +36,8 @@ import (
 
 type Config struct {
 	DatabaseURL          string
-	LocalActorID         string
+	BrowserSecurity      httpapi.BrowserSecurityConfig
+	OIDC                 *identity.OIDCConfig
 	LocalClusterRef      string
 	LocalNamespace       string
 	BuildAllowedGitHosts []string
@@ -73,9 +75,6 @@ func NewWithDependencies(
 	if config.DatabaseURL == "" {
 		return nil, errors.New("database URL is required")
 	}
-	if err := projectauth.ValidateActorID(config.LocalActorID); err != nil {
-		return nil, fmt.Errorf("local actor ID: %w", err)
-	}
 	if config.LocalClusterRef == "" {
 		return nil, errors.New("local cluster reference is required")
 	}
@@ -104,7 +103,22 @@ func NewWithDependencies(
 		return nil, fmt.Errorf("load OpenAPI specification: %w", err)
 	}
 
-	authorizer := projectauth.New(db)
+	ownershipGuard := projectauth.NewOwnershipGuard()
+	identityOptions := make([]identity.Option, 0, 1)
+	if config.OIDC != nil {
+		identityOptions = append(identityOptions, identity.WithOIDC(*config.OIDC))
+	}
+	identityModule, err := identity.New(db, ownershipGuard, identityOptions...)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("initialize identity module: %w", err)
+	}
+	authorizer := projectauth.New(db, identityModule)
+	browserSecurity, err := httpapi.NewBrowserSecurity(config.BrowserSecurity)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("browser security: %w", err)
+	}
 	projectModule := project.New(db, authorizer)
 	catalogModule := catalog.New(db, catalog.Config{
 		ClusterRef: config.LocalClusterRef,
@@ -155,11 +169,12 @@ func NewWithDependencies(
 		webhookModule,
 		releaseOperationModule,
 		authorizer,
+		identityModule,
+		browserSecurity,
 		dependencies.RecoveryPublisher,
-		config.LocalActorID,
 		propagator,
 	)
-	strictHandler := api.NewStrictHandler(server, nil)
+	strictHandler := api.NewStrictHandlerWithOptions(server, nil, httpapi.StrictHandlerOptions())
 
 	router := gin.New()
 	router.GET("/healthz", func(ginContext *gin.Context) {
@@ -174,8 +189,10 @@ func NewWithDependencies(
 	router.GET("/metrics", gin.WrapH(metrics.Handler()))
 	router.Use(gin.Recovery())
 	router.Use(observability.TraceMiddleware(tracer, propagator))
-	router.Use(observability.RequestMiddleware(metrics, logger, config.LocalActorID))
-	router.Use(ginmiddleware.OapiRequestValidator(openAPISpec))
+	router.Use(observability.RequestMiddleware(metrics, logger))
+	router.Use(browserSecurity.Middleware())
+	router.Use(ginmiddleware.OapiRequestValidatorWithOptions(openAPISpec,
+		httpapi.ValidatorOptions(identityModule, browserSecurity)))
 	api.RegisterHandlers(router, strictHandler)
 
 	return &Runtime{

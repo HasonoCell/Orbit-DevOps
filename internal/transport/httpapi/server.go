@@ -10,6 +10,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/catalog"
 	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
 	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
 	"github.com/HasonoCell/Orbit-DevOps/internal/project"
@@ -32,8 +33,9 @@ type Server struct {
 	webhooks          *webhook.Module
 	releaseOperations *releaseoperation.Module
 	authorizer        *projectauth.Module
+	identities        *identity.Module
+	browserSecurity   *BrowserSecurity
 	recovery          releaseworker.RecoveryPublisher
-	localActorID      string
 	propagator        propagation.TextMapPropagator
 }
 
@@ -43,24 +45,9 @@ func (s *Server) GetProject(
 ) (api.GetProjectResponseObject, error) {
 	observability.SetRequestProjectID(ctx, request.ProjectId)
 	requestContext := httpRequestContext(ctx)
-	if err := s.authorizer.Require(
-		requestContext,
-		request.ProjectId,
-		s.localActorID,
-		projectauth.PermissionRead,
-	); err != nil {
-		if errors.Is(err, projectauth.ErrNotMember) {
-			return api.GetProject404JSONResponse{
-				Code:    "project_not_found",
-				Message: "project not found",
-			}, nil
-		}
-		return nil, err
-	}
-
-	existingProject, err := s.projects.Get(requestContext, request.ProjectId)
+	existingProject, err := s.projects.Get(requestContext, request.ProjectId, requestCaller(ctx))
 	if err != nil {
-		if errors.Is(err, project.ErrNotFound) {
+		if errors.Is(err, project.ErrNotFound) || errors.Is(err, projectauth.ErrNotMember) {
 			return api.GetProject404JSONResponse{
 				Code:    "project_not_found",
 				Message: "project not found",
@@ -70,12 +57,8 @@ func (s *Server) GetProject(
 	}
 
 	return api.GetProject200JSONResponse{
-		Id:        existingProject.ID,
-		Name:      existingProject.Name,
-		Slug:      existingProject.Slug,
-		CreatedBy: existingProject.CreatedBy,
-		CreatedAt: existingProject.CreatedAt,
-	}, nil
+		Id: existingProject.ID, Name: existingProject.Name, Slug: existingProject.Slug,
+		CreatedBy: existingProject.CreatedBy, CreatedAt: existingProject.CreatedAt}, nil
 }
 
 func NewServer(
@@ -89,8 +72,9 @@ func NewServer(
 	webhookModule *webhook.Module,
 	releaseOperationModule *releaseoperation.Module,
 	authorizer *projectauth.Module,
+	identities *identity.Module,
+	browserSecurity *BrowserSecurity,
 	recovery releaseworker.RecoveryPublisher,
-	localActorID string,
 	propagator propagation.TextMapPropagator,
 ) *Server {
 	return &Server{
@@ -104,8 +88,9 @@ func NewServer(
 		webhooks:          webhookModule,
 		releaseOperations: releaseOperationModule,
 		authorizer:        authorizer,
+		identities:        identities,
+		browserSecurity:   browserSecurity,
 		recovery:          recovery,
-		localActorID:      localActorID,
 		propagator:        propagator,
 	}
 }
@@ -119,7 +104,7 @@ func (s *Server) CreateProject(
 	createdProject, err := s.projects.Create(requestContext, project.CreateCommand{
 		Name:           request.Body.Name,
 		Slug:           request.Body.Slug,
-		ActorID:        s.localActorID,
+		Caller:         requestCaller(ctx),
 		IdempotencyKey: request.Params.IdempotencyKey,
 	})
 	if err != nil {
@@ -133,13 +118,7 @@ func (s *Server) CreateProject(
 	}
 	observability.SetRequestProjectID(ctx, createdProject.ID)
 
-	return api.CreateProject201JSONResponse{
-		Id:        createdProject.ID,
-		Name:      createdProject.Name,
-		Slug:      createdProject.Slug,
-		CreatedBy: createdProject.CreatedBy,
-		CreatedAt: createdProject.CreatedAt,
-	}, nil
+	return api.CreateProject201JSONResponse(projectResponse(createdProject)), nil
 }
 
 func httpRequestContext(ctx context.Context) context.Context {
@@ -147,4 +126,9 @@ func httpRequestContext(ctx context.Context) context.Context {
 		return ginContext.Request.Context()
 	}
 	return ctx
+}
+
+// requestCaller 只读取认证中间件写入 Request.Context 的不可构造证据。
+func requestCaller(ctx context.Context) identity.Caller {
+	return identity.CallerFromContext(httpRequestContext(ctx))
 }
