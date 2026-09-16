@@ -19,7 +19,7 @@ func (s *Server) GetReleaseDiagnostics(
 		httpRequestContext(ctx),
 		diagnostics.GetReleaseReportQuery{
 			ReleaseID: request.ReleaseId,
-			ActorID:   s.localActorID,
+			Caller:    requestCaller(ctx),
 		},
 	)
 	if err != nil {
@@ -50,7 +50,7 @@ func (s *Server) GetReleaseRuntimeLogs(
 	excerpt, err := s.diagnostics.GetRuntimeLogs(
 		httpRequestContext(ctx),
 		diagnostics.GetRuntimeLogsQuery{
-			ReleaseID: request.ReleaseId, ActorID: s.localActorID,
+			ReleaseID: request.ReleaseId, Caller: requestCaller(ctx),
 			PodName: request.Params.PodName, Container: request.Params.Container,
 			TailLines: tailLines, Previous: previous,
 		},

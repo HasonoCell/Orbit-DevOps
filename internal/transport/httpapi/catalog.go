@@ -22,7 +22,7 @@ func (s *Server) CreateApplication(
 			ProjectID:      request.ProjectId,
 			Name:           request.Body.Name,
 			Slug:           request.Body.Slug,
-			ActorID:        s.localActorID,
+			Caller:         requestCaller(ctx),
 			IdempotencyKey: request.Params.IdempotencyKey,
 		},
 	)
@@ -58,9 +58,10 @@ func (s *Server) GetApplication(
 	existing, err := s.catalog.GetApplication(
 		httpRequestContext(ctx),
 		request.ApplicationId,
+		requestCaller(ctx),
 	)
 	if err != nil {
-		if errors.Is(err, catalog.ErrApplicationNotFound) {
+		if errors.Is(err, catalog.ErrApplicationNotFound) || errors.Is(err, projectauth.ErrNotMember) {
 			return api.GetApplication404JSONResponse{
 				Code:    "application_not_found",
 				Message: "application not found",
@@ -69,21 +70,6 @@ func (s *Server) GetApplication(
 		return nil, err
 	}
 	observability.SetRequestProjectID(ctx, existing.ProjectID)
-	if err := s.authorizer.Require(
-		httpRequestContext(ctx),
-		existing.ProjectID,
-		s.localActorID,
-		projectauth.PermissionRead,
-	); err != nil {
-		if errors.Is(err, projectauth.ErrNotMember) {
-			return api.GetApplication404JSONResponse{
-				Code:    "application_not_found",
-				Message: "application not found",
-			}, nil
-		}
-		return nil, err
-	}
-
 	return api.GetApplication200JSONResponse(applicationResponse(existing)), nil
 }
 
@@ -109,7 +95,7 @@ func (s *Server) CreateDeploymentTarget(
 			Stage:          string(request.Body.Stage),
 			Replicas:       request.Body.Replicas,
 			ContainerPort:  request.Body.ContainerPort,
-			ActorID:        s.localActorID,
+			Caller:         requestCaller(ctx),
 			IdempotencyKey: request.Params.IdempotencyKey,
 		},
 	)
@@ -146,9 +132,10 @@ func (s *Server) GetDeploymentTarget(
 	existing, err := s.catalog.GetDeploymentTarget(
 		httpRequestContext(ctx),
 		request.DeploymentTargetId,
+		requestCaller(ctx),
 	)
 	if err != nil {
-		if errors.Is(err, catalog.ErrDeploymentTargetNotFound) {
+		if errors.Is(err, catalog.ErrDeploymentTargetNotFound) || errors.Is(err, projectauth.ErrNotMember) {
 			return api.GetDeploymentTarget404JSONResponse{
 				Code:    "deployment_target_not_found",
 				Message: "deployment target not found",
@@ -157,21 +144,6 @@ func (s *Server) GetDeploymentTarget(
 		return nil, err
 	}
 	observability.SetRequestProjectID(ctx, existing.ProjectID)
-	if err := s.authorizer.Require(
-		httpRequestContext(ctx),
-		existing.ProjectID,
-		s.localActorID,
-		projectauth.PermissionRead,
-	); err != nil {
-		if errors.Is(err, projectauth.ErrNotMember) {
-			return api.GetDeploymentTarget404JSONResponse{
-				Code:    "deployment_target_not_found",
-				Message: "deployment target not found",
-			}, nil
-		}
-		return nil, err
-	}
-
 	return api.GetDeploymentTarget200JSONResponse(deploymentTargetResponse(existing)), nil
 }
 
@@ -186,7 +158,7 @@ func (s *Server) UpdateDeploymentTarget(
 			Stage:          string(request.Body.Stage),
 			Replicas:       request.Body.Replicas,
 			ContainerPort:  request.Body.ContainerPort,
-			ActorID:        s.localActorID,
+			Caller:         requestCaller(ctx),
 			IdempotencyKey: request.Params.IdempotencyKey,
 		},
 	)

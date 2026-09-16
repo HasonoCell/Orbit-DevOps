@@ -21,10 +21,10 @@ func (s *Server) RetryReleaseOperation(
 	requestContext := httpRequestContext(ctx)
 	command := releaseoperation.RetryCommand{
 		ReleaseOperationID: request.ReleaseOperationId,
-		ActorID:            s.localActorID,
+		Caller:             requestCaller(ctx),
 		IdempotencyKey:     request.Params.IdempotencyKey,
 	}
-	current, err := s.releaseOperations.Get(requestContext, request.ReleaseOperationId)
+	current, err := s.releaseOperations.GetAuthorized(requestContext, request.ReleaseOperationId, requestCaller(ctx))
 	if err != nil {
 		if errors.Is(err, releaseoperation.ErrNotFound) {
 			return api.RetryReleaseOperation404JSONResponse{
@@ -108,7 +108,7 @@ func (s *Server) ReconcileReleaseOperation(
 	request api.ReconcileReleaseOperationRequestObject,
 ) (api.ReconcileReleaseOperationResponseObject, error) {
 	requestContext := httpRequestContext(ctx)
-	current, err := s.releaseOperations.Get(requestContext, request.ReleaseOperationId)
+	current, err := s.releaseOperations.GetAuthorized(requestContext, request.ReleaseOperationId, requestCaller(ctx))
 	if err != nil {
 		if errors.Is(err, releaseoperation.ErrNotFound) {
 			return api.ReconcileReleaseOperation404JSONResponse{
@@ -158,7 +158,7 @@ func (s *Server) ReconcileReleaseOperation(
 
 	updated, err := s.releaseOperations.ReconcileAttention(requestContext, releaseoperation.ReconcileCommand{
 		ReleaseOperationID: request.ReleaseOperationId,
-		ActorID:            s.localActorID,
+		Caller:             requestCaller(ctx),
 		IdempotencyKey:     request.Params.IdempotencyKey,
 		Evidence:           evidence,
 	})
@@ -200,7 +200,7 @@ func (s *Server) ForceFailReleaseOperation(
 		httpRequestContext(ctx),
 		releaseoperation.ForceFailCommand{
 			ReleaseOperationID: request.ReleaseOperationId,
-			ActorID:            s.localActorID,
+			Caller:             requestCaller(ctx),
 			IdempotencyKey:     request.Params.IdempotencyKey,
 			Reason:             request.Body.Reason,
 		},
@@ -245,7 +245,7 @@ func (s *Server) authorizeRecoveryCommand(
 	if err := s.authorizer.Require(
 		httpRequestContext(ctx),
 		release.TargetSnapshot.ProjectID,
-		s.localActorID,
+		requestCaller(ctx),
 		permission,
 	); err != nil {
 		return delivery.Release{}, err
@@ -376,7 +376,7 @@ func (s *Server) CancelReleaseOperation(
 ) (api.CancelReleaseOperationResponseObject, error) {
 	updated, err := s.releaseOperations.Cancel(httpRequestContext(ctx), releaseoperation.CancelCommand{
 		ReleaseOperationID: request.ReleaseOperationId,
-		ActorID:            s.localActorID,
+		Caller:             requestCaller(ctx),
 		IdempotencyKey:     request.Params.IdempotencyKey,
 	})
 	if err != nil {

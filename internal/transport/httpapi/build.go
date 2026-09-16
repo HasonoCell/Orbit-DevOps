@@ -26,7 +26,7 @@ func (s *Server) CreateBuild(ctx context.Context, request api.CreateBuildRequest
 		SourceCommit:   request.Body.SourceCommit,
 		DockerfilePath: stringValue(request.Body.DockerfilePath),
 		ContextPath:    stringValue(request.Body.ContextPath),
-		ActorID:        s.localActorID,
+		Caller:         requestCaller(ctx),
 		IdempotencyKey: request.Params.IdempotencyKey,
 		TraceParent:    traceCarrier.Get("traceparent"),
 		TraceState:     traceCarrier.Get("tracestate"),
@@ -51,7 +51,7 @@ func (s *Server) CreateBuild(ctx context.Context, request api.CreateBuildRequest
 
 // GetBuild 通过 Build Module 的权限表面读取构建，隐藏内部 Dispatch。
 func (s *Server) GetBuild(ctx context.Context, request api.GetBuildRequestObject) (api.GetBuildResponseObject, error) {
-	acceptance, err := s.builds.Get(httpRequestContext(ctx), request.BuildId, s.localActorID)
+	acceptance, err := s.builds.Get(httpRequestContext(ctx), request.BuildId, requestCaller(ctx))
 	if err != nil {
 		if errors.Is(err, builddomain.ErrNotFound) || errors.Is(err, projectauth.ErrNotMember) {
 			return api.GetBuild404JSONResponse{Code: "build_not_found", Message: "build not found"}, nil
@@ -73,7 +73,7 @@ func (s *Server) ListBuildHistory(ctx context.Context, request api.ListBuildHist
 		cursor = *request.Params.Cursor
 	}
 	page, err := s.builds.ListHistory(httpRequestContext(ctx), builddomain.ListHistoryQuery{
-		ApplicationID: request.ApplicationId, ActorID: s.localActorID, Limit: limit, Cursor: cursor,
+		ApplicationID: request.ApplicationId, Caller: requestCaller(ctx), Limit: limit, Cursor: cursor,
 	})
 	if err != nil {
 		switch {
@@ -94,7 +94,7 @@ func (s *Server) ListBuildHistory(ctx context.Context, request api.ListBuildHist
 
 // GetImageArtifact 返回制品与来源标识；Registry 凭据不属于制品模型。
 func (s *Server) GetImageArtifact(ctx context.Context, request api.GetImageArtifactRequestObject) (api.GetImageArtifactResponseObject, error) {
-	artifact, err := s.builds.GetArtifact(httpRequestContext(ctx), request.ImageArtifactId, s.localActorID)
+	artifact, err := s.builds.GetArtifact(httpRequestContext(ctx), request.ImageArtifactId, requestCaller(ctx))
 	if err != nil {
 		if errors.Is(err, builddomain.ErrArtifactNotFound) || errors.Is(err, projectauth.ErrNotMember) {
 			return api.GetImageArtifact404JSONResponse{Code: "image_artifact_not_found", Message: "image artifact not found"}, nil

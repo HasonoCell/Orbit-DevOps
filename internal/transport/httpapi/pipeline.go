@@ -18,7 +18,7 @@ func (s *Server) CreateDeliveryPipeline(ctx context.Context, request api.CreateD
 		EndpointKey: request.Body.EndpointKey, RepositoryURL: request.Body.RepositoryUrl,
 		Branch: request.Body.Branch, DockerfilePath: stringValue(request.Body.DockerfilePath),
 		ContextPath: stringValue(request.Body.ContextPath), Mode: string(request.Body.Mode),
-		DeploymentTargetID: request.Body.DeploymentTargetId, ActorID: s.localActorID,
+		DeploymentTargetID: request.Body.DeploymentTargetId, Caller: requestCaller(ctx),
 		IdempotencyKey: request.Params.IdempotencyKey,
 	})
 	if err != nil {
@@ -40,22 +40,26 @@ func (s *Server) CreateDeliveryPipeline(ctx context.Context, request api.CreateD
 }
 
 func (s *Server) ListDeliveryPipelines(ctx context.Context, request api.ListDeliveryPipelinesRequestObject) (api.ListDeliveryPipelinesResponseObject, error) {
-	items, err := s.pipelines.List(httpRequestContext(ctx), request.ApplicationId, s.localActorID)
+	limit, cursor := projectListParameters(request.Params.Limit, request.Params.Cursor)
+	page, err := s.pipelines.List(httpRequestContext(ctx), request.ApplicationId, requestCaller(ctx), limit, cursor)
 	if err != nil {
+		if errors.Is(err, pipeline.ErrInvalidCursor) {
+			return api.ListDeliveryPipelines400JSONResponse{Code: "invalid_cursor", Message: "delivery pipeline cursor is invalid"}, nil
+		}
 		if errors.Is(err, pipeline.ErrApplicationNotFound) || errors.Is(err, projectauth.ErrNotMember) {
 			return api.ListDeliveryPipelines404JSONResponse{Code: "application_not_found", Message: "application not found"}, nil
 		}
 		return nil, err
 	}
-	result := make(api.ListDeliveryPipelines200JSONResponse, 0, len(items))
-	for _, item := range items {
-		result = append(result, pipelineResponse(item))
+	items := make([]api.DeliveryPipelineDetail, 0, len(page.Items))
+	for _, item := range page.Items {
+		items = append(items, pipelineResponse(item))
 	}
-	return result, nil
+	return api.ListDeliveryPipelines200JSONResponse{Items: items, NextCursor: page.NextCursor}, nil
 }
 
 func (s *Server) GetDeliveryPipeline(ctx context.Context, request api.GetDeliveryPipelineRequestObject) (api.GetDeliveryPipelineResponseObject, error) {
-	detail, err := s.pipelines.Get(httpRequestContext(ctx), request.DeliveryPipelineId, s.localActorID)
+	detail, err := s.pipelines.Get(httpRequestContext(ctx), request.DeliveryPipelineId, requestCaller(ctx))
 	if err != nil {
 		if errors.Is(err, pipeline.ErrNotFound) {
 			return api.GetDeliveryPipeline404JSONResponse{Code: "delivery_pipeline_not_found", Message: "delivery pipeline not found"}, nil
@@ -72,7 +76,7 @@ func (s *Server) UpdateDeliveryPipeline(ctx context.Context, request api.UpdateD
 		EndpointKey: request.Body.EndpointKey, RepositoryURL: request.Body.RepositoryUrl,
 		Branch: request.Body.Branch, DockerfilePath: stringValue(request.Body.DockerfilePath),
 		ContextPath: stringValue(request.Body.ContextPath), Mode: string(request.Body.Mode),
-		DeploymentTargetID: request.Body.DeploymentTargetId, ActorID: s.localActorID,
+		DeploymentTargetID: request.Body.DeploymentTargetId, Caller: requestCaller(ctx),
 		IdempotencyKey: request.Params.IdempotencyKey,
 	})
 	if err != nil {
@@ -93,7 +97,7 @@ func (s *Server) UpdateDeliveryPipeline(ctx context.Context, request api.UpdateD
 }
 
 func (s *Server) EnableDeliveryPipeline(ctx context.Context, request api.EnableDeliveryPipelineRequestObject) (api.EnableDeliveryPipelineResponseObject, error) {
-	updated, err := s.pipelines.Enable(httpRequestContext(ctx), pipeline.StateCommand{PipelineID: request.DeliveryPipelineId, ActorID: s.localActorID, IdempotencyKey: request.Params.IdempotencyKey})
+	updated, err := s.pipelines.Enable(httpRequestContext(ctx), pipeline.StateCommand{PipelineID: request.DeliveryPipelineId, Caller: requestCaller(ctx), IdempotencyKey: request.Params.IdempotencyKey})
 	if err != nil {
 		switch {
 		case errors.Is(err, pipeline.ErrInvalidInput), errors.Is(err, pipeline.ErrSourceNotFound), errors.Is(err, pipeline.ErrSourceOwnerChanged):
@@ -112,7 +116,7 @@ func (s *Server) EnableDeliveryPipeline(ctx context.Context, request api.EnableD
 }
 
 func (s *Server) DisableDeliveryPipeline(ctx context.Context, request api.DisableDeliveryPipelineRequestObject) (api.DisableDeliveryPipelineResponseObject, error) {
-	updated, err := s.pipelines.Disable(httpRequestContext(ctx), pipeline.StateCommand{PipelineID: request.DeliveryPipelineId, ActorID: s.localActorID, IdempotencyKey: request.Params.IdempotencyKey})
+	updated, err := s.pipelines.Disable(httpRequestContext(ctx), pipeline.StateCommand{PipelineID: request.DeliveryPipelineId, Caller: requestCaller(ctx), IdempotencyKey: request.Params.IdempotencyKey})
 	if err != nil {
 		switch {
 		case errors.Is(err, pipeline.ErrNotFound), errors.Is(err, projectauth.ErrNotMember):
@@ -137,7 +141,7 @@ func (s *Server) ListDeliveryRuns(ctx context.Context, request api.ListDeliveryR
 	if request.Params.Cursor != nil {
 		cursor = *request.Params.Cursor
 	}
-	page, err := s.pipelines.ListRuns(httpRequestContext(ctx), pipeline.ListRunsQuery{PipelineID: request.DeliveryPipelineId, ActorID: s.localActorID, Limit: limit, Cursor: cursor})
+	page, err := s.pipelines.ListRuns(httpRequestContext(ctx), pipeline.ListRunsQuery{PipelineID: request.DeliveryPipelineId, Caller: requestCaller(ctx), Limit: limit, Cursor: cursor})
 	if err != nil {
 		if errors.Is(err, pipeline.ErrInvalidCursor) {
 			return api.ListDeliveryRuns400JSONResponse{Code: "invalid_delivery_run_cursor", Message: "delivery run cursor is invalid"}, nil
@@ -155,7 +159,7 @@ func (s *Server) ListDeliveryRuns(ctx context.Context, request api.ListDeliveryR
 }
 
 func (s *Server) GetDeliveryRun(ctx context.Context, request api.GetDeliveryRunRequestObject) (api.GetDeliveryRunResponseObject, error) {
-	detail, err := s.pipelines.GetRun(httpRequestContext(ctx), request.DeliveryRunId, s.localActorID)
+	detail, err := s.pipelines.GetRun(httpRequestContext(ctx), request.DeliveryRunId, requestCaller(ctx))
 	if err != nil {
 		if errors.Is(err, pipeline.ErrRunNotFound) {
 			return api.GetDeliveryRun404JSONResponse{Code: "delivery_run_not_found", Message: "delivery run not found"}, nil
@@ -168,7 +172,7 @@ func (s *Server) GetDeliveryRun(ctx context.Context, request api.GetDeliveryRunR
 func (s *Server) ReconcileDeliveryRun(ctx context.Context, request api.ReconcileDeliveryRunRequestObject) (api.ReconcileDeliveryRunResponseObject, error) {
 	carrier := propagation.MapCarrier{}
 	s.propagator.Inject(httpRequestContext(ctx), carrier)
-	detail, err := s.pipelines.ReconcileRun(httpRequestContext(ctx), pipeline.ReconcileRunCommand{RunID: request.DeliveryRunId, ActorID: s.localActorID, IdempotencyKey: request.Params.IdempotencyKey, TraceParent: carrier.Get("traceparent"), TraceState: carrier.Get("tracestate")})
+	detail, err := s.pipelines.ReconcileRun(httpRequestContext(ctx), pipeline.ReconcileRunCommand{RunID: request.DeliveryRunId, Caller: requestCaller(ctx), IdempotencyKey: request.Params.IdempotencyKey, TraceParent: carrier.Get("traceparent"), TraceState: carrier.Get("tracestate")})
 	if err != nil {
 		switch {
 		case errors.Is(err, pipeline.ErrRunNotFound), errors.Is(err, projectauth.ErrNotMember):

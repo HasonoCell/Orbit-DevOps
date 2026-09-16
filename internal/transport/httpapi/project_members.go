@@ -15,12 +15,18 @@ func (s *Server) ListProjectMembers(
 	request api.ListProjectMembersRequestObject,
 ) (api.ListProjectMembersResponseObject, error) {
 	observability.SetRequestProjectID(ctx, request.ProjectId)
-	members, err := s.authorizer.ListMembers(
+	limit, cursor := projectListParameters(request.Params.Limit, request.Params.Cursor)
+	page, err := s.authorizer.ListMembers(
 		httpRequestContext(ctx),
 		request.ProjectId,
-		s.localActorID,
+		requestCaller(ctx),
+		limit,
+		cursor,
 	)
 	if err != nil {
+		if errors.Is(err, projectauth.ErrInvalidCursor) {
+			return api.ListProjectMembers400JSONResponse{Code: "invalid_cursor", Message: "project member cursor is invalid"}, nil
+		}
 		if errors.Is(err, projectauth.ErrNotMember) {
 			return api.ListProjectMembers404JSONResponse{
 				Code:    "project_not_found",
@@ -30,11 +36,11 @@ func (s *Server) ListProjectMembers(
 		return nil, err
 	}
 
-	response := make(api.ListProjectMembers200JSONResponse, 0, len(members))
-	for _, member := range members {
-		response = append(response, projectMemberResponse(member))
+	items := make([]api.ProjectMember, 0, len(page.Items))
+	for _, member := range page.Items {
+		items = append(items, projectMemberResponse(member))
 	}
-	return response, nil
+	return api.ListProjectMembers200JSONResponse{Items: items, NextCursor: page.NextCursor}, nil
 }
 
 // AddProjectMember 添加项目成员；权限、幂等和审计由项目权限模块统一处理。
@@ -47,18 +53,18 @@ func (s *Server) AddProjectMember(
 		httpRequestContext(ctx),
 		projectauth.AddMemberCommand{
 			ProjectID:      request.ProjectId,
-			MemberActorID:  request.Body.ActorId,
+			UserID:         request.Body.UserId,
 			Role:           string(request.Body.Role),
-			ActorID:        s.localActorID,
+			Caller:         requestCaller(ctx),
 			IdempotencyKey: request.Params.IdempotencyKey,
 		},
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, projectauth.ErrInvalidActorID), errors.Is(err, projectauth.ErrInvalidRole):
+		case errors.Is(err, projectauth.ErrInvalidMember), errors.Is(err, projectauth.ErrInvalidRole):
 			return api.AddProjectMember400JSONResponse{
 				Code:    "invalid_project_member",
-				Message: "actor ID or project role is invalid",
+				Message: "user ID or project role is invalid",
 			}, nil
 		case errors.Is(err, projectauth.ErrForbidden):
 			return api.AddProjectMember403JSONResponse{
@@ -97,18 +103,18 @@ func (s *Server) UpdateProjectMember(
 		httpRequestContext(ctx),
 		projectauth.UpdateMemberCommand{
 			ProjectID:      request.ProjectId,
-			MemberActorID:  request.ActorId,
+			UserID:         request.UserId,
 			Role:           string(request.Body.Role),
-			ActorID:        s.localActorID,
+			Caller:         requestCaller(ctx),
 			IdempotencyKey: request.Params.IdempotencyKey,
 		},
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, projectauth.ErrInvalidActorID), errors.Is(err, projectauth.ErrInvalidRole):
+		case errors.Is(err, projectauth.ErrInvalidMember), errors.Is(err, projectauth.ErrInvalidRole):
 			return api.UpdateProjectMember400JSONResponse{
 				Code:    "invalid_project_member",
-				Message: "actor ID or project role is invalid",
+				Message: "user ID or project role is invalid",
 			}, nil
 		case errors.Is(err, projectauth.ErrForbidden):
 			return api.UpdateProjectMember403JSONResponse{
@@ -147,17 +153,17 @@ func (s *Server) RemoveProjectMember(
 		httpRequestContext(ctx),
 		projectauth.RemoveMemberCommand{
 			ProjectID:      request.ProjectId,
-			MemberActorID:  request.ActorId,
-			ActorID:        s.localActorID,
+			UserID:         request.UserId,
+			Caller:         requestCaller(ctx),
 			IdempotencyKey: request.Params.IdempotencyKey,
 		},
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, projectauth.ErrInvalidActorID):
+		case errors.Is(err, projectauth.ErrInvalidMember):
 			return api.RemoveProjectMember400JSONResponse{
 				Code:    "invalid_project_member",
-				Message: "actor ID is invalid",
+				Message: "user ID is invalid",
 			}, nil
 		case errors.Is(err, projectauth.ErrForbidden):
 			return api.RemoveProjectMember403JSONResponse{
@@ -189,7 +195,7 @@ func (s *Server) RemoveProjectMember(
 func projectMemberResponse(member projectauth.Member) api.ProjectMember {
 	return api.ProjectMember{
 		ProjectId: member.ProjectID,
-		ActorId:   member.ActorID,
+		UserId:    member.UserID,
 		Role:      api.ProjectRole(member.Role),
 		CreatedBy: member.CreatedBy,
 		CreatedAt: member.CreatedAt,

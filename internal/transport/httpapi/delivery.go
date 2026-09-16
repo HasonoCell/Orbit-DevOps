@@ -31,7 +31,7 @@ func (s *Server) CreateRelease(
 			DeploymentTargetID: request.DeploymentTargetId,
 			ImageReference:     request.Body.ImageReference,
 			ImageArtifactID:    request.Body.ImageArtifactId,
-			ActorID:            s.localActorID,
+			Caller:             requestCaller(ctx),
 			IdempotencyKey:     request.Params.IdempotencyKey,
 			TraceParent:        traceCarrier.Get("traceparent"),
 			TraceState:         traceCarrier.Get("tracestate"),
@@ -79,9 +79,9 @@ func (s *Server) GetRelease(
 	ctx context.Context,
 	request api.GetReleaseRequestObject,
 ) (api.GetReleaseResponseObject, error) {
-	detail, err := s.delivery.GetDetail(httpRequestContext(ctx), request.ReleaseId)
+	detail, err := s.delivery.GetDetail(httpRequestContext(ctx), request.ReleaseId, requestCaller(ctx))
 	if err != nil {
-		if errors.Is(err, delivery.ErrReleaseNotFound) {
+		if errors.Is(err, delivery.ErrReleaseNotFound) || errors.Is(err, projectauth.ErrNotMember) {
 			return api.GetRelease404JSONResponse{
 				Code:    "release_not_found",
 				Message: "release not found",
@@ -90,21 +90,6 @@ func (s *Server) GetRelease(
 		return nil, err
 	}
 	observability.SetRequestProjectID(ctx, detail.Release.TargetSnapshot.ProjectID)
-	if err := s.authorizer.Require(
-		httpRequestContext(ctx),
-		detail.Release.TargetSnapshot.ProjectID,
-		s.localActorID,
-		projectauth.PermissionRead,
-	); err != nil {
-		if errors.Is(err, projectauth.ErrNotMember) {
-			return api.GetRelease404JSONResponse{
-				Code:    "release_not_found",
-				Message: "release not found",
-			}, nil
-		}
-		return nil, err
-	}
-
 	response, err := releaseDetailResponse(detail)
 	if err != nil {
 		return nil, err
@@ -118,9 +103,9 @@ func (s *Server) ListReleaseHistory(
 	request api.ListReleaseHistoryRequestObject,
 ) (api.ListReleaseHistoryResponseObject, error) {
 	requestContext := httpRequestContext(ctx)
-	target, err := s.catalog.GetDeploymentTarget(requestContext, request.DeploymentTargetId)
+	target, err := s.catalog.GetDeploymentTarget(requestContext, request.DeploymentTargetId, requestCaller(ctx))
 	if err != nil {
-		if errors.Is(err, catalog.ErrDeploymentTargetNotFound) {
+		if errors.Is(err, catalog.ErrDeploymentTargetNotFound) || errors.Is(err, projectauth.ErrNotMember) {
 			return api.ListReleaseHistory404JSONResponse{
 				Code: "deployment_target_not_found", Message: "deployment target not found",
 			}, nil
@@ -128,19 +113,6 @@ func (s *Server) ListReleaseHistory(
 		return nil, err
 	}
 	observability.SetRequestProjectID(ctx, target.ProjectID)
-	if err := s.authorizer.Require(
-		requestContext,
-		target.ProjectID,
-		s.localActorID,
-		projectauth.PermissionRead,
-	); err != nil {
-		if errors.Is(err, projectauth.ErrNotMember) {
-			return api.ListReleaseHistory404JSONResponse{
-				Code: "deployment_target_not_found", Message: "deployment target not found",
-			}, nil
-		}
-		return nil, err
-	}
 	limit := defaultReleaseHistoryPageSize
 	if request.Params.Limit != nil {
 		limit = *request.Params.Limit
@@ -151,6 +123,7 @@ func (s *Server) ListReleaseHistory(
 	}
 	page, err := s.delivery.ListHistory(requestContext, delivery.ListHistoryQuery{
 		DeploymentTargetID: request.DeploymentTargetId,
+		Caller:             requestCaller(ctx),
 		Limit:              limit,
 		Cursor:             cursor,
 	})
@@ -193,7 +166,7 @@ func (s *Server) RollbackRelease(
 	s.propagator.Inject(requestContext, traceCarrier)
 	acceptance, err := s.delivery.Rollback(requestContext, delivery.RollbackCommand{
 		SourceReleaseID: request.ReleaseId,
-		ActorID:         s.localActorID,
+		Caller:          requestCaller(ctx),
 		IdempotencyKey:  request.Params.IdempotencyKey,
 		TraceParent:     traceCarrier.Get("traceparent"),
 		TraceState:      traceCarrier.Get("tracestate"),
@@ -226,7 +199,7 @@ func (s *Server) GetReleaseOperation(
 	ctx context.Context,
 	request api.GetReleaseOperationRequestObject,
 ) (api.GetReleaseOperationResponseObject, error) {
-	releaseOperationRecord, err := s.releaseOperations.Get(httpRequestContext(ctx), request.ReleaseOperationId)
+	releaseOperationRecord, err := s.releaseOperations.GetAuthorized(httpRequestContext(ctx), request.ReleaseOperationId, requestCaller(ctx))
 	if err != nil {
 		if errors.Is(err, releaseoperation.ErrNotFound) {
 			return api.GetReleaseOperation404JSONResponse{
@@ -236,26 +209,6 @@ func (s *Server) GetReleaseOperation(
 		}
 		return nil, err
 	}
-	release, err := s.delivery.GetRelease(httpRequestContext(ctx), releaseOperationRecord.ReleaseID)
-	if err != nil {
-		return nil, err
-	}
-	observability.SetRequestProjectID(ctx, release.TargetSnapshot.ProjectID)
-	if err := s.authorizer.Require(
-		httpRequestContext(ctx),
-		release.TargetSnapshot.ProjectID,
-		s.localActorID,
-		projectauth.PermissionRead,
-	); err != nil {
-		if errors.Is(err, projectauth.ErrNotMember) {
-			return api.GetReleaseOperation404JSONResponse{
-				Code:    "release_operation_not_found",
-				Message: "operation not found",
-			}, nil
-		}
-		return nil, err
-	}
-
 	return api.GetReleaseOperation200JSONResponse(releaseOperationResponse(releaseOperationRecord)), nil
 }
 
