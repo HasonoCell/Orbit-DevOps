@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -31,6 +32,23 @@ func TestLocalAccountCommandsDoNotExposePasswordsThroughFormattingOrJSON(t *test
 			strings.Contains(fmt.Sprintf("%+v %#v", command, command), fixturePassword) {
 			t.Fatalf("%T exposed credential through a generic output surface", command)
 		}
+	}
+}
+
+func TestAccountAdministrationRejectsUnprovenCallerBeforePasswordProcessing(t *testing.T) {
+	t.Parallel()
+	module, _ := newIdentity(t)
+	initializeFixture(t, module)
+	ctx := context.Background()
+	if _, err := module.CreateLocalUser(ctx, identity.CreateLocalUserCommand{
+		LoginName: "forbidden-admission", DisplayName: "不能准入", TemporaryPassword: "short",
+	}); !errors.Is(err, identity.ErrUnauthenticated) {
+		t.Fatalf("unproven caller reached administrator password processing: %v", err)
+	}
+	if err := module.ResetLocalPassword(ctx, identity.ResetLocalPasswordCommand{
+		UserID: uuid.New(), TemporaryPassword: "short",
+	}); !errors.Is(err, identity.ErrUnauthenticated) {
+		t.Fatalf("unproven caller reached reset password processing: %v", err)
 	}
 }
 

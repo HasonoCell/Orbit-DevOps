@@ -9,6 +9,7 @@ import (
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/jmoiron/sqlx"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
@@ -42,7 +43,7 @@ func newIdentity(t *testing.T) (*identity.Module, *sqlx.DB) {
 		t.Fatal("connect fixture database")
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	module, err := identity.New(db)
+	module, err := identity.New(db, projectauth.NewOwnershipGuard())
 	if err != nil {
 		t.Fatalf("construct identity: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestLocalLoginReturnsTrustedCallerWithoutExposingCredential(t *testing.T) {
 func TestAuthenticationRateLimitIsSharedAcrossModuleInstances(t *testing.T) {
 	t.Parallel()
 	first, db := newIdentity(t)
-	second, err := identity.New(db)
+	second, err := identity.New(db, projectauth.NewOwnershipGuard())
 	if err != nil {
 		t.Fatal("construct second identity instance")
 	}
@@ -170,7 +171,7 @@ func TestLogoutAllRevokesBothDevicesAcrossInstances(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve device: %v", err)
 	}
-	otherInstance, err := identity.New(db)
+	otherInstance, err := identity.New(db, projectauth.NewOwnershipGuard())
 	if err != nil {
 		t.Fatal("construct other instance")
 	}

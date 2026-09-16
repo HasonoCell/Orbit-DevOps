@@ -73,7 +73,12 @@ func decodePasswordHash(encoded string) ([]byte, []byte, bool) {
 	}
 	salt, saltErr := base64.RawStdEncoding.Strict().DecodeString(parts[0])
 	key, keyErr := base64.RawStdEncoding.Strict().DecodeString(parts[1])
-	return salt, key, saltErr == nil && keyErr == nil && len(salt) == 16 && len(key) == 32
+	// Go 的 Strict 解码仍忽略 CR/LF；必须回编码相等，才能与有效入口投影使用同一规范。
+	// 不让带换行的存储 Hash 一边能登录、一边被最后管理员/owner 保护视作不存在。
+	valid := saltErr == nil && keyErr == nil && len(salt) == 16 && len(key) == 32 &&
+		base64.RawStdEncoding.EncodeToString(salt) == parts[0] &&
+		base64.RawStdEncoding.EncodeToString(key) == parts[1]
+	return salt, key, valid
 }
 
 func validPassword(password string) bool {

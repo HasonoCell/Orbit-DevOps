@@ -30,6 +30,10 @@ func (m *Module) CreateLocalUser(ctx context.Context, command CreateLocalUserCom
 	if err != nil || !validLabel(command.DisplayName, 128) {
 		return User{}, ErrInvalidCommand
 	}
+	// 预检只拒绝显然无权请求，避免让它们进入昂贵 Hash；不持锁、不作为最终证明。
+	if _, err := requireAdministrator(ctx, m.db, command.Caller, true); err != nil {
+		return User{}, err
+	}
 	// 昂贵 Hash 在控制锁外完成；事务内重新核验当前管理员及近期主认证。
 	hash, err := m.hashPassword(ctx, command.TemporaryPassword)
 	if err != nil {
@@ -103,9 +107,10 @@ func (m *Module) GetUser(ctx context.Context, caller Caller, userID uuid.UUID) (
 	return user, nil
 }
 
-// requireAdministrator 在调用者已取得控制锁后读最新身份，不相信 Caller 缓存角色。
-func requireAdministrator(ctx context.Context, tx *sqlx.Tx, caller Caller, recent bool) (currentRecord, error) {
-	current, err := loadCaller(ctx, tx, caller)
+// requireAdministrator 不相信 Caller 缓存角色。最终接纳在控制锁后以独立 SQL 调用；
+// DB 上的无锁预检仅优化昂贵工作，事务内必须再次核验，不能据此接纳。
+func requireAdministrator(ctx context.Context, queryer sqlx.QueryerContext, caller Caller, recent bool) (currentRecord, error) {
+	current, err := loadCaller(ctx, queryer, caller)
 	if err != nil {
 		return currentRecord{}, err
 	}
@@ -116,7 +121,7 @@ func requireAdministrator(ctx context.Context, tx *sqlx.Tx, caller Caller, recen
 		return currentRecord{}, ErrForbidden
 	}
 	if recent {
-		if err := requireRecentAuthentication(ctx, tx, current); err != nil {
+		if err := requireRecentAuthentication(ctx, queryer, current); err != nil {
 			return currentRecord{}, err
 		}
 	}
@@ -124,12 +129,12 @@ func requireAdministrator(ctx context.Context, tx *sqlx.Tx, caller Caller, recen
 }
 
 // requireRecentAuthentication 使用已记录的主认证与数据库时钟，不用 Cookie 活动时间替代。
-func requireRecentAuthentication(ctx context.Context, tx *sqlx.Tx, current currentRecord) error {
+func requireRecentAuthentication(ctx context.Context, queryer sqlx.QueryerContext, current currentRecord) error {
 	if !current.PrimaryAuthenticatedAt.Valid {
 		return ErrRecentAuthenticationRequired
 	}
 	var recent bool
-	if err := tx.GetContext(ctx, &recent, `SELECT $1::timestamptz <= clock_timestamp()
+	if err := sqlx.GetContext(ctx, queryer, &recent, `SELECT $1::timestamptz <= clock_timestamp()
 		AND $1::timestamptz > clock_timestamp() - interval '5 minutes'`, current.PrimaryAuthenticatedAt.Time); err != nil {
 		return dependencyError(err)
 	}

@@ -51,9 +51,20 @@ func (ResetLocalPasswordCommand) GoString() string { return "ResetLocalPasswordC
 // ResetLocalPassword 必须由完整且近期认证的管理员明确执行。
 // 设置临时密码与撤销同事务；不启用被停用账号、不赋项目成员或替目标签发会话。
 func (m *Module) ResetLocalPassword(ctx context.Context, command ResetLocalPasswordCommand) error {
-	if command.UserID == uuid.Nil || command.LoginName != "" {
-		// OIDC-only 首次建立登录名随真实外部身份路径加入，不提前做绕过准入的 upsert。
+	if command.UserID == uuid.Nil {
 		return ErrInvalidCommand
+	}
+	loginName := ""
+	if command.LoginName != "" {
+		var err error
+		loginName, err = normalizeLoginName(command.LoginName)
+		if err != nil {
+			return err
+		}
+	}
+	// 无锁预检拒绝不完整/无权/过期证明，不能替代 Hash 之后的事务内最终校验。
+	if _, err := requireAdministrator(ctx, m.db, command.Caller, true); err != nil {
+		return err
 	}
 	hash, err := m.hashPassword(ctx, command.TemporaryPassword)
 	if err != nil {
@@ -68,9 +79,12 @@ func (m *Module) ResetLocalPassword(ctx context.Context, command ResetLocalPassw
 	if err != nil {
 		return err
 	}
-	var target uuid.UUID
-	if err := tx.GetContext(ctx, &target, `SELECT u.id FROM users u
-		JOIN local_credentials lc ON lc.user_id = u.id WHERE u.id = $1 FOR UPDATE OF u`, command.UserID); err != nil {
+	var target struct {
+		ID       uuid.UUID `db:"id"`
+		HasLocal bool      `db:"has_local"`
+	}
+	if err := tx.GetContext(ctx, &target, `SELECT u.id,EXISTS(SELECT 1 FROM local_credentials lc WHERE lc.user_id=u.id) has_local
+		FROM users u WHERE u.id=$1 FOR UPDATE`, command.UserID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrUserNotFound
 		}
@@ -80,15 +94,32 @@ func (m *Module) ResetLocalPassword(ctx context.Context, command ResetLocalPassw
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE local_credentials SET password_hash = $1,
-		must_change_password = true, updated_at = $2 WHERE user_id = $3`, hash, now, target); err != nil {
-		return dependencyError(err)
+	if target.HasLocal {
+		if loginName != "" {
+			return ErrInvalidCommand
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE local_credentials SET password_hash=$1,
+			must_change_password=true,updated_at=$2 WHERE user_id=$3`, hash, now, target.ID); err != nil {
+			return dependencyError(err)
+		}
+	} else {
+		if loginName == "" {
+			return ErrInvalidCommand
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO local_credentials
+			(user_id,login_name,password_hash,must_change_password,updated_at) VALUES($1,$2,$3,true,$4)`,
+			target.ID, loginName, hash, now); err != nil {
+			if isUniqueViolation(err) {
+				return ErrLoginNameConflict
+			}
+			return dependencyError(err)
+		}
 	}
-	if err := advanceAndRevoke(ctx, tx, target, now); err != nil {
+	if err := advanceAndRevoke(ctx, tx, target.ID, now); err != nil {
 		return err
 	}
 	if err := audit.Append(ctx, tx, audit.Entry{ActorID: admin.ID.String(), Action: "user.password.reset",
-		TargetType: "user", TargetID: target,
+		TargetType: "user", TargetID: target.ID,
 		Summary: map[string]any{"method": "password", "mustChangePassword": true}, CreatedAt: now}); err != nil {
 		return dependencyError(err)
 	}
@@ -154,8 +185,18 @@ type localProof struct {
 // ChangePassword 允许临时密码账号完成改密；只证明本人，不能修改其他 User。
 // Hash 在控制锁外，最后重新核验会话及旧 Hash；成功推进版本并撤销全部设备。
 func (m *Module) ChangePassword(ctx context.Context, command ChangePasswordCommand) error {
+	if command.Caller.userID == uuid.Nil {
+		return ErrUnauthenticated
+	}
+	var hasLocal bool
+	if err := m.db.GetContext(ctx, &hasLocal, `SELECT EXISTS(SELECT 1 FROM local_credentials WHERE user_id=$1)`, command.Caller.userID); err != nil {
+		return dependencyError(err)
+	}
+	if !hasLocal {
+		return m.establishLocalPassword(ctx, command)
+	}
 	if command.LoginName != "" {
-		// OIDC-only 的首次凭据在 OIDC 切片实现；本地路径不接受登录名重命名。
+		// 已有凭据不得借改密修改登录名。
 		return ErrInvalidCommand
 	}
 	if command.NewPassword == command.CurrentPassword {
@@ -195,6 +236,60 @@ func (m *Module) ChangePassword(ctx context.Context, command ChangePasswordComma
 	if err := audit.Append(ctx, tx, audit.Entry{ActorID: current.ID.String(), Action: "user.password.change",
 		TargetType: "user", TargetID: current.ID,
 		Summary: map[string]any{"method": "password", "mustChangePassword": false}, CreatedAt: now}); err != nil {
+		return dependencyError(err)
+	}
+	return dependencyErrorOrNil(tx.Commit())
+}
+
+// establishLocalPassword 只允许近期 OIDC 证明的正式 User 首次建立本地入口。
+func (m *Module) establishLocalPassword(ctx context.Context, command ChangePasswordCommand) error {
+	loginName, err := normalizeLoginName(command.LoginName)
+	if err != nil || command.CurrentPassword != "" {
+		return ErrInvalidCommand
+	}
+	hash, err := m.hashPassword(ctx, command.NewPassword)
+	if err != nil {
+		return err
+	}
+	tx, _, err := m.beginControlled(ctx, true)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	current, err := loadCaller(ctx, tx, command.Caller)
+	if err != nil {
+		return err
+	}
+	if current.MustChangePassword {
+		return ErrPasswordChangeRequired
+	}
+	if err := requireRecentAuthentication(ctx, tx, current); err != nil {
+		return err
+	}
+	var exists bool
+	if err := tx.GetContext(ctx, &exists, `SELECT EXISTS(SELECT 1 FROM local_credentials WHERE user_id=$1)`, current.ID); err != nil {
+		return dependencyError(err)
+	}
+	if exists {
+		return ErrInvalidCommand
+	}
+	now, err := databaseNow(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO local_credentials
+		(user_id,login_name,password_hash,must_change_password,updated_at) VALUES($1,$2,$3,false,$4)`,
+		current.ID, loginName, hash, now); err != nil {
+		if isUniqueViolation(err) {
+			return ErrLoginNameConflict
+		}
+		return dependencyError(err)
+	}
+	if err := advanceAndRevoke(ctx, tx, current.ID, now); err != nil {
+		return err
+	}
+	if err := audit.Append(ctx, tx, audit.Entry{ActorID: current.ID.String(), Action: "user.password.establish",
+		TargetType: "user", TargetID: current.ID, Summary: map[string]any{"method": "oidc"}, CreatedAt: now}); err != nil {
 		return dependencyError(err)
 	}
 	return dependencyErrorOrNil(tx.Commit())
@@ -250,7 +345,8 @@ func advanceAndRevoke(ctx context.Context, tx *sqlx.Tx, userID uuid.UUID, now ti
 		return dependencyError(err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE auth_sessions SET revoked_at = $1
-		WHERE user_id = $2 AND revoked_at IS NULL`, now, userID); err != nil {
+		WHERE (user_id=$2 OR external_identity_id IN (SELECT id FROM external_identities WHERE user_id=$2))
+		AND revoked_at IS NULL`, now, userID); err != nil {
 		return dependencyError(err)
 	}
 	return nil

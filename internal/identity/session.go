@@ -24,12 +24,26 @@ const (
 // Caller 只能由 Module 根据当前 Session 建立；零值不具认证能力。
 // 此证据不缓存最终角色，业务接纳时仍通过 AuthorizeInTx 读取当前事实。
 type Caller struct {
-	userID      uuid.UUID
-	sessionID   uuid.UUID
-	authVersion int64
+	userID             uuid.UUID
+	externalIdentityID uuid.UUID
+	sessionID          uuid.UUID
+	authVersion        int64
 }
 
-func (c Caller) UserID() uuid.UUID { return c.userID }
+type callerContextKey struct{}
+
+// WithCaller 只传播由正常 Session 解析得到的证据；Caller 的私有字段不能由协议输入构造。
+func WithCaller(ctx context.Context, caller Caller) context.Context {
+	return context.WithValue(ctx, callerContextKey{}, caller)
+}
+
+func CallerFromContext(ctx context.Context) Caller {
+	caller, _ := ctx.Value(callerContextKey{}).(Caller)
+	return caller
+}
+
+func (c Caller) UserID() uuid.UUID             { return c.userID }
+func (c Caller) ExternalIdentityID() uuid.UUID { return c.externalIdentityID }
 func (c Caller) ActorID() string {
 	if c.userID == uuid.Nil {
 		return ""
@@ -182,29 +196,73 @@ func (m *Module) ResolveSession(ctx context.Context, cookie string) (Caller, err
 		return Caller{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var current currentRecord
-	if err := tx.GetContext(ctx, &current, currentSessionQuery+` AND s.token_hash = $1`, hash); err != nil {
+	var session struct {
+		ID                 uuid.UUID     `db:"id"`
+		Method             string        `db:"auth_method"`
+		UserID             uuid.NullUUID `db:"user_id"`
+		ExternalIdentityID uuid.NullUUID `db:"external_identity_id"`
+	}
+	if err := tx.GetContext(ctx, &session, `SELECT id,auth_method,user_id,external_identity_id FROM auth_sessions
+		WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>clock_timestamp()
+		AND last_seen_at>clock_timestamp()-interval '30 minutes'`, hash); err != nil {
 		return Caller{}, authenticationQueryError(err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE auth_sessions SET last_seen_at = clock_timestamp() WHERE id = $1`, current.SessionID); err != nil {
+	caller := Caller{sessionID: session.ID}
+	if session.Method == "password" && session.UserID.Valid {
+		var current currentRecord
+		if err := tx.GetContext(ctx, &current, currentSessionQuery+` AND s.id=$1`, session.ID); err != nil {
+			return Caller{}, authenticationQueryError(err)
+		}
+		caller.userID, caller.authVersion = current.ID, current.AuthVersion
+	} else if session.Method == "oidc" && session.ExternalIdentityID.Valid {
+		var linked struct {
+			ExternalIdentityID uuid.UUID     `db:"external_identity_id"`
+			Status             string        `db:"identity_status"`
+			UserID             uuid.NullUUID `db:"user_id"`
+			AuthVersion        sql.NullInt64 `db:"auth_version"`
+		}
+		if err := tx.GetContext(ctx, &linked, `SELECT ei.id external_identity_id,ei.status identity_status,ei.user_id,u.auth_version
+			FROM auth_sessions s JOIN external_identities ei ON ei.id=s.external_identity_id
+			JOIN auth_providers ap ON ap.id=ei.provider_id
+			LEFT JOIN users u ON u.id=ei.user_id
+			WHERE s.id=$1 AND ap.enabled AND (ei.status='pending' OR (ei.status='linked' AND u.status='active'))`, session.ID); err != nil {
+			return Caller{}, authenticationQueryError(err)
+		}
+		caller.externalIdentityID = linked.ExternalIdentityID
+		if linked.Status == "linked" && linked.UserID.Valid && linked.AuthVersion.Valid {
+			caller.userID, caller.authVersion = linked.UserID.UUID, linked.AuthVersion.Int64
+		}
+	} else {
+		return Caller{}, ErrUnauthenticated
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE auth_sessions SET last_seen_at = clock_timestamp() WHERE id = $1`, session.ID); err != nil {
 		return Caller{}, dependencyError(err)
 	}
 	if err := tx.Commit(); err != nil {
 		return Caller{}, dependencyError(err)
 	}
-	return Caller{userID: current.ID, sessionID: current.SessionID, authVersion: current.AuthVersion}, nil
+	return caller, nil
 }
 
 // AuthorizeInTx 是人工业务接纳的用户级门禁，不替代项目权限校验。
 // 调用者须用 READ COMMITTED，且在任何资源排他锁前调用；方法只取得共享控制锁。
 func (m *Module) AuthorizeInTx(ctx context.Context, tx *sqlx.Tx, caller Caller) (User, error) {
+	return m.authorizeInTx(ctx, tx, caller, false)
+}
+
+// AuthorizeSecurityInTx 由成员安全变更消费，直接取得排他控制锁，不可先走共享门禁。
+func (m *Module) AuthorizeSecurityInTx(ctx context.Context, tx *sqlx.Tx, caller Caller) (User, error) {
+	return m.authorizeInTx(ctx, tx, caller, true)
+}
+
+func (m *Module) authorizeInTx(ctx context.Context, tx *sqlx.Tx, caller Caller, exclusive bool) (User, error) {
 	if caller.userID == uuid.Nil || caller.sessionID == uuid.Nil || caller.authVersion <= 0 {
 		return User{}, ErrUnauthenticated
 	}
 	if tx == nil {
 		return User{}, ErrUnavailable
 	}
-	if _, err := lockControl(ctx, tx, false); err != nil {
+	if _, err := lockControl(ctx, tx, exclusive); err != nil {
 		return User{}, err
 	}
 	current, err := loadCaller(ctx, tx, caller)
@@ -237,10 +295,24 @@ func (m *Module) CurrentUser(ctx context.Context, caller Caller) (CurrentUser, e
 	return current.public(), nil
 }
 
-func loadCaller(ctx context.Context, tx *sqlx.Tx, caller Caller) (currentRecord, error) {
+func loadCaller(ctx context.Context, queryer sqlx.QueryerContext, caller Caller) (currentRecord, error) {
 	var current currentRecord
-	err := tx.GetContext(ctx, &current, currentSessionQuery+` AND s.id = $1 AND u.id = $2 AND u.auth_version = $3`,
-		caller.sessionID, caller.userID, caller.authVersion)
+	var err error
+	if caller.externalIdentityID != uuid.Nil {
+		err = sqlx.GetContext(ctx, queryer, &current, `SELECT u.id,u.display_name,u.status,u.platform_role,u.created_at,
+			COALESCE(lc.must_change_password,false) must_change_password,s.id session_id,u.auth_version,
+			s.primary_authenticated_at,s.expires_at
+			FROM auth_sessions s JOIN external_identities ei ON ei.id=s.external_identity_id
+			JOIN auth_providers ap ON ap.id=ei.provider_id JOIN users u ON u.id=ei.user_id
+			LEFT JOIN local_credentials lc ON lc.user_id=u.id
+			WHERE s.id=$1 AND ei.id=$2 AND u.id=$3 AND u.auth_version=$4 AND ei.status='linked'
+			AND ap.enabled AND u.status='active' AND s.revoked_at IS NULL
+			AND s.expires_at>clock_timestamp() AND s.last_seen_at>clock_timestamp()-interval '30 minutes'`,
+			caller.sessionID, caller.externalIdentityID, caller.userID, caller.authVersion)
+	} else {
+		err = sqlx.GetContext(ctx, queryer, &current, currentSessionQuery+` AND s.id = $1 AND u.id = $2 AND u.auth_version = $3`,
+			caller.sessionID, caller.userID, caller.authVersion)
+	}
 	return current, authenticationQueryError(err)
 }
 
@@ -256,17 +328,22 @@ func (m *Module) LogoutCurrent(ctx context.Context, cookie string) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	var revoked struct {
-		ID     uuid.UUID `db:"id"`
-		UserID uuid.UUID `db:"user_id"`
-		At     time.Time `db:"revoked_at"`
+		ID                 uuid.UUID     `db:"id"`
+		UserID             uuid.NullUUID `db:"user_id"`
+		ExternalIdentityID uuid.NullUUID `db:"external_identity_id"`
+		At                 time.Time     `db:"revoked_at"`
 	}
 	err = tx.GetContext(ctx, &revoked, `UPDATE auth_sessions SET revoked_at = clock_timestamp()
-		WHERE token_hash = $1 AND revoked_at IS NULL RETURNING id, user_id, revoked_at`, hash)
+		WHERE token_hash = $1 AND revoked_at IS NULL RETURNING id,user_id,external_identity_id,revoked_at`, hash)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return dependencyError(err)
 	}
 	if err == nil {
-		if err := audit.Append(ctx, tx, audit.Entry{ActorID: revoked.UserID.String(),
+		actorID := "external:" + revoked.ExternalIdentityID.UUID.String()
+		if revoked.UserID.Valid {
+			actorID = revoked.UserID.UUID.String()
+		}
+		if err := audit.Append(ctx, tx, audit.Entry{ActorID: actorID,
 			Action: "auth.logout", TargetType: "session", TargetID: revoked.ID,
 			Summary: map[string]any{}, CreatedAt: revoked.At}); err != nil {
 			return dependencyError(err)
@@ -278,7 +355,7 @@ func (m *Module) LogoutCurrent(ctx context.Context, cookie string) error {
 // LogoutAll 要求当前本人的有效证明，受临时密码限制的 User 仍可退出。
 // 验证与撤销共持排他控制锁，不能复用 Middleware 或旧 Caller 绕过撤销。
 func (m *Module) LogoutAll(ctx context.Context, caller Caller) error {
-	if caller.userID == uuid.Nil || caller.sessionID == uuid.Nil || caller.authVersion <= 0 {
+	if caller.sessionID == uuid.Nil || caller.userID == uuid.Nil && caller.externalIdentityID == uuid.Nil {
 		return ErrUnauthenticated
 	}
 	tx, _, err := m.beginControlled(ctx, true)
@@ -286,16 +363,33 @@ func (m *Module) LogoutAll(ctx context.Context, caller Caller) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	current, err := loadCaller(ctx, tx, caller)
-	if err != nil {
-		return err
+	actorID := caller.ActorID()
+	targetID := caller.userID
+	where := `user_id=$2 OR external_identity_id IN (SELECT id FROM external_identities WHERE user_id=$2)`
+	argument := any(caller.userID)
+	if caller.userID != uuid.Nil {
+		if _, err := loadCaller(ctx, tx, caller); err != nil {
+			return err
+		}
+	} else {
+		var pending bool
+		if err := tx.GetContext(ctx, &pending, `SELECT EXISTS(SELECT 1 FROM auth_sessions s JOIN external_identities ei ON ei.id=s.external_identity_id
+			WHERE s.id=$1 AND ei.id=$2 AND ei.status='pending' AND s.revoked_at IS NULL
+			AND s.expires_at>clock_timestamp() AND s.last_seen_at>clock_timestamp()-interval '30 minutes')`, caller.sessionID, caller.externalIdentityID); err != nil {
+			return dependencyError(err)
+		}
+		if !pending {
+			return ErrUnauthenticated
+		}
+		actorID = "external:" + caller.externalIdentityID.String()
+		targetID = caller.externalIdentityID
+		where, argument = `external_identity_id=$2`, caller.externalIdentityID
 	}
 	var now time.Time
 	if err := tx.GetContext(ctx, &now, `SELECT clock_timestamp()`); err != nil {
 		return dependencyError(err)
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE auth_sessions SET revoked_at = $1
-		WHERE user_id = $2 AND revoked_at IS NULL`, now, current.ID)
+	result, err := tx.ExecContext(ctx, `UPDATE auth_sessions SET revoked_at=$1 WHERE (`+where+`) AND revoked_at IS NULL`, now, argument)
 	if err != nil {
 		return dependencyError(err)
 	}
@@ -303,8 +397,8 @@ func (m *Module) LogoutAll(ctx context.Context, caller Caller) error {
 	if err != nil {
 		return dependencyError(err)
 	}
-	if err := audit.Append(ctx, tx, audit.Entry{ActorID: current.ID.String(),
-		Action: "auth.logout_all", TargetType: "user", TargetID: current.ID,
+	if err := audit.Append(ctx, tx, audit.Entry{ActorID: actorID,
+		Action: "auth.logout_all", TargetType: "identity", TargetID: targetID,
 		Summary: map[string]any{"revoked_count": count}, CreatedAt: now}); err != nil {
 		return dependencyError(err)
 	}

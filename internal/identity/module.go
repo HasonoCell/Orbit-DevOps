@@ -4,6 +4,8 @@ package identity
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -30,6 +32,9 @@ var (
 	ErrRecentAuthenticationRequired = errors.New("recent authentication required")
 	ErrLoginNameConflict            = errors.New("login name already in use")
 	ErrUserNotFound                 = errors.New("user not found")
+	ErrLastAdministrator            = errors.New("platform must retain an effective administrator")
+	ErrLastProjectOwner             = errors.New("project must retain an effective owner")
+	ErrLegacyClaimConflict          = errors.New("legacy project membership claim conflicts with current facts")
 )
 
 const (
@@ -48,17 +53,69 @@ type User struct {
 }
 
 type Module struct {
-	db        *sqlx.DB
-	hashSlots chan struct{}
-	dummyHash string
+	db              *sqlx.DB
+	ownership       OwnershipGuard
+	hashSlots       chan struct{}
+	dummyHash       string
+	oidcAdapter     OIDCAdapter
+	oidcSecrets     map[string]string
+	oidcRedirectURL string
+	oidcCipher      cipher.AEAD
+}
+
+type Option func(*Module) error
+
+type OIDCConfig struct {
+	Adapter       OIDCAdapter
+	ClientSecrets map[string]string
+	RedirectURL   string
+	EncryptionKey []byte
+}
+
+// WithOIDC 启用可选的单提供方运行能力；数据库政策与部署 Secret 保持分离。
+func WithOIDC(config OIDCConfig) Option {
+	return func(module *Module) error {
+		if config.Adapter == nil || strings.TrimSpace(config.RedirectURL) == "" || len(config.EncryptionKey) != 32 {
+			return ErrOIDCUnavailable
+		}
+		block, err := aes.NewCipher(config.EncryptionKey)
+		if err != nil {
+			return ErrOIDCUnavailable
+		}
+		module.oidcCipher, err = cipher.NewGCM(block)
+		if err != nil {
+			return ErrOIDCUnavailable
+		}
+		module.oidcAdapter = config.Adapter
+		module.oidcRedirectURL = config.RedirectURL
+		module.oidcSecrets = make(map[string]string, len(config.ClientSecrets))
+		for key, secret := range config.ClientSecrets {
+			module.oidcSecrets[key] = secret
+		}
+		return nil
+	}
+}
+
+// OwnershipGuard 只协调目标用户失去入口后的项目不变量，不接收 Cookie、凭据或平台旁路。
+// 调用者已持控制排他锁；实现按稳定顺序锁定受影响项目，并在当前事务里检查剩余 owner。
+type OwnershipGuard interface {
+	RequireRemainingOwner(context.Context, *sqlx.Tx, uuid.UUID) error
 }
 
 // New 不写数据库、不自动 bootstrap，也不创建默认共享账号。
-func New(db *sqlx.DB) (*Module, error) {
-	if db == nil {
+// owner 保护必须在构造时接入，不提供可选 setter 或空安全依赖的运行模式。
+func New(db *sqlx.DB, ownership OwnershipGuard, options ...Option) (*Module, error) {
+	if db == nil || ownership == nil {
 		return nil, ErrUnavailable
 	}
-	m := &Module{db: db, hashSlots: make(chan struct{}, 2)}
+	m := &Module{db: db, ownership: ownership, hashSlots: make(chan struct{}, 2)}
+	for _, option := range options {
+		if option != nil {
+			if err := option(m); err != nil {
+				return nil, err
+			}
+		}
+	}
 	secret, err := randomSessionToken()
 	if err != nil {
 		return nil, err
