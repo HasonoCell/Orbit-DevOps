@@ -63,7 +63,7 @@ func TestProjectMemberMigrationBackfillsExistingCreators(t *testing.T) {
 	var role string
 	if err := database.QueryRowContext(
 		ctx,
-		`SELECT role FROM project_members WHERE project_id = $1 AND actor_id = 'existing-owner'`,
+		`SELECT role FROM legacy_project_members WHERE project_id = $1 AND actor_id = 'existing-owner'`,
 		projectID,
 	).Scan(&role); err != nil {
 		t.Fatalf("load backfilled project owner: %v", err)

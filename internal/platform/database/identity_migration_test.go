@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/golang-migrate/migrate/v4"
 	migratepostgres "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -50,16 +51,16 @@ func TestLocalIdentityMigrationPreservesLegacyAndGuardsRollback(t *testing.T) {
 		t.Fatalf("upgrade local identity schema: %v", err)
 	}
 	var role string
-	if err := db.GetContext(ctx, &role, `SELECT role FROM project_members
+	if err := db.GetContext(ctx, &role, `SELECT role FROM legacy_project_members
 		WHERE project_id = $1 AND actor_id = 'historical-actor'`, projectID); err != nil || role != "owner" {
-		t.Fatal("foundation migration prematurely cut over legacy authorization")
+		t.Fatal("identity migration did not preserve legacy responsibility")
 	}
 	// 空身份可以 down/up；旧业务事实不能因此删除。
 	migrateDatabaseToVersion(t, dsn, 20)
 	if err := Migrate(dsn); err != nil {
 		t.Fatalf("reapply empty identity migration: %v", err)
 	}
-	module, err := identity.New(db)
+	module, err := identity.New(db, projectauth.NewOwnershipGuard())
 	if err != nil {
 		t.Fatal("construct identity fixture")
 	}
@@ -80,8 +81,35 @@ func TestLocalIdentityMigrationPreservesLegacyAndGuardsRollback(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `UPDATE local_credentials SET login_name = 'NOT-NORMALIZED' WHERE user_id = $1`, user.ID); err == nil {
 		t.Fatal("database accepted noncanonical local login name")
 	}
+	provider, err := module.ConfigureProvider(ctx, identity.ConfigureProviderCommand{ID: "fixture", DisplayName: "Fixture OIDC",
+		Issuer: "https://issuer.fixture", ClientID: "orbit-client", ClientSecretRef: "fixture-secret", Enabled: true,
+		MaintenanceRef: "fixture-provider-policy"})
+	if err != nil || !provider.Enabled {
+		t.Fatalf("configure OIDC policy fixture: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_providers
+		(id,display_name,issuer,client_id,client_secret_ref,enabled,created_by,created_at,updated_at)
+		VALUES('second','Second','https://second.fixture','second-client','second-secret',true,'fixture',clock_timestamp(),clock_timestamp())`); err == nil {
+		t.Fatal("database accepted two enabled OIDC providers")
+	}
+	externalID := uuid.New()
+	if _, err := db.ExecContext(ctx, `INSERT INTO external_identities
+		(id,provider_id,subject,status,display_name,email_verified,created_at,updated_at)
+		VALUES($1,'fixture','subject','pending','Fixture',false,clock_timestamp(),clock_timestamp())`, externalID); err != nil {
+		t.Fatal("seed external identity constraint fixture")
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_sessions
+		(id,token_hash,user_id,auth_version,auth_method,external_identity_id,provider_id,created_at,last_seen_at,expires_at)
+		VALUES($1,decode(repeat('00',32),'hex'),$2,1,'oidc',$3,'fixture',clock_timestamp(),clock_timestamp(),clock_timestamp()+interval '1 hour')`,
+		uuid.New(), user.ID, externalID); err == nil {
+		t.Fatal("database accepted an OIDC session with both direct user and external subject")
+	}
 	if err := identityRollback(dsn); err == nil {
 		t.Fatal("down destroyed initialized identity data")
+	}
+	var effective int
+	if err := db.GetContext(ctx, &effective, `SELECT count(*) FROM effective_identity_users WHERE id = $1`, user.ID); err != nil || effective != 1 {
+		t.Fatal("guarded down removed the effective identity policy before an earlier rollback failed")
 	}
 	if _, err := module.LoginLocal(ctx, identity.LocalLoginCommand{
 		LoginName: "fixture-admin", Password: "fixture-only!Migration-September-2026", SourceIP: "127.0.0.1",
