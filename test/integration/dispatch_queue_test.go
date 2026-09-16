@@ -21,7 +21,7 @@ func TestQueueDeliversAcceptedRelease(t *testing.T) {
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := releaseoperation.New(db)
 	runner, err := releaseworker.New(releaseworker.Config{WorkerID: "queue-test", LeaseDuration: time.Second, ReleaseOperationTimeout: time.Second},
-		operations, delivery.New(db, operations, projectauth.New(db)), &recordingPublisher{})
+		operations, delivery.New(db, operations, projectauth.New(db, nil)), &recordingPublisher{})
 	if err != nil {
 		t.Fatal(err)
 	}

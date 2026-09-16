@@ -35,8 +35,9 @@ func TestUserCanCreateAndRetrieveApplication(t *testing.T) {
 	if created.Slug != "delivery-api" {
 		t.Errorf("slug = %q, want %q", created.Slug, "delivery-api")
 	}
-	if created.CreatedBy != "local-developer" {
-		t.Errorf("createdBy = %q, want %q", created.CreatedBy, "local-developer")
+	wantCreatedBy := environment.users["local-developer"].ID.String()
+	if created.CreatedBy != wantCreatedBy {
+		t.Errorf("createdBy = %q, want %q", created.CreatedBy, wantCreatedBy)
 	}
 	if created.CreatedAt.IsZero() {
 		t.Error("createdAt is zero")

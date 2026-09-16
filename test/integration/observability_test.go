@@ -127,7 +127,7 @@ func TestReleaseRequestLogIncludesControlPlaneCorrelations(t *testing.T) {
 		t.Fatalf("decode request log: %v\n%s", err, output.String())
 	}
 	for key, want := range map[string]string{
-		"actor_id":        "local-developer",
+		"actor_id":        environment.users["local-developer"].ID.String(),
 		"project_id":      target.ProjectID,
 		"idempotency_key": "correlated-release",
 		"route":           "/api/v1/deployment-targets/:deploymentTargetId/releases",
@@ -172,6 +172,8 @@ func TestReleaseTraceContinuesIntoWorkerAttempt(t *testing.T) {
 		t.Fatalf("build release request: %v", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", integrationOrigin)
+	request.Header.Set("X-Orbit-CSRF", "1")
 	request.Header.Set("Idempotency-Key", "trace-release")
 	propagator.Inject(requestContext, propagation.HeaderCarrier(request.Header))
 	response, err := environment.server.Client().Do(request)
@@ -190,7 +192,7 @@ func TestReleaseTraceContinuesIntoWorkerAttempt(t *testing.T) {
 
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := releaseoperation.New(db)
-	releases := delivery.New(db, operations, projectauth.New(db))
+	releases := delivery.New(db, operations, projectauth.New(db, nil))
 	publisher := &traceRecordingPublisher{}
 	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID:                "trace-worker",

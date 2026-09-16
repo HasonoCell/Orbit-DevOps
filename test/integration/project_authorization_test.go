@@ -14,7 +14,7 @@ import (
 
 type projectMemberDocument struct {
 	ProjectID string    `json:"projectId"`
-	ActorID   string    `json:"actorId"`
+	UserID    string    `json:"userId"`
 	Role      string    `json:"role"`
 	CreatedBy string    `json:"createdBy"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -44,16 +44,20 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		t.Fatalf("list initial members status = %d, want %d", ownerMembers.StatusCode, http.StatusOK)
 	}
 	initialMembers := decodeMembers(t, ownerMembers)
-	if len(initialMembers) != 1 || initialMembers[0].ActorID != "local-developer" || initialMembers[0].Role != "owner" {
+	if len(initialMembers) != 1 || initialMembers[0].UserID != environment.users["local-developer"].ID.String() || initialMembers[0].Role != "owner" {
 		t.Fatalf("initial members = %#v, want project creator as sole owner", initialMembers)
 	}
 
-	developer := addMember(t, ownerServer, project.ID, "local-contributor", "developer", "add-project-developer")
-	replayedDeveloper := addMember(t, ownerServer, project.ID, "local-contributor", "developer", "add-project-developer")
+	developerUser := environment.ensureActor(t, "local-contributor")
+	viewerUser := environment.ensureActor(t, "local-viewer")
+	unauthorizedUser := environment.ensureActor(t, "unauthorized-member")
+	temporaryUser := environment.ensureActor(t, "temporary-member")
+	developer := addMember(t, ownerServer, project.ID, developerUser.ID.String(), "developer", "add-project-developer")
+	replayedDeveloper := addMember(t, ownerServer, project.ID, developerUser.ID.String(), "developer", "add-project-developer")
 	if replayedDeveloper != developer {
 		t.Errorf("replayed member = %#v, want %#v", replayedDeveloper, developer)
 	}
-	addMember(t, ownerServer, project.ID, "local-viewer", "viewer", "add-project-viewer")
+	addMember(t, ownerServer, project.ID, viewerUser.ID.String(), "viewer", "add-project-viewer")
 
 	developerServer := environment.serverForActor(t, "local-contributor")
 	viewerServer := environment.serverForActor(t, "local-viewer")
@@ -225,17 +229,17 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		http.MethodPost,
 		"/api/v1/projects/"+project.ID+"/members",
 		"developer-add-member",
-		`{"actorId":"unauthorized-member","role":"viewer"}`,
+		fmt.Sprintf(`{"userId":%q,"role":"viewer"}`, unauthorizedUser.ID.String()),
 	)
 	defer developerMemberWrite.Body.Close()
 	assertError(t, developerMemberWrite, http.StatusForbidden, "project_permission_denied")
 
-	addMember(t, ownerServer, project.ID, "temporary-member", "viewer", "add-temporary-member")
+	addMember(t, ownerServer, project.ID, temporaryUser.ID.String(), "viewer", "add-temporary-member")
 	updatedMember := updateMember(
 		t,
 		ownerServer,
 		project.ID,
-		"temporary-member",
+		temporaryUser.ID.String(),
 		"developer",
 		"update-temporary-member",
 	)
@@ -243,7 +247,7 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		t,
 		ownerServer,
 		project.ID,
-		"temporary-member",
+		temporaryUser.ID.String(),
 		"developer",
 		"update-temporary-member",
 	)
@@ -254,14 +258,14 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		t,
 		ownerServer,
 		project.ID,
-		"temporary-member",
+		temporaryUser.ID.String(),
 		"remove-temporary-member",
 	)
 	replayedRemove := removeMember(
 		t,
 		ownerServer,
 		project.ID,
-		"temporary-member",
+		temporaryUser.ID.String(),
 		"remove-temporary-member",
 	)
 	if replayedRemove != removedMember {
@@ -319,7 +323,7 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		t,
 		ownerServer,
 		http.MethodPut,
-		"/api/v1/projects/"+project.ID+"/members/local-developer",
+		"/api/v1/projects/"+project.ID+"/members/"+environment.users["local-developer"].ID.String(),
 		"demote-last-owner",
 		`{"role":"developer"}`,
 	)
@@ -330,14 +334,14 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		t,
 		ownerServer,
 		http.MethodDelete,
-		"/api/v1/projects/"+project.ID+"/members/local-developer",
+		"/api/v1/projects/"+project.ID+"/members/"+environment.users["local-developer"].ID.String(),
 		"remove-last-owner",
 		"",
 	)
 	defer removeLastOwner.Body.Close()
 	assertError(t, removeLastOwner, http.StatusConflict, "last_project_owner")
 
-	assertOneMemberAudit(t, environment.databaseURL, project.ID, "local-contributor")
+	assertOneMemberAudit(t, environment.databaseURL, project.ID, developerUser.ID.String())
 }
 
 func requestJSON(
@@ -362,6 +366,10 @@ func requestJSON(
 	if body != "" {
 		request.Header.Set("Content-Type", "application/json")
 	}
+	request.Header.Set("Origin", integrationOrigin)
+	if method != http.MethodGet && method != http.MethodHead {
+		request.Header.Set("X-Orbit-CSRF", "1")
+	}
 	if idempotencyKey != "" {
 		request.Header.Set("Idempotency-Key", idempotencyKey)
 	}
@@ -376,7 +384,7 @@ func addMember(
 	t *testing.T,
 	server *httptest.Server,
 	projectID string,
-	actorID string,
+	userID string,
 	role string,
 	idempotencyKey string,
 ) projectMemberDocument {
@@ -387,7 +395,7 @@ func addMember(
 		http.MethodPost,
 		"/api/v1/projects/"+projectID+"/members",
 		idempotencyKey,
-		fmt.Sprintf(`{"actorId":%q,"role":%q}`, actorID, role),
+		fmt.Sprintf(`{"userId":%q,"role":%q}`, userID, role),
 	)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusCreated {
@@ -404,7 +412,7 @@ func updateMember(
 	t *testing.T,
 	server *httptest.Server,
 	projectID string,
-	actorID string,
+	userID string,
 	role string,
 	idempotencyKey string,
 ) projectMemberDocument {
@@ -413,7 +421,7 @@ func updateMember(
 		t,
 		server,
 		http.MethodPut,
-		"/api/v1/projects/"+projectID+"/members/"+actorID,
+		"/api/v1/projects/"+projectID+"/members/"+userID,
 		idempotencyKey,
 		fmt.Sprintf(`{"role":%q}`, role),
 	)
@@ -432,7 +440,7 @@ func removeMember(
 	t *testing.T,
 	server *httptest.Server,
 	projectID string,
-	actorID string,
+	userID string,
 	idempotencyKey string,
 ) projectMemberDocument {
 	t.Helper()
@@ -440,7 +448,7 @@ func removeMember(
 		t,
 		server,
 		http.MethodDelete,
-		"/api/v1/projects/"+projectID+"/members/"+actorID,
+		"/api/v1/projects/"+projectID+"/members/"+userID,
 		idempotencyKey,
 		"",
 	)
@@ -457,11 +465,13 @@ func removeMember(
 
 func decodeMembers(t *testing.T, response *http.Response) []projectMemberDocument {
 	t.Helper()
-	var members []projectMemberDocument
-	if err := json.NewDecoder(response.Body).Decode(&members); err != nil {
+	var page struct {
+		Items []projectMemberDocument `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&page); err != nil {
 		t.Fatalf("decode project members: %v", err)
 	}
-	return members
+	return page.Items
 }
 
 func assertError(t *testing.T, response *http.Response, status int, code string) {
@@ -478,7 +488,7 @@ func assertError(t *testing.T, response *http.Response, status int, code string)
 	}
 }
 
-func assertOneMemberAudit(t *testing.T, databaseURL string, projectID string, memberActorID string) {
+func assertOneMemberAudit(t *testing.T, databaseURL string, projectID string, memberUserID string) {
 	t.Helper()
 	database, err := sql.Open("pgx", databaseURL)
 	if err != nil {
@@ -494,9 +504,9 @@ func assertOneMemberAudit(t *testing.T, databaseURL string, projectID string, me
 		 WHERE target_id = $1
 		   AND action = 'project_member.add'
 		   AND actor_kind = 'user'
-		   AND summary->>'memberActorId' = $2`,
+		   AND summary->>'memberUserId' = $2`,
 		projectID,
-		memberActorID,
+		memberUserID,
 	).Scan(&count); err != nil {
 		t.Fatalf("count member audit records: %v", err)
 	}

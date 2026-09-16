@@ -87,7 +87,7 @@ func newQueueWithPublisher(t *testing.T, environment *testEnvironment, address s
 	t.Helper()
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := releaseoperation.New(db, releaseoperation.WithAutomaticRetryPolicy(1, func(int) time.Duration { return 200 * time.Millisecond }))
-	runner, err := releaseworker.New(releaseworker.Config{WorkerID: uuid.NewString(), LeaseDuration: 500 * time.Millisecond, ReleaseOperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db)), publisher)
+	runner, err := releaseworker.New(releaseworker.Config{WorkerID: uuid.NewString(), LeaseDuration: 500 * time.Millisecond, ReleaseOperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db, nil)), publisher)
 	if err != nil {
 		t.Fatal(err)
 	}

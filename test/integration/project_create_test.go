@@ -32,8 +32,9 @@ func TestUserCanCreateProject(t *testing.T) {
 	if project.Slug != "platform" {
 		t.Errorf("slug = %q, want %q", project.Slug, "platform")
 	}
-	if project.CreatedBy != "local-developer" {
-		t.Errorf("createdBy = %q, want %q", project.CreatedBy, "local-developer")
+	wantCreatedBy := environment.users["local-developer"].ID.String()
+	if project.CreatedBy != wantCreatedBy {
+		t.Errorf("createdBy = %q, want %q", project.CreatedBy, wantCreatedBy)
 	}
 	if project.CreatedAt.IsZero() {
 		t.Error("createdAt is zero")

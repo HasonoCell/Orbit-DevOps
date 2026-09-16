@@ -57,7 +57,7 @@ func TestReleaseWorkerPersistsSuccessfulAndFailedTerminalStates(t *testing.T) {
 			acceptance := createRelease(t, environment, "worker-terminal-state")
 			db := openTestDatabase(t, environment.databaseURL)
 			operations := releaseoperation.New(db)
-			releases := delivery.New(db, operations, projectauth.New(db))
+			releases := delivery.New(db, operations, projectauth.New(db, nil))
 			publisher := &recordingPublisher{
 				err:            testCase.publishError,
 				waitForTimeout: testCase.waitForTimeout,
@@ -186,7 +186,7 @@ func TestReleaseWorkerRenewsLeaseDuringDelivery(t *testing.T) {
 	acceptance := createRelease(t, environment, "worker-heartbeat")
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := releaseoperation.New(db)
-	releases := delivery.New(db, operations, projectauth.New(db))
+	releases := delivery.New(db, operations, projectauth.New(db, nil))
 	publisher := &blockingPublisher{
 		started: make(chan struct{}),
 		release: make(chan struct{}),

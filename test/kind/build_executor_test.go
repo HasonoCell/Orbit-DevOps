@@ -138,7 +138,7 @@ func TestKindPushToReadyDelivery(t *testing.T) {
 	builds := build.New(environment.runner.db, build.Config{
 		AllowedGitHosts: []string{"github.com"}, Platform: environmentOrDefault("ORBIT_DEVOPS_KIND_BUILD_PLATFORM", "linux/amd64"),
 		RegistryHost: registryHost, RegistryPrefix: "orbit-devops",
-	}, operations, projectauth.New(environment.runner.db))
+	}, operations, projectauth.New(environment.runner.db, nil))
 	runner, err := buildworker.New(buildworker.Config{
 		WorkerID: "kind-build-worker", LeaseDuration: 30 * time.Second,
 		BuildTimeout: 7 * time.Minute, PollInterval: 250 * time.Millisecond,
@@ -169,7 +169,7 @@ func TestKindPushToReadyDelivery(t *testing.T) {
 		}
 	})
 
-	pipelineModule := pipeline.New(environment.runner.db, pipeline.Config{Platform: environmentOrDefault("ORBIT_DEVOPS_KIND_BUILD_PLATFORM", "linux/amd64")}, builds, environment.releases, projectauth.New(environment.runner.db), kindSourceInspector{})
+	pipelineModule := pipeline.New(environment.runner.db, pipeline.Config{Platform: environmentOrDefault("ORBIT_DEVOPS_KIND_BUILD_PLATFORM", "linux/amd64")}, builds, environment.releases, projectauth.New(environment.runner.db, nil), kindSourceInspector{})
 	eventService, err := internalevent.NewService(internalevent.Config{
 		RedisAddress: environment.runner.address, Queue: "orbit-devops-pipeline-kind", Concurrency: 2,
 		PollInterval: 50 * time.Millisecond, ConsumptionGrace: time.Second,

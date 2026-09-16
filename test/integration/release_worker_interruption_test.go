@@ -131,7 +131,7 @@ func TestReleaseWorkerInterruptionHelper(t *testing.T) {
 	defer db.Close()
 
 	operations := releaseoperation.New(db)
-	releases := delivery.New(db, operations, projectauth.New(db))
+	releases := delivery.New(db, operations, projectauth.New(db, nil))
 	publisher := processInterruptionPublisher{mode: mode, marker: marker}
 	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID:                "worker-interruption-child",

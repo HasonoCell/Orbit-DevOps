@@ -63,7 +63,8 @@ func TestQueueFIFOAndAttentionReleaseAcrossWorkers(t *testing.T) {
 		info, err := inspector.GetQueueInfo("orbit-devops-release")
 		return err == nil && info.Pending == 0 && info.Active == 0 && info.Scheduled == 0 && info.Retry == 0
 	})
-	addMember(t, environment.server, target.ProjectID, "queue-developer", "developer", "queue-member")
+	developerUser := environment.ensureActor(t, "queue-developer")
+	addMember(t, environment.server, target.ProjectID, developerUser.ID.String(), "developer", "queue-member")
 	developer := environment.serverForActor(t, "queue-developer")
 	denied := requestJSON(t, developer, http.MethodPost, "/api/v1/release-operations/"+first.ReleaseOperation.ID+"/fail", "queue-denied", `{"reason":"不能越权结束未知发布"}`)
 	defer denied.Body.Close()

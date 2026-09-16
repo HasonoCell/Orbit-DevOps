@@ -84,7 +84,7 @@ func newAutomaticPipelineFixture(t *testing.T, inspector *configurableSourceInsp
 	}
 	enableResponse.Body.Close()
 	db := openTestDatabase(t, environment.databaseURL)
-	authorizer := projectauth.New(db)
+	authorizer := projectauth.New(db, environment.identities)
 	buildOperations := buildoperation.New(db)
 	releaseOperations := releaseoperation.New(db)
 	builds := build.New(db, build.Config{AllowedGitHosts: []string{"github.com"}, Platform: "linux/amd64", RegistryHost: "registry.example", RegistryPrefix: "orbit-devops"}, buildOperations, authorizer)
@@ -467,7 +467,7 @@ func TestAutomaticDeliveryRetainsTriggerAfterWebhookCleanup(t *testing.T) {
 	if err := fixture.pipelines.Maintain(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	detail, err := fixture.pipelines.GetRun(context.Background(), runID, "local-developer")
+	detail, err := fixture.pipelines.GetRun(context.Background(), runID, fixture.environment.adminCaller)
 	if err != nil {
 		t.Fatal(err)
 	}

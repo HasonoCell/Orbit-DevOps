@@ -85,7 +85,7 @@ func TestBuildAcceptanceAtomicallyCreatesPendingBuildOperation(t *testing.T) {
 	if acceptance.Build.DestinationRepository != wantRepository {
 		t.Fatalf("destination repository = %q, want %q", acceptance.Build.DestinationRepository, wantRepository)
 	}
-	if acceptance.Build.CreatedBy != "local-developer" || acceptance.Build.CreatedAt.IsZero() {
+	if acceptance.Build.CreatedBy != environment.users["local-developer"].ID.String() || acceptance.Build.CreatedAt.IsZero() {
 		t.Fatalf("build creation metadata = %q/%s", acceptance.Build.CreatedBy, acceptance.Build.CreatedAt)
 	}
 	if acceptance.BuildOperation.BuildID != acceptance.Build.ID || acceptance.BuildOperation.Status != "pending" || acceptance.BuildOperation.AttemptCount != 0 {

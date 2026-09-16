@@ -96,7 +96,7 @@ func TestReleaseReportDistinguishesAnOlderRunningRelease(t *testing.T) {
 	db := openTestDatabase(t, environment.databaseURL)
 	module := diagnostics.New(
 		db,
-		projectauth.New(db),
+		projectauth.New(db, environment.identities),
 		staticRuntimeSource{observation: diagnostics.RuntimeObservation{
 			Workload: diagnostics.WorkloadObservation{
 				Metadata: diagnostics.ObservationMetadata{
@@ -123,7 +123,7 @@ func TestReleaseReportDistinguishesAnOlderRunningRelease(t *testing.T) {
 
 	report, err := module.GetReleaseReport(context.Background(), diagnostics.GetReleaseReportQuery{
 		ReleaseID: uuid.MustParse(requested.Release.ID),
-		ActorID:   "local-developer",
+		Caller:    environment.adminCaller,
 	})
 	if err != nil {
 		t.Fatalf("get release diagnostic report: %v", err)
@@ -152,11 +152,11 @@ func TestReleaseReportRetainsControlPlaneEvidenceWhenKubernetesIsUnavailable(t *
 	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-unavailable")
 	acceptance := createReleaseForTarget(t, environment, target.ID, "diagnostics-unavailable")
 	db := openTestDatabase(t, environment.databaseURL)
-	module := diagnostics.New(db, projectauth.New(db), diagnostics.UnavailableSource{})
+	module := diagnostics.New(db, projectauth.New(db, environment.identities), diagnostics.UnavailableSource{})
 
 	report, err := module.GetReleaseReport(context.Background(), diagnostics.GetReleaseReportQuery{
 		ReleaseID: uuid.MustParse(acceptance.Release.ID),
-		ActorID:   "local-developer",
+		Caller:    environment.adminCaller,
 	})
 	if err != nil {
 		t.Fatalf("get unavailable runtime report: %v", err)
@@ -184,7 +184,7 @@ func TestReleaseReportMarksMissingDeployment(t *testing.T) {
 		Source: diagnostics.SourceKubernetes, ObservedAt: time.Now().UTC(),
 		Status: diagnostics.ObservationComplete, ErrorCategories: []string{},
 	}
-	module := diagnostics.New(db, projectauth.New(db), staticRuntimeSource{
+	module := diagnostics.New(db, projectauth.New(db, environment.identities), staticRuntimeSource{
 		observation: diagnostics.RuntimeObservation{
 			Workload: diagnostics.WorkloadObservation{Metadata: metadata, Pods: []diagnostics.PodEvidence{}},
 			Events:   diagnostics.EventObservation{Metadata: metadata, Items: []diagnostics.EventEvidence{}},
@@ -192,7 +192,7 @@ func TestReleaseReportMarksMissingDeployment(t *testing.T) {
 	})
 
 	report, err := module.GetReleaseReport(context.Background(), diagnostics.GetReleaseReportQuery{
-		ReleaseID: uuid.MustParse(acceptance.Release.ID), ActorID: "local-developer",
+		ReleaseID: uuid.MustParse(acceptance.Release.ID), Caller: environment.adminCaller,
 	})
 	if err != nil {
 		t.Fatalf("get missing deployment report: %v", err)
@@ -210,7 +210,7 @@ func TestReleaseReportRetainsEvidenceFromPartialObservation(t *testing.T) {
 	releaseID := uuid.MustParse(acceptance.Release.ID)
 	db := openTestDatabase(t, environment.databaseURL)
 	observedAt := time.Now().UTC()
-	module := diagnostics.New(db, projectauth.New(db), staticRuntimeSource{
+	module := diagnostics.New(db, projectauth.New(db, environment.identities), staticRuntimeSource{
 		observation: diagnostics.RuntimeObservation{
 			Workload: diagnostics.WorkloadObservation{
 				Metadata: diagnostics.ObservationMetadata{
@@ -234,7 +234,7 @@ func TestReleaseReportRetainsEvidenceFromPartialObservation(t *testing.T) {
 	})
 
 	report, err := module.GetReleaseReport(context.Background(), diagnostics.GetReleaseReportQuery{
-		ReleaseID: releaseID, ActorID: "local-developer",
+		ReleaseID: releaseID, Caller: environment.adminCaller,
 	})
 	if err != nil {
 		t.Fatalf("get partial observation report: %v", err)
@@ -251,11 +251,11 @@ func TestReleaseReportHidesReleaseFromNonMember(t *testing.T) {
 	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-non-member")
 	acceptance := createReleaseForTarget(t, environment, target.ID, "diagnostics-non-member")
 	db := openTestDatabase(t, environment.databaseURL)
-	module := diagnostics.New(db, projectauth.New(db), diagnostics.UnavailableSource{})
+	module := diagnostics.New(db, projectauth.New(db, environment.identities), diagnostics.UnavailableSource{})
 
 	_, err := module.GetReleaseReport(context.Background(), diagnostics.GetReleaseReportQuery{
 		ReleaseID: uuid.MustParse(acceptance.Release.ID),
-		ActorID:   "outside-user",
+		Caller:    environment.callerForActor(t, "outside-user"),
 	})
 	if !errors.Is(err, diagnostics.ErrReleaseNotFound) {
 		t.Fatalf("non-member error = %v, want ErrReleaseNotFound", err)
@@ -294,11 +294,11 @@ func TestReleaseReportShowsImmutableTargetDifferences(t *testing.T) {
 	); err != nil {
 		t.Fatalf("update current target replicas: %v", err)
 	}
-	module := diagnostics.New(db, projectauth.New(db), diagnostics.UnavailableSource{})
+	module := diagnostics.New(db, projectauth.New(db, environment.identities), diagnostics.UnavailableSource{})
 
 	report, err := module.GetReleaseReport(context.Background(), diagnostics.GetReleaseReportQuery{
 		ReleaseID: uuid.MustParse(acceptance.Release.ID),
-		ActorID:   "local-developer",
+		Caller:    environment.adminCaller,
 	})
 	if err != nil {
 		t.Fatalf("get target difference report: %v", err)
@@ -356,10 +356,10 @@ func TestRuntimeLogsReturnsASafeBoundedExcerptForDeveloper(t *testing.T) {
 		Content:    "token=visible-secret\n" + strings.Repeat("日志", 70_000),
 		ObservedAt: time.Date(2026, 9, 9, 15, 0, 0, 0, time.UTC),
 	}}
-	module := diagnostics.New(db, projectauth.New(db), source)
+	module := diagnostics.New(db, projectauth.New(db, environment.identities), source)
 
 	excerpt, err := module.GetRuntimeLogs(context.Background(), diagnostics.GetRuntimeLogsQuery{
-		ReleaseID: uuid.MustParse(acceptance.Release.ID), ActorID: "local-developer",
+		ReleaseID: uuid.MustParse(acceptance.Release.ID), Caller: environment.adminCaller,
 		PodName: "application-pod", Container: "application", TailLines: 200,
 	})
 	if err != nil {
@@ -381,10 +381,11 @@ func TestRuntimeLogsRejectsViewer(t *testing.T) {
 	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-viewer-logs")
 	acceptance := createReleaseForTarget(t, environment, target.ID, "diagnostics-viewer-logs")
 	db := openTestDatabase(t, environment.databaseURL)
-	authorizer := projectauth.New(db)
+	authorizer := projectauth.New(db, environment.identities)
+	viewer := environment.callerForActor(t, "diagnostics-viewer")
 	if _, err := authorizer.AddMember(context.Background(), projectauth.AddMemberCommand{
-		ProjectID: uuid.MustParse(target.ProjectID), MemberActorID: "diagnostics-viewer",
-		Role: projectauth.RoleViewer, ActorID: "local-developer",
+		ProjectID: uuid.MustParse(target.ProjectID), UserID: viewer.UserID(),
+		Role: projectauth.RoleViewer, Caller: environment.adminCaller,
 		IdempotencyKey: "diagnostics-add-viewer",
 	}); err != nil {
 		t.Fatalf("add diagnostics viewer: %v", err)
@@ -392,7 +393,7 @@ func TestRuntimeLogsRejectsViewer(t *testing.T) {
 	module := diagnostics.New(db, authorizer, staticRuntimeLogSource{})
 
 	_, err := module.GetRuntimeLogs(context.Background(), diagnostics.GetRuntimeLogsQuery{
-		ReleaseID: uuid.MustParse(acceptance.Release.ID), ActorID: "diagnostics-viewer",
+		ReleaseID: uuid.MustParse(acceptance.Release.ID), Caller: viewer,
 		PodName: "application-pod", Container: "application", TailLines: 200,
 	})
 	if !errors.Is(err, projectauth.ErrForbidden) {
@@ -444,10 +445,11 @@ func TestRuntimeLogsHTTPReturnsForbiddenForViewer(t *testing.T) {
 	target := createDeploymentTargetWithSuffix(t, environment, "diagnostics-logs-viewer-http")
 	acceptance := createReleaseForTarget(t, environment, target.ID, "diagnostics-logs-viewer-http")
 	db := openTestDatabase(t, environment.databaseURL)
-	authorizer := projectauth.New(db)
+	authorizer := projectauth.New(db, environment.identities)
+	viewer := environment.callerForActor(t, "diagnostics-http-viewer")
 	if _, err := authorizer.AddMember(context.Background(), projectauth.AddMemberCommand{
-		ProjectID: uuid.MustParse(target.ProjectID), MemberActorID: "diagnostics-http-viewer",
-		Role: projectauth.RoleViewer, ActorID: "local-developer",
+		ProjectID: uuid.MustParse(target.ProjectID), UserID: viewer.UserID(),
+		Role: projectauth.RoleViewer, Caller: environment.adminCaller,
 		IdempotencyKey: "diagnostics-http-viewer",
 	}); err != nil {
 		t.Fatalf("add HTTP diagnostics viewer: %v", err)

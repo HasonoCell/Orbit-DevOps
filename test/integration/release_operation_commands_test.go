@@ -147,7 +147,7 @@ func TestWorkerAcknowledgesRunningReleaseOperationCancellation(t *testing.T) {
 	acceptance := createRelease(t, environment, "cancel-running")
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := releaseoperation.New(db)
-	releases := delivery.New(db, operations, projectauth.New(db))
+	releases := delivery.New(db, operations, projectauth.New(db, nil))
 	publisher := &blockingPublisher{started: make(chan struct{}), release: make(chan struct{})}
 	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID: "worker-cancel", LeaseDuration: 150 * time.Millisecond,

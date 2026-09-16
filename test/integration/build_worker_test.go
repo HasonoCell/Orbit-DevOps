@@ -37,7 +37,7 @@ func TestBuildWorkerCompletesAcceptedBuildThroughQueue(t *testing.T) {
 
 	database := openTestDatabase(t, environment.databaseURL)
 	operations := buildoperation.New(database)
-	builds := build.New(database, build.Config{}, operations, projectauth.New(database))
+	builds := build.New(database, build.Config{}, operations, projectauth.New(database, nil))
 	executor := &memoryBuildExecutor{
 		repository: acceptance.Build.DestinationRepository,
 		digest:     "sha256:" + strings.Repeat("b", 64),
@@ -136,7 +136,7 @@ func TestBuildWorkerRecoveryObservesExistingExecutorBeforeStarting(t *testing.T)
 	}
 	runner, err := buildworker.New(buildworker.Config{WorkerID: "build-worker-recovery", LeaseDuration: time.Minute,
 		BuildTimeout: time.Minute, PollInterval: time.Millisecond}, operations,
-		build.New(database, build.Config{}, operations, projectauth.New(database)), executor)
+		build.New(database, build.Config{}, operations, projectauth.New(database, nil)), executor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,11 +182,11 @@ func TestBuildWorkerCancelRecoveryNeverStartsNewExecutor(t *testing.T) {
 			now := acceptance.Build.CreatedAt.Add(time.Second)
 			operations := buildoperation.New(database,
 				buildoperation.WithClock(func() time.Time { return now }),
-				buildoperation.WithAuthorizer(projectauth.New(database)))
+				buildoperation.WithAuthorizer(projectauth.New(database, environment.identities)))
 			first := claimBuildDispatch(t, operations, "build-worker-cancel-lost")
 			operationID := uuid.MustParse(acceptance.BuildOperation.ID)
 			if _, err := operations.Cancel(context.Background(), buildoperation.CancelCommand{
-				BuildOperationID: operationID, ActorID: "local-developer", IdempotencyKey: "cancel-recovery-request",
+				BuildOperationID: operationID, Caller: environment.adminCaller, IdempotencyKey: "cancel-recovery-request",
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -213,7 +213,7 @@ func TestBuildWorkerCancelRecoveryNeverStartsNewExecutor(t *testing.T) {
 			}
 			runner, err := buildworker.New(buildworker.Config{WorkerID: "build-worker-cancel-recovery", LeaseDuration: time.Minute,
 				BuildTimeout: time.Minute, PollInterval: time.Millisecond}, operations,
-				build.New(database, build.Config{}, operations, projectauth.New(database)), executor)
+				build.New(database, build.Config{}, operations, projectauth.New(database, nil)), executor)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -236,7 +236,8 @@ func TestBuildAttemptLogsRequireDevelopPermission(t *testing.T) {
 	environment := newTestEnvironment(t)
 	project := createProject(t, environment, "build-log-project")
 	application := createApplication(t, environment, project.ID, "build-log-application")
-	addMember(t, environment.server, project.ID, "build-log-viewer", "viewer", "add-build-log-viewer")
+	viewerUser := environment.ensureActor(t, "build-log-viewer")
+	addMember(t, environment.server, project.ID, viewerUser.ID.String(), "viewer", "add-build-log-viewer")
 	response := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/builds", "build-log",
 		`{"repositoryUrl":"https://github.com/example/demo.git","sourceCommit":"`+strings.Repeat("e", 40)+`"}`)
 	defer response.Body.Close()

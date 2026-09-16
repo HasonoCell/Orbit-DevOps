@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -13,11 +14,14 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/app"
 	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
 	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releasedispatch"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/transport/httpapi"
 	"github.com/HasonoCell/Orbit-DevOps/internal/webhook"
 	"github.com/HasonoCell/Orbit-DevOps/test/testsupport"
 	"github.com/google/uuid"
@@ -28,6 +32,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+const kindBrowserOrigin = "http://127.0.0.1:5173"
+const kindAdminPassword = "fixture-only!Orbit-Kind-2026"
 
 func TestKindControlPlaneDeliveryLoop(t *testing.T) {
 	adapter, client := newKindAdapter(t)
@@ -316,10 +323,28 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 	if err != nil {
 		t.Fatalf("get PostgreSQL connection string: %v", err)
 	}
+	if err := database.Migrate(databaseURL); err != nil {
+		t.Fatalf("migrate control-plane database: %v", err)
+	}
+	identityDB, err := sqlx.ConnectContext(ctx, "pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("connect identity database: %v", err)
+	}
+	t.Cleanup(func() { _ = identityDB.Close() })
+	identities, err := identity.New(identityDB, projectauth.NewOwnershipGuard())
+	if err != nil {
+		t.Fatalf("construct identity module: %v", err)
+	}
+	if _, err := identities.InitializeAdmin(ctx, identity.InitializeAdminCommand{
+		LoginName: "kind-developer", DisplayName: "Kind developer", Password: kindAdminPassword,
+		MaintenanceRef: "kind-control-plane-fixture",
+	}); err != nil {
+		t.Fatalf("initialize Kind administrator: %v", err)
+	}
 
 	runtime, err := app.NewWithDependencies(ctx, app.Config{
 		DatabaseURL:          databaseURL,
-		LocalActorID:         "kind-developer",
+		BrowserSecurity:      httpapi.BrowserSecurityConfig{ExternalURL: kindBrowserOrigin, AllowLoopbackHTTP: true},
 		LocalClusterRef:      kindCluster,
 		LocalNamespace:       kindNamespace,
 		BuildAllowedGitHosts: []string{"github.com"},
@@ -329,7 +354,7 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 		WebhookConfig: webhook.Config{Endpoints: map[string]webhook.EndpointSecrets{
 			"kind": {Current: "kind-webhook-secret"},
 		}},
-		MigrateOnBoot: true,
+		MigrateOnBoot: false,
 	}, app.Dependencies{
 		RuntimeSource:      adapter,
 		RecoveryPublisher:  adapter,
@@ -345,6 +370,12 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 	})
 	server := httptest.NewServer(runtime.Handler())
 	t.Cleanup(server.Close)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal("create Kind Cookie jar")
+	}
+	server.Client().Jar = jar
+	loginKindAdministrator(t, server)
 
 	db, err := sqlx.Open("pgx", databaseURL)
 	if err != nil {
@@ -356,7 +387,7 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 		}
 	})
 	operations := releaseoperation.New(db)
-	releases := delivery.New(db, operations, projectauth.New(db))
+	releases := delivery.New(db, operations, projectauth.New(db, nil))
 	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID:                "kind-worker",
 		LeaseDuration:           5 * time.Second,
@@ -369,6 +400,27 @@ func newKindControlPlane(t *testing.T, adapter *kube.Adapter) *kindControlPlane 
 	return &kindControlPlane{
 		databaseURL: databaseURL,
 		server:      server, runner: &kindQueueRunner{address: redisAddress(t), runner: runner, operations: operations, db: db}, operations: operations, releases: releases,
+	}
+}
+
+func loginKindAdministrator(t *testing.T, server *httptest.Server) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"loginName": "kind-developer", "password": kindAdminPassword})
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		server.URL+"/api/v1/auth/login", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal("build Kind login request")
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", kindBrowserOrigin)
+	request.Header.Set("X-Orbit-CSRF", "1")
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("login Kind administrator: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("login Kind administrator status = %d", response.StatusCode)
 	}
 }
 
@@ -515,6 +567,8 @@ func (e *kindControlPlane) postJSON(
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Idempotency-Key", idempotencyKey)
+	request.Header.Set("Origin", kindBrowserOrigin)
+	request.Header.Set("X-Orbit-CSRF", "1")
 	response, err := e.server.Client().Do(request)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
@@ -540,6 +594,8 @@ func (e *kindControlPlane) postCommand(
 		t.Fatalf("build POST %s: %v", path, err)
 	}
 	request.Header.Set("Idempotency-Key", idempotencyKey)
+	request.Header.Set("Origin", kindBrowserOrigin)
+	request.Header.Set("X-Orbit-CSRF", "1")
 	response, err := e.server.Client().Do(request)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)

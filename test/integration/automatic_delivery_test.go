@@ -57,7 +57,7 @@ func TestAutomaticDeliveryOrchestratesExistingBuildAndReleaseDomains(t *testing.
 		t.Fatal(err)
 	}
 	defer database.Close()
-	authorizer := projectauth.New(database)
+	authorizer := projectauth.New(database, environment.identities)
 	buildOperations := buildoperation.New(database)
 	releaseOperations := releaseoperation.New(database)
 	builds := build.New(database, build.Config{AllowedGitHosts: []string{"github.com"}, Platform: "linux/amd64", RegistryHost: "registry.example", RegistryPrefix: "orbit-devops"}, buildOperations, authorizer)
@@ -135,7 +135,7 @@ func TestAutomaticDeliveryOrchestratesExistingBuildAndReleaseDomains(t *testing.
 		if err := json.Unmarshal(record.Summary, &summary); err != nil {
 			t.Fatal(err)
 		}
-		if record.ActorKind != "system" || summary["configuredBy"] != "local-developer" || summary["webhookDeliveryId"] == "" || summary["deliveryRunId"] != run.ID.String() {
+		if record.ActorKind != "system" || summary["configuredBy"] != environment.users["local-developer"].ID.String() || summary["webhookDeliveryId"] == "" || summary["deliveryRunId"] != run.ID.String() {
 			t.Fatalf("automatic audit %s = %s %#v", record.Action, record.ActorKind, summary)
 		}
 	}

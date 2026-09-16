@@ -259,11 +259,12 @@ func TestDeveloperCanReconcileButOnlyOwnerCanForceFail(t *testing.T) {
 	acceptance := createRelease(t, environment, "manual-role-boundary")
 	db := openTestDatabase(t, environment.databaseURL)
 	forceUnknownAttention(t, db, acceptance.ReleaseOperation.ID)
+	developerUser := environment.ensureActor(t, "recovery-developer")
 	addMember(
 		t,
 		environment.server,
 		acceptance.Release.TargetSnapshot.ProjectID,
-		"recovery-developer",
+		developerUser.ID.String(),
 		"developer",
 		"add-recovery-developer",
 	)
@@ -430,7 +431,7 @@ func newRecoveryRunner(
 	publisher releaseworker.Publisher,
 ) *releaseworker.Runner {
 	t.Helper()
-	releases := delivery.New(db, operations, projectauth.New(db))
+	releases := delivery.New(db, operations, projectauth.New(db, nil))
 	runner, err := releaseworker.New(releaseworker.Config{
 		WorkerID: "worker-recovery", LeaseDuration: time.Second, ReleaseOperationTimeout: time.Second,
 	}, operations, releases, publisher)

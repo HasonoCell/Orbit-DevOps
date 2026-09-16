@@ -65,7 +65,7 @@ func TestQueueArchivedInfrastructureFailuresRemainRecoverable(t *testing.T) {
 	db := openTestDatabase(t, environment.databaseURL)
 	var offset atomic.Int64
 	operations := releaseoperation.New(db, releaseoperation.WithClock(func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }))
-	runner, err := releaseworker.New(releaseworker.Config{WorkerID: "archive-recovery", LeaseDuration: time.Second, ReleaseOperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db)), publisherFunc(func(context.Context, releaseworker.PublishRequest) error { return nil }))
+	runner, err := releaseworker.New(releaseworker.Config{WorkerID: "archive-recovery", LeaseDuration: time.Second, ReleaseOperationTimeout: 5 * time.Second}, operations, delivery.New(db, operations, projectauth.New(db, nil)), publisherFunc(func(context.Context, releaseworker.PublishRequest) error { return nil }))
 	if err != nil {
 		t.Fatal(err)
 	}

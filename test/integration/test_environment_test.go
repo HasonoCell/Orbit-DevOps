@@ -4,52 +4,107 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/app"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
+	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/transport/httpapi"
 	"github.com/HasonoCell/Orbit-DevOps/internal/webhook"
+	"github.com/jmoiron/sqlx"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
+
+const integrationOrigin = "http://127.0.0.1:5173"
+const integrationPassword = "fixture-only!Orbit-Integration-2026"
 
 type testEnvironment struct {
 	server              *httptest.Server
 	databaseURL         string
 	dependencies        app.Dependencies
 	postgresContainerID string
+	identities          *identity.Module
+	adminCaller         identity.Caller
+	users               map[string]identity.User
 }
 
-// serverForActor 使用同一数据库启动另一个本地身份，用于端到端验证项目授权。
+// serverForActor 使用正常本地登录取得独立 Cookie，不再用服务端配置伪造操作者。
 func (e *testEnvironment) serverForActor(t *testing.T, actorID string) *httptest.Server {
 	t.Helper()
+	e.ensureActor(t, actorID)
+	server := e.startServer(t)
+	loginHTTPFixture(t, server, actorID, integrationPassword+"-completed")
+	return server
+}
 
-	runtime, err := app.NewWithDependencies(context.Background(), app.Config{
-		DatabaseURL:          e.databaseURL,
-		LocalActorID:         actorID,
-		LocalClusterRef:      "kind-orbit-devops-s1",
-		LocalNamespace:       "orbit-devops-s1",
-		BuildAllowedGitHosts: []string{"github.com"},
-		BuildPlatform:        "linux/amd64",
-		BuildRegistryHost:    "registry.example",
-		BuildRegistryPrefix:  "orbit-devops",
-		WebhookConfig: webhook.Config{Endpoints: map[string]webhook.EndpointSecrets{
-			"integration": {Current: "integration-webhook-secret"},
-		}},
-		MigrateOnBoot: false,
-	}, e.dependencies)
-	if err != nil {
-		t.Fatalf("start Orbit-DevOps for actor %q: %v", actorID, err)
+func (e *testEnvironment) ensureActor(t *testing.T, loginName string) identity.User {
+	t.Helper()
+	if user, ok := e.users[loginName]; ok {
+		return user
 	}
-	t.Cleanup(func() {
-		if err := runtime.Close(); err != nil {
-			t.Errorf("close Orbit-DevOps for actor %q: %v", actorID, err)
-		}
-	})
+	ctx := context.Background()
+	user, err := e.identities.CreateLocalUser(ctx, identity.CreateLocalUserCommand{Caller: e.adminCaller,
+		LoginName: loginName, DisplayName: loginName, TemporaryPassword: integrationPassword})
+	if err != nil {
+		t.Fatalf("create integration actor %q: %v", loginName, err)
+	}
+	login, err := e.identities.LoginLocal(ctx, identity.LocalLoginCommand{LoginName: loginName,
+		Password: integrationPassword, SourceIP: "127.0.0.2"})
+	if err != nil {
+		t.Fatalf("login temporary integration actor %q: %v", loginName, err)
+	}
+	caller, err := e.identities.ResolveSession(ctx, login.Token.CookieValue())
+	if err != nil {
+		t.Fatalf("resolve integration actor %q: %v", loginName, err)
+	}
+	if err := e.identities.ChangePassword(ctx, identity.ChangePasswordCommand{Caller: caller,
+		CurrentPassword: integrationPassword, NewPassword: integrationPassword + "-completed", SourceIP: "127.0.0.2"}); err != nil {
+		t.Fatalf("complete integration actor %q: %v", loginName, err)
+	}
+	e.users[loginName] = user
+	return user
+}
 
+// callerForActor 返回已经完成临时密码修改的正式会话，供绕过 HTTP 的模块级集成测试使用。
+func (e *testEnvironment) callerForActor(t *testing.T, loginName string) identity.Caller {
+	t.Helper()
+	if loginName == "local-developer" {
+		return e.adminCaller
+	}
+	e.ensureActor(t, loginName)
+	login, err := e.identities.LoginLocal(context.Background(), identity.LocalLoginCommand{
+		LoginName: loginName, Password: integrationPassword + "-completed", SourceIP: "127.0.0.2",
+	})
+	if err != nil {
+		t.Fatalf("login integration caller %q: %v", loginName, err)
+	}
+	caller, err := e.identities.ResolveSession(context.Background(), login.Token.CookieValue())
+	if err != nil {
+		t.Fatalf("resolve integration caller %q: %v", loginName, err)
+	}
+	return caller
+}
+
+func (e *testEnvironment) startServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	runtime, err := app.NewWithDependencies(context.Background(), integrationAppConfig(e.databaseURL), e.dependencies)
+	if err != nil {
+		t.Fatalf("start Orbit-DevOps integration instance: %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
 	server := httptest.NewServer(runtime.Handler())
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal("create integration Cookie jar")
+	}
+	server.Client().Jar = jar
 	t.Cleanup(server.Close)
 	return server
 }
@@ -224,20 +279,33 @@ func newTestEnvironmentWithDependencies(
 		t.Fatalf("get PostgreSQL connection string: %v", err)
 	}
 
-	runtime, err := app.NewWithDependencies(ctx, app.Config{
-		DatabaseURL:          databaseURL,
-		LocalActorID:         "local-developer",
-		LocalClusterRef:      "kind-orbit-devops-s1",
-		LocalNamespace:       "orbit-devops-s1",
-		BuildAllowedGitHosts: []string{"github.com"},
-		BuildPlatform:        "linux/amd64",
-		BuildRegistryHost:    "registry.example",
-		BuildRegistryPrefix:  "orbit-devops",
-		WebhookConfig: webhook.Config{Endpoints: map[string]webhook.EndpointSecrets{
-			"integration": {Current: "integration-webhook-secret"},
-		}},
-		MigrateOnBoot: true,
-	}, dependencies)
+	if err := database.Migrate(databaseURL); err != nil {
+		t.Fatalf("migrate integration database: %v", err)
+	}
+	identityDB, err := sqlx.ConnectContext(ctx, "pgx", databaseURL)
+	if err != nil {
+		t.Fatal("connect integration identity fixture")
+	}
+	t.Cleanup(func() { _ = identityDB.Close() })
+	identities, err := identity.New(identityDB, projectauth.NewOwnershipGuard())
+	if err != nil {
+		t.Fatal("construct integration identity fixture")
+	}
+	admin, err := identities.InitializeAdmin(ctx, identity.InitializeAdminCommand{LoginName: "local-developer",
+		DisplayName: "Integration administrator", Password: integrationPassword, MaintenanceRef: "integration-fixture"})
+	if err != nil && !errors.Is(err, identity.ErrAlreadyInitialized) {
+		t.Fatalf("initialize integration administrator: %v", err)
+	}
+	adminLogin, err := identities.LoginLocal(ctx, identity.LocalLoginCommand{LoginName: "local-developer",
+		Password: integrationPassword, SourceIP: "127.0.0.2"})
+	if err != nil {
+		t.Fatalf("login integration administrator: %v", err)
+	}
+	adminCaller, err := identities.ResolveSession(ctx, adminLogin.Token.CookieValue())
+	if err != nil {
+		t.Fatal("resolve integration administrator")
+	}
+	runtime, err := app.NewWithDependencies(ctx, integrationAppConfig(databaseURL), dependencies)
 	if err != nil {
 		t.Fatalf("start Orbit-DevOps: %v", err)
 	}
@@ -248,11 +316,51 @@ func newTestEnvironmentWithDependencies(
 	})
 
 	server := httptest.NewServer(runtime.Handler())
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal("create integration Cookie jar")
+	}
+	server.Client().Jar = jar
 	t.Cleanup(server.Close)
+	loginHTTPFixture(t, server, "local-developer", integrationPassword)
 
 	return &testEnvironment{
 		server: server, databaseURL: databaseURL, dependencies: dependencies,
 		postgresContainerID: postgresContainer.GetContainerID(),
+		identities:          identities, adminCaller: adminCaller,
+		users: map[string]identity.User{"local-developer": admin},
+	}
+}
+
+func integrationAppConfig(databaseURL string) app.Config {
+	return app.Config{DatabaseURL: databaseURL,
+		BrowserSecurity: httpapi.BrowserSecurityConfig{ExternalURL: integrationOrigin, AllowLoopbackHTTP: true},
+		LocalClusterRef: "kind-orbit-devops-s1", LocalNamespace: "orbit-devops-s1",
+		BuildAllowedGitHosts: []string{"github.com"}, BuildPlatform: "linux/amd64",
+		BuildRegistryHost: "registry.example", BuildRegistryPrefix: "orbit-devops",
+		WebhookConfig: webhook.Config{Endpoints: map[string]webhook.EndpointSecrets{
+			"integration": {Current: "integration-webhook-secret"},
+		}}, MigrateOnBoot: false}
+}
+
+func loginHTTPFixture(t *testing.T, server *httptest.Server, loginName, password string) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"loginName": loginName, "password": password})
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		server.URL+"/api/v1/auth/login", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal("build integration login request")
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", integrationOrigin)
+	request.Header.Set("X-Orbit-CSRF", "1")
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("login integration actor %q: %v", loginName, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("login integration actor %q status = %d", loginName, response.StatusCode)
 	}
 }
 
@@ -284,6 +392,8 @@ func (e *testEnvironment) postJSON(
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Idempotency-Key", idempotencyKey)
+	request.Header.Set("Origin", integrationOrigin)
+	request.Header.Set("X-Orbit-CSRF", "1")
 
 	response, err := e.server.Client().Do(request)
 	if err != nil {
@@ -312,11 +422,14 @@ func (e *testEnvironment) putJSON(
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Idempotency-Key", idempotencyKey)
+	request.Header.Set("Origin", integrationOrigin)
+	request.Header.Set("X-Orbit-CSRF", "1")
 
 	response, err := e.server.Client().Do(request)
 	if err != nil {
 		t.Fatalf("PUT %s: %v", path, err)
 	}
+	request.Header.Set("Origin", integrationOrigin)
 	return response
 }
 

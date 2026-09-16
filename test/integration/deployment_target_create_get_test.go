@@ -50,8 +50,9 @@ func TestUserCanCreateAndRetrieveDevelopmentTarget(t *testing.T) {
 	if created.ContainerPort != 8080 {
 		t.Errorf("containerPort = %d, want %d", created.ContainerPort, 8080)
 	}
-	if created.CreatedBy != "local-developer" {
-		t.Errorf("createdBy = %q, want %q", created.CreatedBy, "local-developer")
+	wantCreatedBy := environment.users["local-developer"].ID.String()
+	if created.CreatedBy != wantCreatedBy {
+		t.Errorf("createdBy = %q, want %q", created.CreatedBy, wantCreatedBy)
 	}
 	if created.CreatedAt.IsZero() || created.UpdatedAt.IsZero() {
 		t.Error("createdAt or updatedAt is zero")

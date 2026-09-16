@@ -50,8 +50,9 @@ func TestReleaseAcceptanceAtomicallyCreatesPendingReleaseOperation(t *testing.T)
 	if acceptance.Release.TargetSnapshot != wantSnapshot {
 		t.Errorf("targetSnapshot = %#v, want %#v", acceptance.Release.TargetSnapshot, wantSnapshot)
 	}
-	if acceptance.Release.CreatedBy != "local-developer" {
-		t.Errorf("createdBy = %q, want %q", acceptance.Release.CreatedBy, "local-developer")
+	wantCreatedBy := environment.users["local-developer"].ID.String()
+	if acceptance.Release.CreatedBy != wantCreatedBy {
+		t.Errorf("createdBy = %q, want %q", acceptance.Release.CreatedBy, wantCreatedBy)
 	}
 	if acceptance.Release.CreatedAt.IsZero() {
 		t.Error("release createdAt is zero")
@@ -77,8 +78,8 @@ func TestReleaseAcceptanceAtomicallyCreatesPendingReleaseOperation(t *testing.T)
 			target.ID,
 		)
 	}
-	if acceptance.ReleaseOperation.CreatedBy != "local-developer" {
-		t.Errorf("operation createdBy = %q, want %q", acceptance.ReleaseOperation.CreatedBy, "local-developer")
+	if acceptance.ReleaseOperation.CreatedBy != wantCreatedBy {
+		t.Errorf("operation createdBy = %q, want %q", acceptance.ReleaseOperation.CreatedBy, wantCreatedBy)
 	}
 	if acceptance.ReleaseOperation.IdempotencyKey != "release-demo-v1" {
 		t.Errorf(
