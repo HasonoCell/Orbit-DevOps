@@ -49,6 +49,11 @@ func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 	if apiConfig.Address != "127.0.0.1:8080" {
 		t.Errorf("API address = %q, want loopback default", apiConfig.Address)
 	}
+	if apiConfig.Browser.ExternalURL != "http://127.0.0.1:5173" ||
+		apiConfig.OIDC.RedirectURL != "http://127.0.0.1:8080/api/v1/auth/oidc/callback" {
+		t.Errorf("browser/OIDC defaults = %q / %q, want separate frontend and API callback URLs",
+			apiConfig.Browser.ExternalURL, apiConfig.OIDC.RedirectURL)
+	}
 	if workerConfig.Address != "127.0.0.1:9091" {
 		t.Errorf("ReleaseWorker address = %q, want loopback default", workerConfig.Address)
 	}

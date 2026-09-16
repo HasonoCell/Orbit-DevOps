@@ -1,6 +1,7 @@
 package envconfig
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,12 +27,26 @@ type Kubernetes struct {
 type API struct {
 	Address       string
 	DatabaseURL   string
-	ActorID       string
 	MigrateOnBoot bool
+	Browser       Browser
+	OIDC          OIDC
 	Kubernetes    Kubernetes
 	SourceBuild   SourceBuild
 	GitHubWebhook GitHubWebhook
 	GitHubSource  GitHubSource
+}
+
+type OIDC struct {
+	RedirectURL   string
+	ClientSecrets map[string]string
+	EncryptionKey []byte
+	HTTPTimeout   time.Duration
+}
+
+type Browser struct {
+	ExternalURL       string
+	TrustedOrigins    []string
+	AllowLoopbackHTTP bool
 }
 
 // GitHubWebhook 只在进程内保存验签材料；这些值不得进入数据库或日志。
@@ -181,16 +196,52 @@ func LoadAPI() (API, error) {
 	if err != nil {
 		return API{}, err
 	}
+	allowLoopbackHTTP, err := boolean("ORBIT_DEVOPS_ALLOW_LOOPBACK_HTTP", true)
+	if err != nil {
+		return API{}, err
+	}
+	oidc, err := loadOIDC()
+	if err != nil {
+		return API{}, err
+	}
 	return API{
 		Address:       value("ORBIT_DEVOPS_API_ADDRESS", "127.0.0.1:8080"),
 		DatabaseURL:   value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
-		ActorID:       value("ORBIT_DEVOPS_ACTOR_ID", "local-developer"),
 		MigrateOnBoot: migrateOnBoot,
+		Browser: Browser{
+			ExternalURL:       value("ORBIT_DEVOPS_EXTERNAL_URL", "http://127.0.0.1:5173"),
+			TrustedOrigins:    commaSeparated("ORBIT_DEVOPS_TRUSTED_ORIGINS", nil),
+			AllowLoopbackHTTP: allowLoopbackHTTP,
+		},
+		OIDC:          oidc,
 		Kubernetes:    kubernetes,
 		SourceBuild:   loadSourceBuild(),
 		GitHubWebhook: githubWebhook,
 		GitHubSource:  GitHubSource{APIBaseURL: value("ORBIT_DEVOPS_GITHUB_API_URL", "https://api.github.com"), Token: os.Getenv("ORBIT_DEVOPS_GITHUB_API_TOKEN"), Timeout: githubTimeout},
 	}, nil
+}
+
+func loadOIDC() (OIDC, error) {
+	timeout, err := duration("ORBIT_DEVOPS_OIDC_HTTP_TIMEOUT", 10*time.Second)
+	if err != nil {
+		return OIDC{}, err
+	}
+	// OIDC callback 由 API 处理，不能从前端 ExternalURL 推导；完成后再跳转到固定前端入口。
+	config := OIDC{RedirectURL: value("ORBIT_DEVOPS_OIDC_REDIRECT_URL", "http://127.0.0.1:8080/api/v1/auth/oidc/callback"),
+		ClientSecrets: map[string]string{}, HTTPTimeout: timeout}
+	if raw := strings.TrimSpace(os.Getenv("ORBIT_DEVOPS_OIDC_CLIENT_SECRETS_JSON")); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &config.ClientSecrets); err != nil {
+			return OIDC{}, errors.New("ORBIT_DEVOPS_OIDC_CLIENT_SECRETS_JSON must be a JSON string map")
+		}
+	}
+	if raw := strings.TrimSpace(os.Getenv("ORBIT_DEVOPS_OIDC_ENCRYPTION_KEY")); raw != "" {
+		decoded, err := base64.RawURLEncoding.Strict().DecodeString(raw)
+		if err != nil || len(decoded) != 32 {
+			return OIDC{}, errors.New("ORBIT_DEVOPS_OIDC_ENCRYPTION_KEY must be raw URL base64 for 32 bytes")
+		}
+		config.EncryptionKey = decoded
+	}
+	return config, nil
 }
 
 // LoadPipelineWorker 让自动编排进程与 Build/Release Worker 保持权限隔离。

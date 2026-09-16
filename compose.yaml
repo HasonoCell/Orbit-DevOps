@@ -30,6 +30,23 @@ services:
     volumes:
       - orbit-devops-redis:/data
 
+  # 仅用于本机 OIDC 专项验收；profile 不会改变默认 PostgreSQL/Redis 启动集合。
+  keycloak:
+    profiles: ["oidc"]
+    image: quay.io/keycloak/keycloak:26.7.3@sha256:29be7252db0a106f1cd2ac17b9a56ff2668073da645638a38b9fc67deeb2d6c4
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${ORBIT_DEVOPS_KEYCLOAK_ADMIN_USERNAME:-orbit-local-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${ORBIT_DEVOPS_KEYCLOAK_ADMIN_PASSWORD:-}
+    command:
+      - start-dev
+      - --import-realm
+      - --http-port=8080
+      - --hostname=http://127.0.0.1:8180
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ./test/keycloak/orbit-devops-realm.json:/opt/keycloak/data/import/orbit-devops-realm.json:ro
+
 volumes:
   orbit-devops-postgres:
   orbit-devops-redis:
