@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -63,7 +64,6 @@ func TraceMiddleware(
 func RequestMiddleware(
 	metrics *Metrics,
 	logger *slog.Logger,
-	actorID string,
 ) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		requestContext := idempotency.WithConflictRecorder(ctx.Request.Context(), metrics)
@@ -88,7 +88,10 @@ func RequestMiddleware(
 			}
 			metrics.RecordHTTPRequest(ctx.Request.Method, route, ctx.Writer.Status(), duration)
 			spanContext := trace.SpanContextFromContext(ctx.Request.Context())
-			loggedActorID := actorID
+			loggedActorID := identity.CallerFromContext(ctx.Request.Context()).ActorID()
+			if loggedActorID == "" {
+				loggedActorID = "anonymous"
+			}
 			if webhookRequest {
 				loggedActorID = "system"
 			}
