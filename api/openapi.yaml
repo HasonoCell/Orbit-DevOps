@@ -3,8 +3,278 @@ info:
   title: Orbit-DevOps API
   version: 0.1.0
   description: Orbit-DevOps 应用交付控制平面的公开 HTTP 契约。
+security:
+  - CookieAuth: []
 paths:
+  /api/v1/auth/providers:
+    get:
+      operationId: listAuthProviders
+      summary: 查询可用登录入口
+      security: []
+      responses:
+        "200": {description: 登录入口, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/AuthProviderSummary"}}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/oidc/{providerId}/start:
+    post:
+      operationId: startOIDCLogin
+      summary: 开始 OIDC 登录
+      security: []
+      parameters: [{$ref: "#/components/parameters/ProviderId"}]
+      responses:
+        "200": {description: 授权入口, content: {application/json: {schema: {$ref: "#/components/schemas/OIDCStart"}}}}
+        "503": {description: 提供方不可用, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/oidc/callback:
+    get:
+      operationId: completeOIDC
+      summary: 完成一次性 OIDC 流程
+      security: []
+      parameters:
+        - {name: state, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 512}}
+        - {name: code, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 4096}}
+      responses:
+        "303": {description: 流程已完成, headers: {Location: {schema: {type: string}}}}
+        "400": {description: 一次性证明无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 准入被拒绝, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "503": {description: 提供方不可用, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/oidc/{providerId}/reauth:
+    post:
+      operationId: startOIDCReauthentication
+      summary: 开始 OIDC 近期认证
+      parameters: [{$ref: "#/components/parameters/ProviderId"}]
+      responses:
+        "200": {description: 授权入口, content: {application/json: {schema: {$ref: "#/components/schemas/OIDCStart"}}}}
+        "503": {description: 提供方不可用, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/login:
+    post:
+      operationId: loginLocal
+      summary: 使用本地密码登录
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/LocalLoginRequest"}}}}
+      responses:
+        "200": {description: 登录成功, content: {application/json: {schema: {$ref: "#/components/schemas/CurrentPrincipal"}}}}
+        "401": {description: 凭据无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "429": {description: 尝试过多, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/logout:
+    post:
+      operationId: logoutCurrent
+      summary: 退出当前会话
+      security: []
+      responses:
+        "204": {description: 已退出}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/logout-all:
+    post:
+      operationId: logoutAll
+      summary: 退出全部会话
+      responses:
+        "204": {description: 已退出全部会话}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/reauth/local:
+    post:
+      operationId: reauthenticateLocal
+      summary: 使用本人本地密码完成近期认证
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ReauthenticateLocalRequest"}}}}
+      responses:
+        "200": {description: 认证成功, content: {application/json: {schema: {$ref: "#/components/schemas/CurrentPrincipal"}}}}
+        "401": {description: 凭据无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "429": {description: 尝试过多, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/me:
+    get:
+      operationId: getCurrentUser
+      summary: 查询当前身份
+      responses:
+        "200": {description: 当前身份, content: {application/json: {schema: {$ref: "#/components/schemas/CurrentPrincipal"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/me/password:
+    put:
+      operationId: changeCurrentPassword
+      summary: 修改本人密码
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ChangePasswordRequest"}}}}
+      responses:
+        "204": {description: 密码已修改，需要重新登录}
+        "400": {description: 密码或请求无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "401": {description: 当前密码无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/me/sessions:
+    get:
+      operationId: listCurrentSessions
+      summary: 分页查询本人有效会话
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
+      responses:
+        "200": {description: 会话列表, content: {application/json: {schema: {$ref: "#/components/schemas/SessionPage"}}}}
+        "400": {description: 游标无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/me/external-identities:
+    get:
+      operationId: listCurrentExternalIdentities
+      summary: 分页查询本人外部身份
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
+      responses:
+        "200": {description: 外部身份列表, content: {application/json: {schema: {$ref: "#/components/schemas/ExternalIdentityPage"}}}}
+        "400": {description: 游标无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/me/external-identities/{providerId}/bind:
+    post:
+      operationId: startExternalIdentityBinding
+      summary: 开始外部身份绑定
+      parameters: [{$ref: "#/components/parameters/ProviderId"}]
+      responses:
+        "200": {description: 授权入口, content: {application/json: {schema: {$ref: "#/components/schemas/OIDCStart"}}}}
+        "403": {description: 需要近期认证, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/me/external-identities/{identityId}:
+    delete:
+      operationId: unbindExternalIdentity
+      summary: 解除本人外部身份
+      parameters: [{$ref: "#/components/parameters/IdentityId"}]
+      responses:
+        "204": {description: 已解除并撤销原会话}
+        "403": {description: 需要近期认证, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 外部身份不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 最后登录入口保护, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/admissions:
+    get:
+      operationId: listAdmissions
+      summary: 分页查询待处理外部身份
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
+      responses:
+        "200": {description: 准入列表, content: {application/json: {schema: {$ref: "#/components/schemas/ExternalIdentityPage"}}}}
+        "400": {description: 游标无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 需要平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/admissions/{identityId}/approve:
+    post:
+      operationId: approveAdmission
+      summary: 批准外部身份准入
+      parameters: [{$ref: "#/components/parameters/IdentityId"}]
+      responses:
+        "200": {description: 已创建或返回正式用户, content: {application/json: {schema: {$ref: "#/components/schemas/User"}}}}
+        "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 外部身份不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 准入状态冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/admissions/{identityId}/reject:
+    post:
+      operationId: rejectAdmission
+      summary: 拒绝外部身份准入
+      parameters: [{$ref: "#/components/parameters/IdentityId"}]
+      responses:
+        "200": {description: 已拒绝, content: {application/json: {schema: {$ref: "#/components/schemas/ExternalIdentity"}}}}
+        "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 外部身份不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 准入状态冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/admissions/{identityId}/reopen:
+    post:
+      operationId: reopenAdmission
+      summary: 重新打开被拒绝准入
+      parameters: [{$ref: "#/components/parameters/IdentityId"}]
+      responses:
+        "200": {description: 已重新打开, content: {application/json: {schema: {$ref: "#/components/schemas/ExternalIdentity"}}}}
+        "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 外部身份不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 准入状态冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users:
+    get:
+      operationId: listUsers
+      summary: 分页查询用户
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
+      responses:
+        "200": {description: 用户列表, content: {application/json: {schema: {$ref: "#/components/schemas/UserPage"}}}}
+        "400": {description: 游标无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 需要平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+    post:
+      operationId: createLocalUser
+      summary: 创建本地用户
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/CreateLocalUserRequest"}}}}
+      responses:
+        "201": {description: 用户已创建, content: {application/json: {schema: {$ref: "#/components/schemas/User"}}}}
+        "400": {description: 请求无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 登录名冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/{userId}:
+    get:
+      operationId: getUser
+      summary: 查询用户
+      parameters: [{$ref: "#/components/parameters/UserId"}]
+      responses:
+        "200": {description: 用户, content: {application/json: {schema: {$ref: "#/components/schemas/User"}}}}
+        "403": {description: 需要平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 用户不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/{userId}/platform-role:
+    put:
+      operationId: changeUserPlatformRole
+      summary: 修改平台角色
+      parameters: [{$ref: "#/components/parameters/UserId"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ChangePlatformRoleRequest"}}}}
+      responses:
+        "200": {description: 用户已更新, content: {application/json: {schema: {$ref: "#/components/schemas/User"}}}}
+        "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 用户不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 最后管理员保护, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/{userId}/disable:
+    post:
+      operationId: disableUser
+      summary: 停用用户
+      parameters: [{$ref: "#/components/parameters/UserId"}]
+      responses:
+        "200": {description: 用户已停用, content: {application/json: {schema: {$ref: "#/components/schemas/User"}}}}
+        "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 用户不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 最后管理员或 owner 保护, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/{userId}/enable:
+    post:
+      operationId: enableUser
+      summary: 启用用户
+      parameters: [{$ref: "#/components/parameters/UserId"}]
+      responses:
+        "200": {description: 用户已启用, content: {application/json: {schema: {$ref: "#/components/schemas/User"}}}}
+        "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 用户不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/users/{userId}/password/reset:
+    post:
+      operationId: resetUserLocalPassword
+      summary: 重置用户本地密码
+      parameters: [{$ref: "#/components/parameters/UserId"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ResetLocalPasswordRequest"}}}}
+      responses:
+        "204": {description: 密码已重置}
+        "400": {description: 密码无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 用户不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/projects:
+    get:
+      operationId: listProjects
+      summary: 分页查询当前用户的项目
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
+      responses:
+        "200": {description: 项目列表, content: {application/json: {schema: {$ref: "#/components/schemas/ProjectPage"}}}}
+        "400": {description: 游标无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
     post:
       operationId: createProject
       summary: 创建项目
@@ -68,7 +338,7 @@ paths:
   /api/v1/projects/{projectId}/members:
     get:
       operationId: listProjectMembers
-      summary: 查询项目成员
+      summary: 分页查询项目成员
       parameters:
         - name: projectId
           in: path
@@ -76,15 +346,21 @@ paths:
           schema:
             type: string
             format: uuid
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
       responses:
         "200":
           description: 项目成员列表
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ProjectMember"
+                $ref: "#/components/schemas/ProjectMemberPage"
+        "400":
+          description: 游标无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: 项目不存在或当前操作者不是项目成员
           content:
@@ -122,7 +398,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProjectMember"
         "400":
-          description: Actor ID 或项目角色无效
+          description: User ID 或项目角色无效
           content:
             application/json:
               schema:
@@ -151,7 +427,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/projects/{projectId}/members/{actorId}:
+  /api/v1/projects/{projectId}/members/{userId}:
     put:
       operationId: updateProjectMember
       summary: 修改项目成员角色
@@ -162,13 +438,12 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: actorId
+        - name: userId
           in: path
           required: true
           schema:
             type: string
-            minLength: 1
-            maxLength: 128
+            format: uuid
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
@@ -184,7 +459,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProjectMember"
         "400":
-          description: Actor ID 或项目角色无效
+          description: User ID 或项目角色无效
           content:
             application/json:
               schema:
@@ -223,13 +498,12 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: actorId
+        - name: userId
           in: path
           required: true
           schema:
             type: string
-            minLength: 1
-            maxLength: 128
+            format: uuid
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
@@ -239,7 +513,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProjectMember"
         "400":
-          description: Actor ID 无效
+          description: User ID 无效
           content:
             application/json:
               schema:
@@ -268,7 +542,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/projects/{projectId}/permissions:
+    get:
+      operationId: getProjectPermissions
+      summary: 查询当前用户在项目中的角色与权限
+      parameters:
+        - {name: projectId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200": {description: 当前项目权限, content: {application/json: {schema: {$ref: "#/components/schemas/ProjectPermissions"}}}}
+        "404": {description: 项目不存在或当前用户不是成员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/projects/{projectId}/applications:
+    get:
+      operationId: listApplications
+      summary: 分页查询项目应用
+      parameters:
+        - {name: projectId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
+      responses:
+        "200": {description: 应用列表, content: {application/json: {schema: {$ref: "#/components/schemas/ApplicationPage"}}}}
+        "400": {description: 游标无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 项目不存在或当前用户不是成员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
     post:
       operationId: createApplication
       summary: 创建应用
@@ -730,6 +1026,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
   /api/v1/applications/{applicationId}/deployment-targets:
+    get:
+      operationId: listDeploymentTargets
+      summary: 分页查询应用部署目标
+      parameters:
+        - {name: applicationId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
+      responses:
+        "200": {description: 部署目标列表, content: {application/json: {schema: {$ref: "#/components/schemas/DeploymentTargetPage"}}}}
+        "400": {description: 游标无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 应用不存在或当前用户不是项目成员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
     post:
       operationId: createDeploymentTarget
       summary: 创建部署目标
@@ -1347,20 +1655,23 @@ paths:
   /api/v1/applications/{applicationId}/delivery-pipelines:
     get:
       operationId: listDeliveryPipelines
-      summary: 查询应用的自动交付配置
+      summary: 分页查询应用的自动交付配置
       parameters:
         - name: applicationId
           in: path
           required: true
           schema: {type: string, format: uuid}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
       responses:
         "200":
           description: 自动交付配置列表
           content:
             application/json:
-              schema:
-                type: array
-                items: {$ref: "#/components/schemas/DeliveryPipelineDetail"}
+              schema: {$ref: "#/components/schemas/DeliveryPipelinePage"}
+        "400":
+          description: 游标无效
+          content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
         "404":
           description: 应用不存在
           content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
@@ -1400,6 +1711,7 @@ paths:
           content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
   /api/v1/webhooks/github/{endpointKey}:
     post:
+      security: []
       operationId: acceptGitHubWebhook
       summary: 接纳经过部署侧 Secret 验证的 GitHub Webhook
       parameters:
@@ -1602,7 +1914,27 @@ paths:
           description: 请求失败
           content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
 components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: __Host-orbit-session
   parameters:
+    ProviderId:
+      name: providerId
+      in: path
+      required: true
+      schema: {type: string, minLength: 2, maxLength: 63}
+    IdentityId:
+      name: identityId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     BuildOperationId:
       name: buildOperationId
       in: path
@@ -1630,6 +1962,143 @@ components:
       required: true
       schema: {type: string, format: uuid}
   schemas:
+    AuthProviderSummary:
+      type: object
+      additionalProperties: false
+      required: [id, type, displayName, available]
+      properties:
+        id: {type: string}
+        type: {type: string, enum: [local, oidc]}
+        displayName: {type: string}
+        available: {type: boolean}
+    LocalLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [loginName, password]
+      properties:
+        loginName: {type: string, minLength: 3, maxLength: 128}
+        password: {type: string, format: password, minLength: 1, maxLength: 512, writeOnly: true}
+    ReauthenticateLocalRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password: {type: string, format: password, minLength: 1, maxLength: 512, writeOnly: true}
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [newPassword]
+      properties:
+        currentPassword: {type: string, format: password, minLength: 1, maxLength: 512, writeOnly: true}
+        newPassword: {type: string, format: password, minLength: 12, maxLength: 512, writeOnly: true}
+        loginName: {type: string, minLength: 3, maxLength: 128}
+    CreateLocalUserRequest:
+      type: object
+      additionalProperties: false
+      required: [loginName, displayName, temporaryPassword]
+      properties:
+        loginName: {type: string, minLength: 3, maxLength: 128}
+        displayName: {type: string, minLength: 1, maxLength: 128}
+        temporaryPassword: {type: string, format: password, minLength: 12, maxLength: 512, writeOnly: true}
+    ResetLocalPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [temporaryPassword]
+      properties:
+        temporaryPassword: {type: string, format: password, minLength: 12, maxLength: 512, writeOnly: true}
+        loginName: {type: string, minLength: 3, maxLength: 128}
+    ChangePlatformRoleRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role: {$ref: "#/components/schemas/PlatformRole"}
+    PlatformRole:
+      type: string
+      enum: [platform_admin, user]
+    UserStatus:
+      type: string
+      enum: [active, disabled]
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, status, platformRole, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        displayName: {type: string}
+        status: {$ref: "#/components/schemas/UserStatus"}
+        platformRole: {$ref: "#/components/schemas/PlatformRole"}
+        createdAt: {type: string, format: date-time}
+    CurrentUser:
+      type: object
+      additionalProperties: false
+      required: [user, mustChangePassword]
+      properties:
+        user: {$ref: "#/components/schemas/User"}
+        mustChangePassword: {type: boolean}
+    CurrentPrincipal:
+      type: object
+      additionalProperties: false
+      required: [kind, mustChangePassword]
+      properties:
+        kind: {type: string, enum: [user, pending]}
+        user: {$ref: "#/components/schemas/User"}
+        externalIdentity: {$ref: "#/components/schemas/ExternalIdentity"}
+        mustChangePassword: {type: boolean}
+    OIDCStart:
+      type: object
+      additionalProperties: false
+      required: [authorizationUrl, expiresAt]
+      properties:
+        authorizationUrl: {type: string, format: uri}
+        expiresAt: {type: string, format: date-time}
+    ExternalIdentity:
+      type: object
+      additionalProperties: false
+      required: [id, providerId, status, displayName, emailVerified, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        providerId: {type: string}
+        status: {type: string, enum: [pending, rejected, linked]}
+        userId: {type: string, format: uuid}
+        displayName: {type: string}
+        email: {type: string, format: email}
+        emailVerified: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ExternalIdentityPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/ExternalIdentity"}}
+        nextCursor: {type: string}
+    SessionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, method, createdAt, lastSeenAt, expiresAt, current]
+      properties:
+        id: {type: string, format: uuid}
+        method: {type: string, enum: [password, oidc]}
+        providerId: {type: string}
+        createdAt: {type: string, format: date-time}
+        lastSeenAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        current: {type: boolean}
+    SessionPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/SessionSummary"}}
+        nextCursor: {type: string}
+    UserPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/User"}}
+        nextCursor: {type: string}
     CreateProjectRequest:
       type: object
       additionalProperties: false
@@ -1668,17 +2137,34 @@ components:
         createdAt:
           type: string
           format: date-time
+    ProjectPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/Project"}}
+        nextCursor: {type: string}
+    ProjectPermission:
+      type: string
+      enum: [read, read_logs, develop, manage_members, manage_owners, resolve_unknown]
+    ProjectPermissions:
+      type: object
+      additionalProperties: false
+      required: [projectId, role, allowed]
+      properties:
+        projectId: {type: string, format: uuid}
+        role: {$ref: "#/components/schemas/ProjectRole"}
+        allowed: {type: array, items: {$ref: "#/components/schemas/ProjectPermission"}}
     AddProjectMemberRequest:
       type: object
       additionalProperties: false
       required:
-        - actorId
+        - userId
         - role
       properties:
-        actorId:
+        userId:
           type: string
-          minLength: 1
-          maxLength: 128
+          format: uuid
         role:
           $ref: "#/components/schemas/ProjectRole"
     UpdateProjectMemberRequest:
@@ -1693,6 +2179,7 @@ components:
       type: string
       enum:
         - owner
+        - admin
         - developer
         - viewer
     ProjectMember:
@@ -1700,7 +2187,7 @@ components:
       additionalProperties: false
       required:
         - projectId
-        - actorId
+        - userId
         - role
         - createdBy
         - createdAt
@@ -1709,8 +2196,9 @@ components:
         projectId:
           type: string
           format: uuid
-        actorId:
+        userId:
           type: string
+          format: uuid
         role:
           $ref: "#/components/schemas/ProjectRole"
         createdBy:
@@ -1721,6 +2209,15 @@ components:
         updatedAt:
           type: string
           format: date-time
+    ProjectMemberPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ProjectMember"}
+        nextCursor: {type: string}
     CreateApplicationRequest:
       type: object
       additionalProperties: false
@@ -1763,6 +2260,13 @@ components:
         createdAt:
           type: string
           format: date-time
+    ApplicationPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/Application"}}
+        nextCursor: {type: string}
     CreateDeploymentTargetRequest:
       type: object
       additionalProperties: false
@@ -1844,6 +2348,13 @@ components:
         updatedAt:
           type: string
           format: date-time
+    DeploymentTargetPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/DeploymentTarget"}}
+        nextCursor: {type: string}
     CreateBuildRequest:
       type: object
       additionalProperties: false
@@ -2983,6 +3494,15 @@ components:
       properties:
         pipeline: {$ref: "#/components/schemas/DeliveryPipeline"}
         revision: {$ref: "#/components/schemas/DeliveryPipelineRevision"}
+    DeliveryPipelinePage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/DeliveryPipelineDetail"}
+        nextCursor: {type: string}
     DeliveryRun:
       type: object
       additionalProperties: false
