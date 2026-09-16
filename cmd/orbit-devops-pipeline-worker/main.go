@@ -51,7 +51,7 @@ func run(logger *slog.Logger) error {
 	if err := database.PingContext(ctx); err != nil {
 		return err
 	}
-	authorizer := projectauth.New(database)
+	authorizer := projectauth.New(database, nil)
 	buildOperations := buildoperation.New(database)
 	releaseOperations := releaseoperation.New(database)
 	builds := build.New(database, build.Config{AllowedGitHosts: config.SourceBuild.AllowedGitHosts,

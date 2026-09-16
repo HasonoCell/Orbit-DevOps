@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
@@ -64,14 +65,14 @@ type RunPage struct {
 
 type ListRunsQuery struct {
 	PipelineID uuid.UUID
-	ActorID    string
+	Caller     identity.Caller
 	Limit      int
 	Cursor     string
 }
 
 type ReconcileRunCommand struct {
 	RunID          uuid.UUID
-	ActorID        string
+	Caller         identity.Caller
 	IdempotencyKey string
 	TraceParent    string
 	TraceState     string
@@ -101,12 +102,17 @@ const runSelect = `SELECT r.id, r.delivery_pipeline_id, r.pipeline_revision, r.a
 	LEFT JOIN release_operations ro ON ro.release_id=r.release_id`
 
 // GetRun 投影编排 Phase 与底层 Operation 权威状态，不复制 Attempt 详情。
-func (m *Module) GetRun(ctx context.Context, id uuid.UUID, actorID string) (RunDetail, error) {
-	row, err := m.getRunWith(ctx, m.db, id)
+func (m *Module) GetRun(ctx context.Context, id uuid.UUID, caller identity.Caller) (RunDetail, error) {
+	var row runRow
+	err := m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		var err error
+		row, err = m.getRunWith(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		return m.authorizer.RequireAuthorizedInTransaction(ctx, tx, row.ProjectID, caller, projectauth.PermissionRead)
+	})
 	if err != nil {
-		return RunDetail{}, err
-	}
-	if err := m.authorizer.Require(ctx, row.ProjectID, actorID, projectauth.PermissionRead); err != nil {
 		if errors.Is(err, projectauth.ErrNotMember) {
 			return RunDetail{}, ErrRunNotFound
 		}
@@ -117,10 +123,6 @@ func (m *Module) GetRun(ctx context.Context, id uuid.UUID, actorID string) (RunD
 
 // ListRuns 使用创建时间和 UUID 组成稳定游标，避免新 Run 导致翻页重复。
 func (m *Module) ListRuns(ctx context.Context, query ListRunsQuery) (RunPage, error) {
-	pipeline, err := m.Get(ctx, query.PipelineID, query.ActorID)
-	if err != nil {
-		return RunPage{}, err
-	}
 	limit := query.Limit
 	if limit <= 0 {
 		limit = 20
@@ -128,10 +130,10 @@ func (m *Module) ListRuns(ctx context.Context, query ListRunsQuery) (RunPage, er
 	if limit > 100 {
 		limit = 100
 	}
-	args := []any{pipeline.Pipeline.ID, limit + 1}
+	args := []any{query.PipelineID, limit + 1}
 	where := ` WHERE r.delivery_pipeline_id=$1`
 	if query.Cursor != "" {
-		cursor, err := decodeRunCursor(query.Cursor)
+		cursor, err := decodeRunCursor(query.Cursor, query.PipelineID)
 		if err != nil {
 			return RunPage{}, err
 		}
@@ -139,15 +141,26 @@ func (m *Module) ListRuns(ctx context.Context, query ListRunsQuery) (RunPage, er
 		args = append(args, cursor.CreatedAt, cursor.ID)
 	}
 	rows := make([]runRow, 0)
-	if err := m.db.SelectContext(ctx, &rows, runSelect+where+` ORDER BY r.created_at DESC, r.id DESC LIMIT $2`, args...); err != nil {
-		return RunPage{}, fmt.Errorf("list delivery runs: %w", err)
+	err := m.authorizer.Read(ctx, query.Caller, func(tx *sqlx.Tx) error {
+		pipeline, err := m.getWith(ctx, tx, query.PipelineID)
+		if err != nil {
+			return err
+		}
+		if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, pipeline.Pipeline.ProjectID, query.Caller, projectauth.PermissionRead); err != nil {
+			return err
+		}
+		return tx.SelectContext(ctx, &rows, runSelect+where+` ORDER BY r.created_at DESC, r.id DESC LIMIT $2`, args...)
+	})
+	if err != nil {
+		return RunPage{}, err
 	}
 	page := RunPage{Items: make([]RunDetail, 0, min(len(rows), limit))}
 	for _, row := range rows[:min(len(rows), limit)] {
 		page.Items = append(page.Items, projectRun(row))
 	}
 	if len(rows) > limit {
-		value := encodeRunCursor(runCursor{CreatedAt: rows[limit-1].CreatedAt, ID: rows[limit-1].ID})
+		value := encodeRunCursor(runCursor{PipelineID: query.PipelineID,
+			CreatedAt: rows[limit-1].CreatedAt, ID: rows[limit-1].ID})
 		page.NextCursor = &value
 	}
 	return page, nil
@@ -160,11 +173,14 @@ func (m *Module) ReconcileRun(ctx context.Context, command ReconcileRunCommand) 
 		return RunDetail{}, fmt.Errorf("begin reconcile delivery run: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, command.Caller); err != nil {
+		return RunDetail{}, err
+	}
 	row, err := m.getRunWith(ctx, tx, command.RunID)
 	if err != nil {
 		return RunDetail{}, err
 	}
-	if err := m.authorizer.RequireInTransaction(ctx, tx, row.ProjectID, command.ActorID, projectauth.PermissionDevelop); err != nil {
+	if err := m.authorizer.RequireInTransaction(ctx, tx, row.ProjectID, command.Caller, projectauth.PermissionDevelop); err != nil {
 		return RunDetail{}, err
 	}
 	fingerprint, err := idempotency.Fingerprint(struct{ RunID uuid.UUID }{command.RunID})
@@ -172,7 +188,7 @@ func (m *Module) ReconcileRun(ctx context.Context, command ReconcileRunCommand) 
 		return RunDetail{}, fmt.Errorf("fingerprint reconcile delivery run: %w", err)
 	}
 	now := time.Now().UTC()
-	scope := idempotency.Scope{ActorID: command.ActorID, CommandType: "delivery_run.reconcile", Key: command.IdempotencyKey}
+	scope := idempotency.Scope{ActorID: command.Caller.ActorID(), CommandType: "delivery_run.reconcile", Key: command.IdempotencyKey}
 	_, isNew, err := idempotency.Claim(ctx, tx, scope, fingerprint, command.RunID, now)
 	if err != nil {
 		return RunDetail{}, err
@@ -255,21 +271,26 @@ func projectRun(row runRow) RunDetail {
 }
 
 type runCursor struct {
-	CreatedAt time.Time `json:"createdAt"`
-	ID        uuid.UUID `json:"id"`
+	PipelineID uuid.UUID `json:"pipelineId"`
+	CreatedAt  time.Time `json:"createdAt"`
+	ID         uuid.UUID `json:"id"`
 }
 
 func encodeRunCursor(cursor runCursor) string {
 	payload, _ := json.Marshal(cursor)
 	return base64.RawURLEncoding.EncodeToString(payload)
 }
-func decodeRunCursor(value string) (runCursor, error) {
-	payload, err := base64.RawURLEncoding.DecodeString(value)
+func decodeRunCursor(value string, pipelineID uuid.UUID) (runCursor, error) {
+	if len(value) > 512 {
+		return runCursor{}, ErrInvalidCursor
+	}
+	payload, err := base64.RawURLEncoding.Strict().DecodeString(value)
 	if err != nil {
 		return runCursor{}, ErrInvalidCursor
 	}
 	var cursor runCursor
-	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.ID == uuid.Nil || cursor.CreatedAt.IsZero() {
+	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.PipelineID != pipelineID ||
+		cursor.ID == uuid.Nil || cursor.CreatedAt.IsZero() {
 		return runCursor{}, ErrInvalidCursor
 	}
 	return cursor, nil

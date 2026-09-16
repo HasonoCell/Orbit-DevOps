@@ -475,12 +475,19 @@ func (m *Module) createAutomaticRelease(ctx context.Context, check sourceCheck, 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// 与人工启停使用同一 Pipeline 行作为最终围栏。谁先取得该锁，谁决定本次自动发布是否已被接纳。
+	if _, err := tx.ExecContext(ctx, `SELECT id FROM delivery_pipelines WHERE id=$1 FOR UPDATE`, check.PipelineID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
 	var valid bool
 	if err := tx.GetContext(ctx, &valid, `SELECT (dr.phase='artifact_ready' AND dr.phase_version=$2
 		AND dr.release_id IS NULL AND p.enabled AND p.current_revision=dr.pipeline_revision
 		AND p.activation_generation=dr.activation_generation) AS valid
 		FROM delivery_runs dr JOIN delivery_pipelines p ON p.id=dr.delivery_pipeline_id
-		WHERE dr.id=$1 FOR UPDATE OF dr`, check.RunID, check.PhaseVersion); err != nil {
+		WHERE dr.id=$1 AND p.id=$3 FOR UPDATE OF dr`, check.RunID, check.PhaseVersion, check.PipelineID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}

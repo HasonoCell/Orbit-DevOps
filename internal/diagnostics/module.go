@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"strconv"
 	"strings"
 	"time"
@@ -77,8 +78,8 @@ func (m *Module) GetRuntimeLogs(
 	release, err := m.loadReleaseForPermission(
 		ctx,
 		query.ReleaseID,
-		query.ActorID,
-		projectauth.PermissionReadRuntimeLogs,
+		query.Caller,
+		projectauth.PermissionReadLogs,
 	)
 	if err != nil {
 		return LogExcerpt{}, err
@@ -106,17 +107,19 @@ func (m *Module) GetRuntimeLogs(
 func (m *Module) loadReleaseForPermission(
 	ctx context.Context,
 	releaseID uuid.UUID,
-	actorID string,
+	caller identity.Caller,
 	permission projectauth.Permission,
 ) (delivery.Release, error) {
 	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{
-		Isolation: sql.LevelRepeatableRead,
-		ReadOnly:  true,
+		Isolation: sql.LevelReadCommitted,
 	})
 	if err != nil {
 		return delivery.Release{}, fmt.Errorf("begin release permission query: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, caller); err != nil {
+		return delivery.Release{}, err
+	}
 
 	var release delivery.Release
 	if err := tx.GetContext(ctx, &release, releaseSelect+` WHERE id = $1`, releaseID); err != nil {
@@ -125,8 +128,8 @@ func (m *Module) loadReleaseForPermission(
 		}
 		return delivery.Release{}, fmt.Errorf("load release for permission: %w", err)
 	}
-	if err := m.authorizer.RequireInTransaction(
-		ctx, tx, release.TargetSnapshot.ProjectID, actorID, permission,
+	if err := m.authorizer.RequireAuthorizedInTransaction(
+		ctx, tx, release.TargetSnapshot.ProjectID, caller, permission,
 	); err != nil {
 		if errors.Is(err, projectauth.ErrNotMember) {
 			return delivery.Release{}, ErrReleaseNotFound
@@ -170,19 +173,21 @@ func (m *Module) GetReleaseReport(
 	return report, nil
 }
 
-// loadControlPlane 把 Release、ReleaseOperation、Attempt 和当前目标读取固定在同一个可重复读快照中。
+// loadControlPlane 在身份控制共享锁下读取控制面事实；外部 Kubernetes 读取不持该锁。
 func (m *Module) loadControlPlane(
 	ctx context.Context,
 	query GetReleaseReportQuery,
 ) (delivery.Release, targetRecord, releaseoperation.Record, error) {
 	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{
-		Isolation: sql.LevelRepeatableRead,
-		ReadOnly:  true,
+		Isolation: sql.LevelReadCommitted,
 	})
 	if err != nil {
 		return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, fmt.Errorf("begin diagnostic query: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, query.Caller); err != nil {
+		return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, err
+	}
 
 	var release delivery.Release
 	if err := tx.GetContext(ctx, &release, releaseSelect+` WHERE id = $1`, query.ReleaseID); err != nil {
@@ -191,11 +196,11 @@ func (m *Module) loadControlPlane(
 		}
 		return delivery.Release{}, targetRecord{}, releaseoperation.Record{}, fmt.Errorf("load diagnostic release: %w", err)
 	}
-	if err := m.authorizer.RequireInTransaction(
+	if err := m.authorizer.RequireAuthorizedInTransaction(
 		ctx,
 		tx,
 		release.TargetSnapshot.ProjectID,
-		query.ActorID,
+		query.Caller,
 		projectauth.PermissionRead,
 	); err != nil {
 		// Release 查询需要隐藏项目存在性，非成员与不存在统一表现为不可见。

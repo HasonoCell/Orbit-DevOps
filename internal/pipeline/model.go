@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"time"
 
 	"github.com/google/uuid"
@@ -60,7 +61,7 @@ type CreateCommand struct {
 	ContextPath        string
 	Mode               string
 	DeploymentTargetID *uuid.UUID
-	ActorID            string
+	Caller             identity.Caller
 	IdempotencyKey     string
 }
 
@@ -74,12 +75,12 @@ type UpdateCommand struct {
 	ContextPath        string
 	Mode               string
 	DeploymentTargetID *uuid.UUID
-	ActorID            string
+	Caller             identity.Caller
 	IdempotencyKey     string
 }
 
 type StateCommand struct {
 	PipelineID     uuid.UUID
-	ActorID        string
+	Caller         identity.Caller
 	IdempotencyKey string
 }

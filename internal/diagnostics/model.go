@@ -3,6 +3,7 @@ package diagnostics
 
 import (
 	"context"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
@@ -176,7 +177,7 @@ type LogExcerpt struct {
 
 type GetRuntimeLogsQuery struct {
 	ReleaseID uuid.UUID
-	ActorID   string
+	Caller    identity.Caller
 	PodName   string
 	Container string
 	TailLines int
@@ -240,5 +241,5 @@ type Report struct {
 
 type GetReleaseReportQuery struct {
 	ReleaseID uuid.UUID
-	ActorID   string
+	Caller    identity.Caller
 }

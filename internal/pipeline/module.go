@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"path"
 	"regexp"
 	"strings"
@@ -92,7 +93,7 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Detail, err
 
 	now := time.Now().UTC()
 	pipelineID := uuid.New()
-	scope := idempotency.Scope{ActorID: command.ActorID, CommandType: "delivery_pipeline.create", Key: command.IdempotencyKey}
+	scope := idempotency.Scope{ActorID: command.Caller.ActorID(), CommandType: "delivery_pipeline.create", Key: command.IdempotencyKey}
 	fingerprint, err := idempotency.Fingerprint(struct {
 		ApplicationID uuid.UUID
 		Name          string
@@ -106,12 +107,15 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Detail, err
 		return Detail{}, fmt.Errorf("begin create delivery pipeline: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, command.Caller); err != nil {
+		return Detail{}, err
+	}
 
 	projectID, err := m.applicationProject(ctx, tx, command.ApplicationID)
 	if err != nil {
 		return Detail{}, err
 	}
-	if err := m.authorizer.RequireInTransaction(ctx, tx, projectID, command.ActorID, projectauth.PermissionDevelop); err != nil {
+	if err := m.authorizer.RequireInTransaction(ctx, tx, projectID, command.Caller, projectauth.PermissionDevelop); err != nil {
 		return Detail{}, err
 	}
 	if err := m.validateTarget(ctx, tx, projectID, command.ApplicationID, normalized.Mode, normalized.DeploymentTargetID); err != nil {
@@ -125,8 +129,8 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Detail, err
 		return m.getWith(ctx, tx, resourceID)
 	}
 
-	record := Record{ID: pipelineID, ProjectID: projectID, ApplicationID: command.ApplicationID, Name: name, CurrentRevision: 1, CreatedBy: command.ActorID, CreatedAt: now, UpdatedAt: now}
-	revision := makeRevision(record.ID, 1, normalized, source, command.ActorID, now)
+	record := Record{ID: pipelineID, ProjectID: projectID, ApplicationID: command.ApplicationID, Name: name, CurrentRevision: 1, CreatedBy: command.Caller.ActorID(), CreatedAt: now, UpdatedAt: now}
+	revision := makeRevision(record.ID, 1, normalized, source, command.Caller.ActorID(), now)
 	// 当前 Revision 外键是延迟约束，因此根记录和首个 Revision 可以在同一事务建立。
 	if _, err := tx.ExecContext(ctx, `INSERT INTO delivery_pipelines
 		(id, project_id, application_id, name, current_revision, enabled, activation_generation, created_by, created_at, updated_at)
@@ -139,7 +143,7 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Detail, err
 	if err := insertRevision(ctx, tx, revision); err != nil {
 		return Detail{}, err
 	}
-	if err := appendAudit(ctx, tx, command.ActorID, "delivery_pipeline.create", record, revision, now); err != nil {
+	if err := appendAudit(ctx, tx, command.Caller.ActorID(), "delivery_pipeline.create", record, revision, now); err != nil {
 		return Detail{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -162,7 +166,7 @@ func (m *Module) Update(ctx context.Context, command UpdateCommand) (Detail, err
 	if err != nil {
 		return Detail{}, fmt.Errorf("fingerprint update delivery pipeline: %w", err)
 	}
-	return m.change(ctx, command.ActorID, command.IdempotencyKey, "delivery_pipeline.update", command.PipelineID, fingerprint, func(tx *sqlx.Tx, current Detail, now time.Time) (Detail, error) {
+	return m.change(ctx, command.Caller, command.IdempotencyKey, "delivery_pipeline.update", command.PipelineID, fingerprint, func(tx *sqlx.Tx, current Detail, now time.Time) (Detail, error) {
 		if current.Pipeline.CurrentRevision != command.ExpectedRevision {
 			return Detail{}, ErrRevisionConflict
 		}
@@ -176,14 +180,14 @@ func (m *Module) Update(ctx context.Context, command UpdateCommand) (Detail, err
 		}
 		current.Pipeline.CurrentRevision++
 		current.Pipeline.UpdatedAt = now
-		current.Revision = makeRevision(current.Pipeline.ID, current.Pipeline.CurrentRevision, normalized, source, command.ActorID, now)
+		current.Revision = makeRevision(current.Pipeline.ID, current.Pipeline.CurrentRevision, normalized, source, command.Caller.ActorID(), now)
 		if err := insertRevision(ctx, tx, current.Revision); err != nil {
 			return Detail{}, err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE delivery_pipelines SET current_revision=$2, updated_at=$3 WHERE id=$1`, current.Pipeline.ID, current.Pipeline.CurrentRevision, now); err != nil {
 			return Detail{}, fmt.Errorf("advance delivery pipeline revision: %w", err)
 		}
-		if err := appendAudit(ctx, tx, command.ActorID, "delivery_pipeline.update", current.Pipeline, current.Revision, now); err != nil {
+		if err := appendAudit(ctx, tx, command.Caller.ActorID(), "delivery_pipeline.update", current.Pipeline, current.Revision, now); err != nil {
 			return Detail{}, err
 		}
 		return current, nil
@@ -192,11 +196,11 @@ func (m *Module) Update(ctx context.Context, command UpdateCommand) (Detail, err
 
 // Enable 在网络核验完成后重新锁定当前 Revision，并原子检查同应用源码所有权。
 func (m *Module) Enable(ctx context.Context, command StateCommand) (Detail, error) {
-	before, err := m.Get(ctx, command.PipelineID, command.ActorID)
+	before, err := m.Get(ctx, command.PipelineID, command.Caller)
 	if err != nil {
 		return Detail{}, err
 	}
-	if err := m.authorizer.Require(ctx, before.Pipeline.ProjectID, command.ActorID, projectauth.PermissionDevelop); err != nil {
+	if err := m.authorizer.Require(ctx, before.Pipeline.ProjectID, command.Caller, projectauth.PermissionDevelop); err != nil {
 		return Detail{}, err
 	}
 	resolved, err := m.inspector.Resolve(ctx, SourceRequest{EndpointKey: before.Revision.EndpointKey, RepositoryURL: before.Revision.RepositoryURL, Branch: strings.TrimPrefix(before.Revision.GitRef, "refs/heads/")})
@@ -210,7 +214,7 @@ func (m *Module) Enable(ctx context.Context, command StateCommand) (Detail, erro
 	if err != nil {
 		return Detail{}, fmt.Errorf("fingerprint enable delivery pipeline: %w", err)
 	}
-	return m.change(ctx, command.ActorID, command.IdempotencyKey, "delivery_pipeline.enable", command.PipelineID, fingerprint, func(tx *sqlx.Tx, current Detail, now time.Time) (Detail, error) {
+	return m.change(ctx, command.Caller, command.IdempotencyKey, "delivery_pipeline.enable", command.PipelineID, fingerprint, func(tx *sqlx.Tx, current Detail, now time.Time) (Detail, error) {
 		if current.Pipeline.CurrentRevision != before.Pipeline.CurrentRevision {
 			return Detail{}, ErrRevisionConflict
 		}
@@ -227,7 +231,7 @@ func (m *Module) Enable(ctx context.Context, command StateCommand) (Detail, erro
 		if _, err := tx.ExecContext(ctx, `UPDATE delivery_pipelines SET enabled=true, activation_generation=$2, updated_at=$3 WHERE id=$1`, current.Pipeline.ID, current.Pipeline.ActivationGeneration, now); err != nil {
 			return Detail{}, fmt.Errorf("enable delivery pipeline: %w", err)
 		}
-		return current, appendAudit(ctx, tx, command.ActorID, "delivery_pipeline.enable", current.Pipeline, current.Revision, now)
+		return current, appendAudit(ctx, tx, command.Caller.ActorID(), "delivery_pipeline.enable", current.Pipeline, current.Revision, now)
 	})
 }
 
@@ -237,7 +241,7 @@ func (m *Module) Disable(ctx context.Context, command StateCommand) (Detail, err
 	if err != nil {
 		return Detail{}, fmt.Errorf("fingerprint disable delivery pipeline: %w", err)
 	}
-	return m.change(ctx, command.ActorID, command.IdempotencyKey, "delivery_pipeline.disable", command.PipelineID, fingerprint, func(tx *sqlx.Tx, current Detail, now time.Time) (Detail, error) {
+	return m.change(ctx, command.Caller, command.IdempotencyKey, "delivery_pipeline.disable", command.PipelineID, fingerprint, func(tx *sqlx.Tx, current Detail, now time.Time) (Detail, error) {
 		if !current.Pipeline.Enabled {
 			return current, nil
 		}
@@ -247,7 +251,7 @@ func (m *Module) Disable(ctx context.Context, command StateCommand) (Detail, err
 		if _, err := tx.ExecContext(ctx, `UPDATE delivery_pipelines SET enabled=false, activation_generation=$2, updated_at=$3 WHERE id=$1`, current.Pipeline.ID, current.Pipeline.ActivationGeneration, now); err != nil {
 			return Detail{}, fmt.Errorf("disable delivery pipeline: %w", err)
 		}
-		return current, appendAudit(ctx, tx, command.ActorID, "delivery_pipeline.disable", current.Pipeline, current.Revision, now)
+		return current, appendAudit(ctx, tx, command.Caller.ActorID(), "delivery_pipeline.disable", current.Pipeline, current.Revision, now)
 	})
 }
 
@@ -385,17 +389,21 @@ func appendAudit(ctx context.Context, tx *sqlx.Tx, actorID, action string, recor
 	return audit.Append(ctx, tx, audit.Entry{ActorID: actorID, Action: action, TargetType: "delivery_pipeline", TargetID: record.ID, Summary: map[string]any{"projectId": record.ProjectID, "applicationId": record.ApplicationID, "revision": record.CurrentRevision, "activationGeneration": record.ActivationGeneration, "repositoryId": revision.RepositoryID, "gitRef": revision.GitRef, "mode": revision.Mode}, CreatedAt: now})
 }
 
-func (m *Module) change(ctx context.Context, actorID, key, commandType string, pipelineID uuid.UUID, fingerprint []byte, mutate func(*sqlx.Tx, Detail, time.Time) (Detail, error)) (Detail, error) {
+func (m *Module) change(ctx context.Context, caller identity.Caller, key, commandType string, pipelineID uuid.UUID, fingerprint []byte, mutate func(*sqlx.Tx, Detail, time.Time) (Detail, error)) (Detail, error) {
+	actorID := caller.ActorID()
 	tx, err := m.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin %s: %w", commandType, err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, caller); err != nil {
+		return Detail{}, err
+	}
 	current, err := m.getWithLock(ctx, tx, pipelineID)
 	if err != nil {
 		return Detail{}, err
 	}
-	if err := m.authorizer.RequireInTransaction(ctx, tx, current.Pipeline.ProjectID, actorID, projectauth.PermissionDevelop); err != nil {
+	if err := m.authorizer.RequireInTransaction(ctx, tx, current.Pipeline.ProjectID, caller, projectauth.PermissionDevelop); err != nil {
 		return Detail{}, err
 	}
 	now := time.Now().UTC()
@@ -409,7 +417,7 @@ func (m *Module) change(ctx context.Context, actorID, key, commandType string, p
 		if err := idempotency.LoadResponse(ctx, tx, scope, &replay); err != nil {
 			return Detail{}, err
 		}
-		return replay, nil
+		return replay, tx.Commit()
 	}
 	updated, err := mutate(tx, current, now)
 	if err != nil {
