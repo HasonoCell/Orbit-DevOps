@@ -1,17 +1,18 @@
-// Package projectauth 统一管理项目成员、角色与授权决策。
+// Package projectauth 拥有项目成员、有限能力矩阵和当前身份授权，不拥有凭据。
 package projectauth
 
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
@@ -19,434 +20,387 @@ import (
 
 const (
 	RoleOwner     = "owner"
+	RoleAdmin     = "admin"
 	RoleDeveloper = "developer"
 	RoleViewer    = "viewer"
 )
 
 type Permission string
 
-type denialRecorderKey struct{}
-
-// DenialRecorder 记录稳定授权拒绝原因，不暴露 Actor 或项目标识。
-type DenialRecorder interface {
-	RecordAuthorizationDenial(reason string)
-}
-
-// WithDenialRecorder 为当前请求记录授权拒绝类别，不暴露 Actor 或项目标识。
-func WithDenialRecorder(ctx context.Context, recorder DenialRecorder) context.Context {
-	return context.WithValue(ctx, denialRecorderKey{}, recorder)
-}
-
 const (
-	PermissionRead            Permission = "read"
-	PermissionReadRuntimeLogs Permission = "read_runtime_logs"
-	PermissionDevelop         Permission = "develop"
-	PermissionManageMembers   Permission = "manage_members"
-	PermissionResolveUnknown  Permission = "resolve_unknown"
+	PermissionRead           Permission = "read"
+	PermissionReadLogs       Permission = "read_logs"
+	PermissionDevelop        Permission = "develop"
+	PermissionManageMembers  Permission = "manage_members"
+	PermissionManageOwners   Permission = "manage_owners"
+	PermissionResolveUnknown Permission = "resolve_unknown"
 )
 
 var (
 	ErrForbidden           = errors.New("project permission denied")
 	ErrIdempotencyConflict = idempotency.ErrConflict
-	ErrInvalidActorID      = errors.New("invalid actor ID")
+	ErrInvalidCursor       = errors.New("invalid project member cursor")
+	ErrInvalidMember       = errors.New("invalid project user")
 	ErrInvalidRole         = errors.New("invalid project role")
-	ErrLastOwner           = errors.New("project must retain at least one owner")
+	ErrLastOwner           = identity.ErrLastProjectOwner
 	ErrMemberExists        = errors.New("project member already exists")
 	ErrMemberNotFound      = errors.New("project member not found")
-	ErrNotMember           = errors.New("project is not visible to actor")
+	ErrNotMember           = errors.New("project is not visible to user")
 )
+
+type denialRecorderKey struct{}
+type DenialRecorder interface{ RecordAuthorizationDenial(string) }
+
+func WithDenialRecorder(ctx context.Context, recorder DenialRecorder) context.Context {
+	return context.WithValue(ctx, denialRecorderKey{}, recorder)
+}
+func recordDenial(ctx context.Context, reason string) {
+	if recorder, ok := ctx.Value(denialRecorderKey{}).(DenialRecorder); ok {
+		recorder.RecordAuthorizationDenial(reason)
+	}
+}
 
 type Member struct {
 	ProjectID uuid.UUID `db:"project_id" json:"projectId"`
-	ActorID   string    `db:"actor_id" json:"actorId"`
+	UserID    uuid.UUID `db:"user_id" json:"userId"`
 	Role      string    `db:"role" json:"role"`
 	CreatedBy string    `db:"created_by" json:"createdBy"`
 	CreatedAt time.Time `db:"created_at" json:"createdAt"`
 	UpdatedAt time.Time `db:"updated_at" json:"updatedAt"`
 }
 
+type MemberPage struct {
+	Items      []Member
+	NextCursor *string
+}
+
+type memberCursor struct {
+	Scope     string    `json:"scope"`
+	ProjectID uuid.UUID `json:"projectId"`
+	CreatedAt time.Time `json:"createdAt"`
+	UserID    uuid.UUID `json:"userId"`
+}
 type AddMemberCommand struct {
 	ProjectID      uuid.UUID
-	MemberActorID  string
+	UserID         uuid.UUID
 	Role           string
-	ActorID        string
+	Caller         identity.Caller
 	IdempotencyKey string
 }
-
 type UpdateMemberCommand struct {
 	ProjectID      uuid.UUID
-	MemberActorID  string
+	UserID         uuid.UUID
 	Role           string
-	ActorID        string
+	Caller         identity.Caller
+	IdempotencyKey string
+}
+type RemoveMemberCommand struct {
+	ProjectID      uuid.UUID
+	UserID         uuid.UUID
+	Caller         identity.Caller
 	IdempotencyKey string
 }
 
-type RemoveMemberCommand struct {
-	ProjectID      uuid.UUID
-	MemberActorID  string
-	ActorID        string
-	IdempotencyKey string
+type Permissions struct {
+	ProjectID uuid.UUID
+	Role      string
+	Allowed   []Permission
 }
 
 type Module struct {
-	db *sqlx.DB
+	db         *sqlx.DB
+	identities *identity.Module
 }
 
-// New 创建以 PostgreSQL 成员关系为事实权威的项目权限模块。
-func New(db *sqlx.DB) *Module {
-	return &Module{db: db}
+func New(db *sqlx.DB, identities *identity.Module) *Module {
+	return &Module{db: db, identities: identities}
 }
 
-// ValidateActorID 校验本地身份和成员命令共享的稳定 Actor ID 约束。
-func ValidateActorID(actorID string) error {
-	return validateActorID(actorID)
+// AuthorizeUserInTransaction 是人工接纳的第一类锁，资源排他锁前取得；最终项目授权仍另查。
+func (m *Module) AuthorizeUserInTransaction(ctx context.Context, tx *sqlx.Tx, caller identity.Caller) error {
+	if m.identities == nil {
+		return identity.ErrUnavailable
+	}
+	_, err := m.identities.AuthorizeInTx(ctx, tx, caller)
+	return err
 }
 
-// CreateInitialOwner 在项目创建事务中写入首个 owner，避免出现无所有者项目。
-func (m *Module) CreateInitialOwner(
-	ctx context.Context,
-	tx *sqlx.Tx,
-	projectID uuid.UUID,
-	actorID string,
-	createdAt time.Time,
-) error {
-	if err := validateActorID(actorID); err != nil {
+// Read 在短 READ COMMITTED 事务里统一当前身份与读取快照；外部 K8s/网络读取不放入回调。
+func (m *Module) Read(ctx context.Context, caller identity.Caller, read func(*sqlx.Tx) error) error {
+	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted, ReadOnly: false})
+	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO project_members
-		 (project_id, actor_id, role, created_by, created_at, updated_at)
-		 VALUES ($1, $2, 'owner', $2, $3, $3)`,
-		projectID,
-		actorID,
-		createdAt,
-	); err != nil {
-		return fmt.Errorf("insert initial project owner: %w", err)
+	defer func() { _ = tx.Rollback() }()
+	if err := m.AuthorizeUserInTransaction(ctx, tx, caller); err != nil {
+		return err
 	}
-	return nil
+	if err := read(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
-// Require 判断 Actor 是否拥有指定项目能力。
-func (m *Module) Require(
-	ctx context.Context,
-	projectID uuid.UUID,
-	actorID string,
-	permission Permission,
-) error {
-	return require(ctx, m.db, projectID, actorID, permission)
+// CreateInitialOwner 仅消费项目创建事务已证明的 User，不接受文本 Actor 或客户端身份。
+func (m *Module) CreateInitialOwner(ctx context.Context, tx *sqlx.Tx, projectID uuid.UUID, userID uuid.UUID, at time.Time) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO project_members
+ (project_id,user_id,role,created_by,created_at,updated_at) VALUES ($1,$2,'owner',$3,$4,$4)`,
+		projectID, userID, userID.String(), at)
+	return err
+}
+func (m *Module) Require(ctx context.Context, projectID uuid.UUID, caller identity.Caller, permission Permission) error {
+	return m.Read(ctx, caller, func(tx *sqlx.Tx) error { return require(ctx, tx, projectID, caller.UserID(), permission) })
 }
 
-// RequireInTransaction 在领域写事务中执行同一套授权规则。
-func (m *Module) RequireInTransaction(
-	ctx context.Context,
-	tx *sqlx.Tx,
-	projectID uuid.UUID,
-	actorID string,
-	permission Permission,
-) error {
-	return require(ctx, tx, projectID, actorID, permission)
+// RequireInTransaction 再读当前 Session/成员事实；重复共享锁仍是同一锁，不发生锁升级。
+func (m *Module) RequireInTransaction(ctx context.Context, tx *sqlx.Tx, projectID uuid.UUID, caller identity.Caller, permission Permission) error {
+	if err := m.AuthorizeUserInTransaction(ctx, tx, caller); err != nil {
+		return err
+	}
+	return require(ctx, tx, projectID, caller.UserID(), permission)
 }
 
-// ListMembers 返回项目成员的稳定列表；任一项目成员都可以读取。
-func (m *Module) ListMembers(
-	ctx context.Context,
-	projectID uuid.UUID,
-	actorID string,
-) ([]Member, error) {
-	if err := m.Require(ctx, projectID, actorID, PermissionRead); err != nil {
-		return nil, err
-	}
-
-	members := make([]Member, 0)
-	if err := m.db.SelectContext(
-		ctx,
-		&members,
-		memberSelect+` WHERE project_id = $1 ORDER BY actor_id`,
-		projectID,
-	); err != nil {
-		return nil, fmt.Errorf("list project members: %w", err)
-	}
-	return members, nil
+// RequireAuthorizedInTransaction 仅供已经在当前事务首先完成 AuthorizeUserInTransaction 的模块使用。
+func (m *Module) RequireAuthorizedInTransaction(ctx context.Context, tx *sqlx.Tx, projectID uuid.UUID, caller identity.Caller, permission Permission) error {
+	return require(ctx, tx, projectID, caller.UserID(), permission)
 }
-
-// AddMember 由 owner 幂等地添加项目成员。
-func (m *Module) AddMember(
-	ctx context.Context,
-	command AddMemberCommand,
-) (Member, error) {
-	if err := validateActorID(command.MemberActorID); err != nil {
-		return Member{}, err
+func (m *Module) ListMembers(ctx context.Context, projectID uuid.UUID, caller identity.Caller,
+	limit int, cursorValue string) (MemberPage, error) {
+	if limit < 1 || limit > 100 || projectID == uuid.Nil {
+		return MemberPage{}, ErrInvalidCursor
 	}
-	if err := validateRole(command.Role); err != nil {
-		return Member{}, err
+	var cursor *memberCursor
+	if cursorValue != "" {
+		decoded, err := decodeMemberCursor(cursorValue, projectID)
+		if err != nil {
+			return MemberPage{}, err
+		}
+		cursor = &decoded
 	}
-
-	requestHash, err := idempotency.Fingerprint(struct {
-		ProjectID uuid.UUID `json:"projectId"`
-		ActorID   string    `json:"actorId"`
-		Role      string    `json:"role"`
-	}{command.ProjectID, command.MemberActorID, command.Role})
+	members := make([]Member, 0, limit+1)
+	err := m.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		if err := require(ctx, tx, projectID, caller.UserID(), PermissionRead); err != nil {
+			return err
+		}
+		query := memberSelect + " WHERE project_id=$1"
+		args := []any{projectID, limit + 1}
+		if cursor == nil {
+			query += " ORDER BY created_at DESC,user_id DESC LIMIT $2"
+		} else {
+			query += " AND (created_at,user_id)<($2,$3) ORDER BY created_at DESC,user_id DESC LIMIT $4"
+			args = []any{projectID, cursor.CreatedAt, cursor.UserID, limit + 1}
+		}
+		return tx.SelectContext(ctx, &members, query, args...)
+	})
 	if err != nil {
-		return Member{}, fmt.Errorf("fingerprint add project member: %w", err)
+		return MemberPage{}, err
 	}
+	hasMore := len(members) > limit
+	if hasMore {
+		members = members[:limit]
+	}
+	page := MemberPage{Items: members}
+	if hasMore {
+		last := members[len(members)-1]
+		value := encodeMemberCursor(memberCursor{Scope: "project-members", ProjectID: projectID,
+			CreatedAt: last.CreatedAt, UserID: last.UserID})
+		page.NextCursor = &value
+	}
+	return page, nil
+}
 
-	now := time.Now().UTC()
-	member := Member{
-		ProjectID: command.ProjectID,
-		ActorID:   command.MemberActorID,
-		Role:      command.Role,
-		CreatedBy: command.ActorID,
-		CreatedAt: now,
-		UpdatedAt: now,
+func encodeMemberCursor(cursor memberCursor) string {
+	payload, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeMemberCursor(value string, projectID uuid.UUID) (memberCursor, error) {
+	if len(value) > 512 {
+		return memberCursor{}, ErrInvalidCursor
 	}
-	tx, err := m.db.BeginTxx(ctx, nil)
+	payload, err := base64.RawURLEncoding.Strict().DecodeString(value)
 	if err != nil {
-		return Member{}, fmt.Errorf("begin add project member: %w", err)
+		return memberCursor{}, ErrInvalidCursor
+	}
+	var cursor memberCursor
+	if json.Unmarshal(payload, &cursor) != nil || cursor.Scope != "project-members" || cursor.ProjectID != projectID ||
+		cursor.CreatedAt.IsZero() || cursor.UserID == uuid.Nil {
+		return memberCursor{}, ErrInvalidCursor
+	}
+	return cursor, nil
+}
+
+// GetPermissions 返回有限能力集合，客户端可以据此呈现操作，但服务端仍逐请求重新授权。
+func (m *Module) GetPermissions(ctx context.Context, projectID uuid.UUID, caller identity.Caller) (Permissions, error) {
+	result := Permissions{ProjectID: projectID, Allowed: make([]Permission, 0, 6)}
+	err := m.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		if err := tx.GetContext(ctx, &result.Role, `SELECT pm.role FROM project_members pm JOIN projects p ON p.id=pm.project_id
+			WHERE pm.project_id=$1 AND pm.user_id=$2 AND p.identity_state='governed'`, projectID, caller.UserID()); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				recordDenial(ctx, "not_member")
+				return ErrNotMember
+			}
+			return err
+		}
+		for _, permission := range []Permission{PermissionRead, PermissionReadLogs, PermissionDevelop,
+			PermissionManageMembers, PermissionManageOwners, PermissionResolveUnknown} {
+			if roleAllows(result.Role, permission) {
+				result.Allowed = append(result.Allowed, permission)
+			}
+		}
+		return nil
+	})
+	return result, err
+}
+
+func (m *Module) AddMember(ctx context.Context, c AddMemberCommand) (Member, error) {
+	return m.changeMember(ctx, c.Caller, c.ProjectID, c.UserID, c.Role, c.IdempotencyKey, "add")
+}
+func (m *Module) UpdateMember(ctx context.Context, c UpdateMemberCommand) (Member, error) {
+	return m.changeMember(ctx, c.Caller, c.ProjectID, c.UserID, c.Role, c.IdempotencyKey, "update")
+}
+func (m *Module) RemoveMember(ctx context.Context, c RemoveMemberCommand) (Member, error) {
+	return m.changeMember(ctx, c.Caller, c.ProjectID, c.UserID, "", c.IdempotencyKey, "remove")
+}
+
+// changeMember 直接排他控制锁→项目锁，不从人工接纳的共享锁升级；授权始终在幂等前。
+// admin 管非 owner，原角色或新角色为 owner 都必须额外通过 manage_owners。
+func (m *Module) changeMember(ctx context.Context, caller identity.Caller, projectID, userID uuid.UUID, role, key, action string) (Member, error) {
+	if userID == uuid.Nil || projectID == uuid.Nil {
+		return Member{}, ErrInvalidMember
+	}
+	if action != "remove" {
+		if err := validateRole(role); err != nil {
+			return Member{}, err
+		}
+	}
+	if m.identities == nil {
+		return Member{}, identity.ErrUnavailable
+	}
+	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return Member{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	if err := m.lockForMemberChange(ctx, tx, command.ProjectID, command.ActorID); err != nil {
+	if _, err := m.identities.AuthorizeSecurityInTx(ctx, tx, caller); err != nil {
 		return Member{}, err
 	}
-	scope := idempotency.Scope{
-		ActorID:     command.ActorID,
-		CommandType: "project_member.add",
-		Key:         command.IdempotencyKey,
+	if err := require(ctx, tx, projectID, caller.UserID(), PermissionManageMembers); err != nil {
+		return Member{}, err
 	}
-	_, isNew, err := idempotency.Claim(ctx, tx, scope, requestHash, command.ProjectID, now)
+	var id uuid.UUID
+	if err := tx.GetContext(ctx, &id, `SELECT id FROM projects WHERE id=$1 AND identity_state='governed' FOR UPDATE`, projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Member{}, ErrNotMember
+		}
+		return Member{}, err
+	}
+	var current Member
+	err = tx.GetContext(ctx, &current, memberSelect+" WHERE project_id=$1 AND user_id=$2", projectID, userID)
+	exists := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return Member{}, err
+	}
+	if role == RoleOwner || exists && current.Role == RoleOwner {
+		if err := require(ctx, tx, projectID, caller.UserID(), PermissionManageOwners); err != nil {
+			return Member{}, err
+		}
+	}
+	// 新授予/角色改变只能指向有效正式 User；删除保留处理已停用成员的能力。
+	if action != "remove" {
+		var valid bool
+		if err := tx.GetContext(ctx, &valid, "SELECT EXISTS (SELECT 1 FROM effective_identity_users WHERE id=$1)", userID); err != nil {
+			return Member{}, err
+		}
+		if !valid {
+			return Member{}, ErrInvalidMember
+		}
+	}
+	hash, err := idempotency.Fingerprint(struct {
+		ProjectID uuid.UUID `json:"projectId"`
+		UserID    uuid.UUID `json:"userId"`
+		Role      string    `json:"role,omitempty"`
+	}{projectID, userID, role})
 	if err != nil {
 		return Member{}, err
 	}
-	if !isNew {
-		return replayMember(ctx, tx, scope, "add")
+	var now time.Time
+	if err := tx.GetContext(ctx, &now, "SELECT clock_timestamp()"); err != nil {
+		return Member{}, err
 	}
-
-	if _, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO project_members
-		 (project_id, actor_id, role, created_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $5)`,
-		member.ProjectID,
-		member.ActorID,
-		member.Role,
-		member.CreatedBy,
-		member.CreatedAt,
-	); err != nil {
-		if isUniqueViolation(err) {
+	scope := idempotency.Scope{ActorID: caller.ActorID(), CommandType: "project_member." + action, Key: key}
+	_, fresh, err := idempotency.Claim(ctx, tx, scope, hash, projectID, now)
+	if err != nil {
+		return Member{}, err
+	}
+	if !fresh {
+		var replay Member
+		if err := idempotency.LoadResponse(ctx, tx, scope, &replay); err != nil {
+			return Member{}, err
+		}
+		if replay.Role == RoleOwner {
+			if err := require(ctx, tx, projectID, caller.UserID(), PermissionManageOwners); err != nil {
+				return Member{}, err
+			}
+		}
+		return replay, tx.Commit()
+	}
+	if action == "add" && exists {
+		return Member{}, ErrMemberExists
+	}
+	if action != "add" && !exists {
+		return Member{}, ErrMemberNotFound
+	}
+	// 仅有效 owner 的实际减少需要保护；已经冻结/失效的缺失状态不制造额外全局前置条件。
+	if exists && current.Role == RoleOwner && (action == "remove" || role != RoleOwner) {
+		var safe bool
+		if err := tx.GetContext(ctx, &safe, `SELECT NOT EXISTS(SELECT 1 FROM effective_identity_users WHERE id=$2)
+   OR EXISTS(SELECT 1 FROM project_members pm JOIN effective_identity_users e ON e.id=pm.user_id
+    WHERE pm.project_id=$1 AND pm.role='owner' AND pm.user_id<>$2)`, projectID, userID); err != nil {
+			return Member{}, err
+		}
+		if !safe {
+			return Member{}, ErrLastOwner
+		}
+	}
+	result := current
+	switch action {
+	case "add":
+		result = Member{ProjectID: projectID, UserID: userID, Role: role, CreatedBy: caller.ActorID(), CreatedAt: now, UpdatedAt: now}
+		_, err = tx.ExecContext(ctx, `INSERT INTO project_members
+   (project_id,user_id,role,created_by,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$5)`, projectID, userID, role, caller.ActorID(), now)
+	case "update":
+		result.Role, result.UpdatedAt = role, now
+		_, err = tx.ExecContext(ctx, "UPDATE project_members SET role=$3,updated_at=$4 WHERE project_id=$1 AND user_id=$2", projectID, userID, role, now)
+	case "remove":
+		_, err = tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=$1 AND user_id=$2", projectID, userID)
+	}
+	if err != nil {
+		var pg *pgconn.PgError
+		if errors.As(err, &pg) && pg.Code == "23505" {
 			return Member{}, ErrMemberExists
 		}
-		return Member{}, fmt.Errorf("insert project member: %w", err)
+		return Member{}, fmt.Errorf("change project member: %w", err)
 	}
-	if err := idempotency.StoreResponse(ctx, tx, scope, member); err != nil {
+	if err := idempotency.StoreResponse(ctx, tx, scope, result); err != nil {
 		return Member{}, err
 	}
-	if err := appendMemberAudit(ctx, tx, command.ActorID, "project_member.add", member, now); err != nil {
+	if err := audit.Append(ctx, tx, audit.Entry{ActorID: caller.ActorID(), Action: scope.CommandType, TargetType: "project", TargetID: projectID,
+		Summary: map[string]string{"memberUserId": userID.String(), "role": result.Role}, CreatedAt: now}); err != nil {
 		return Member{}, err
 	}
-	if err := tx.Commit(); err != nil {
-		return Member{}, fmt.Errorf("commit add project member: %w", err)
-	}
-	return member, nil
+	return result, tx.Commit()
 }
 
-// UpdateMember 由 owner 幂等地修改成员角色，并保护项目最后一个 owner。
-func (m *Module) UpdateMember(
-	ctx context.Context,
-	command UpdateMemberCommand,
-) (Member, error) {
-	if err := validateActorID(command.MemberActorID); err != nil {
-		return Member{}, err
-	}
-	if err := validateRole(command.Role); err != nil {
-		return Member{}, err
-	}
-
-	requestHash, err := idempotency.Fingerprint(struct {
-		ProjectID uuid.UUID `json:"projectId"`
-		ActorID   string    `json:"actorId"`
-		Role      string    `json:"role"`
-	}{command.ProjectID, command.MemberActorID, command.Role})
-	if err != nil {
-		return Member{}, fmt.Errorf("fingerprint update project member: %w", err)
-	}
-
-	now := time.Now().UTC()
-	tx, err := m.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return Member{}, fmt.Errorf("begin update project member: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if err := m.lockForMemberChange(ctx, tx, command.ProjectID, command.ActorID); err != nil {
-		return Member{}, err
-	}
-	scope := idempotency.Scope{
-		ActorID:     command.ActorID,
-		CommandType: "project_member.update",
-		Key:         command.IdempotencyKey,
-	}
-	_, isNew, err := idempotency.Claim(ctx, tx, scope, requestHash, command.ProjectID, now)
-	if err != nil {
-		return Member{}, err
-	}
-	if !isNew {
-		return replayMember(ctx, tx, scope, "update")
-	}
-
-	current, err := loadMemberForUpdate(ctx, tx, command.ProjectID, command.MemberActorID)
-	if err != nil {
-		return Member{}, err
-	}
-	if current.Role == RoleOwner && command.Role != RoleOwner {
-		if err := requireAnotherOwner(ctx, tx, command.ProjectID); err != nil {
-			return Member{}, err
-		}
-	}
-	current.Role = command.Role
-	current.UpdatedAt = now
-	if _, err := tx.ExecContext(
-		ctx,
-		`UPDATE project_members SET role = $1, updated_at = $2
-		 WHERE project_id = $3 AND actor_id = $4`,
-		current.Role,
-		current.UpdatedAt,
-		current.ProjectID,
-		current.ActorID,
-	); err != nil {
-		return Member{}, fmt.Errorf("update project member: %w", err)
-	}
-	if err := idempotency.StoreResponse(ctx, tx, scope, current); err != nil {
-		return Member{}, err
-	}
-	if err := appendMemberAudit(ctx, tx, command.ActorID, "project_member.update", current, now); err != nil {
-		return Member{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Member{}, fmt.Errorf("commit update project member: %w", err)
-	}
-	return current, nil
-}
-
-// RemoveMember 由 owner 幂等地移除成员，并保护项目最后一个 owner。
-func (m *Module) RemoveMember(
-	ctx context.Context,
-	command RemoveMemberCommand,
-) (Member, error) {
-	if err := validateActorID(command.MemberActorID); err != nil {
-		return Member{}, err
-	}
-
-	requestHash, err := idempotency.Fingerprint(struct {
-		ProjectID uuid.UUID `json:"projectId"`
-		ActorID   string    `json:"actorId"`
-	}{command.ProjectID, command.MemberActorID})
-	if err != nil {
-		return Member{}, fmt.Errorf("fingerprint remove project member: %w", err)
-	}
-
-	now := time.Now().UTC()
-	tx, err := m.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return Member{}, fmt.Errorf("begin remove project member: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if err := m.lockForMemberChange(ctx, tx, command.ProjectID, command.ActorID); err != nil {
-		return Member{}, err
-	}
-	scope := idempotency.Scope{
-		ActorID:     command.ActorID,
-		CommandType: "project_member.remove",
-		Key:         command.IdempotencyKey,
-	}
-	_, isNew, err := idempotency.Claim(ctx, tx, scope, requestHash, command.ProjectID, now)
-	if err != nil {
-		return Member{}, err
-	}
-	if !isNew {
-		return replayMember(ctx, tx, scope, "remove")
-	}
-
-	member, err := loadMemberForUpdate(ctx, tx, command.ProjectID, command.MemberActorID)
-	if err != nil {
-		return Member{}, err
-	}
-	if member.Role == RoleOwner {
-		if err := requireAnotherOwner(ctx, tx, command.ProjectID); err != nil {
-			return Member{}, err
-		}
-	}
-	if _, err := tx.ExecContext(
-		ctx,
-		`DELETE FROM project_members WHERE project_id = $1 AND actor_id = $2`,
-		member.ProjectID,
-		member.ActorID,
-	); err != nil {
-		return Member{}, fmt.Errorf("remove project member: %w", err)
-	}
-	if err := idempotency.StoreResponse(ctx, tx, scope, member); err != nil {
-		return Member{}, err
-	}
-	if err := appendMemberAudit(ctx, tx, command.ActorID, "project_member.remove", member, now); err != nil {
-		return Member{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Member{}, fmt.Errorf("commit remove project member: %w", err)
-	}
-	return member, nil
-}
-
-func (m *Module) lockForMemberChange(
-	ctx context.Context,
-	tx *sqlx.Tx,
-	projectID uuid.UUID,
-	actorID string,
-) error {
-	// 先锁定项目再授权，使成员角色变化与“最后一个 owner”检查共享同一串行边界。
-	var lockedID uuid.UUID
-	if err := tx.GetContext(
-		ctx,
-		&lockedID,
-		`SELECT id FROM projects WHERE id = $1 FOR UPDATE`,
-		projectID,
-	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			recordDenial(ctx, "not_member")
-			return ErrNotMember
-		}
-		return fmt.Errorf("lock project membership: %w", err)
-	}
-	return m.RequireInTransaction(
-		ctx,
-		tx,
-		projectID,
-		actorID,
-		PermissionManageMembers,
-	)
-}
-
-func require(
-	ctx context.Context,
-	queryer sqlx.QueryerContext,
-	projectID uuid.UUID,
-	actorID string,
-	permission Permission,
-) error {
+func require(ctx context.Context, queryer sqlx.QueryerContext, projectID, userID uuid.UUID, permission Permission) error {
 	var role string
-	if err := sqlx.GetContext(
-		ctx,
-		queryer,
-		&role,
-		`SELECT role FROM project_members WHERE project_id = $1 AND actor_id = $2`,
-		projectID,
-		actorID,
-	); err != nil {
+	if err := sqlx.GetContext(ctx, queryer, &role, `SELECT pm.role FROM project_members pm JOIN projects p ON p.id=pm.project_id
+  WHERE pm.project_id=$1 AND pm.user_id=$2 AND p.identity_state='governed'`, projectID, userID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			recordDenial(ctx, "not_member")
 			return ErrNotMember
 		}
-		return fmt.Errorf("load project role: %w", err)
+		return err
 	}
 	if !roleAllows(role, permission) {
 		recordDenial(ctx, "forbidden")
@@ -454,127 +408,27 @@ func require(
 	}
 	return nil
 }
-
-func recordDenial(ctx context.Context, reason string) {
-	if recorder, ok := ctx.Value(denialRecorderKey{}).(DenialRecorder); ok {
-		recorder.RecordAuthorizationDenial(reason)
-	}
-}
-
-func roleAllows(role string, permission Permission) bool {
-	switch role {
-	case RoleOwner:
-		return true
-	case RoleDeveloper:
-		return permission == PermissionRead || permission == PermissionDevelop ||
-			permission == PermissionReadRuntimeLogs
-	case RoleViewer:
-		return permission == PermissionRead
+func roleAllows(role string, p Permission) bool {
+	switch p {
+	case PermissionRead:
+		return role == RoleOwner || role == RoleAdmin || role == RoleDeveloper || role == RoleViewer
+	case PermissionReadLogs, PermissionDevelop:
+		return role == RoleOwner || role == RoleAdmin || role == RoleDeveloper
+	case PermissionManageMembers, PermissionResolveUnknown:
+		return role == RoleOwner || role == RoleAdmin
+	case PermissionManageOwners:
+		return role == RoleOwner
 	default:
 		return false
 	}
 }
-
-func loadMemberForUpdate(
-	ctx context.Context,
-	tx *sqlx.Tx,
-	projectID uuid.UUID,
-	actorID string,
-) (Member, error) {
-	var member Member
-	if err := tx.GetContext(
-		ctx,
-		&member,
-		memberSelect+` WHERE project_id = $1 AND actor_id = $2 FOR UPDATE`,
-		projectID,
-		actorID,
-	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Member{}, ErrMemberNotFound
-		}
-		return Member{}, fmt.Errorf("load project member: %w", err)
-	}
-	return member, nil
-}
-
-func requireAnotherOwner(ctx context.Context, tx *sqlx.Tx, projectID uuid.UUID) error {
-	var count int
-	if err := tx.GetContext(
-		ctx,
-		&count,
-		`SELECT count(*) FROM project_members WHERE project_id = $1 AND role = 'owner'`,
-		projectID,
-	); err != nil {
-		return fmt.Errorf("count project owners: %w", err)
-	}
-	if count <= 1 {
-		return ErrLastOwner
-	}
-	return nil
-}
-
-func replayMember(
-	ctx context.Context,
-	tx *sqlx.Tx,
-	scope idempotency.Scope,
-	action string,
-) (Member, error) {
-	var member Member
-	if err := idempotency.LoadResponse(ctx, tx, scope, &member); err != nil {
-		return Member{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Member{}, fmt.Errorf("commit project member %s replay: %w", action, err)
-	}
-	return member, nil
-}
-
-func appendMemberAudit(
-	ctx context.Context,
-	tx *sqlx.Tx,
-	actorID string,
-	action string,
-	member Member,
-	createdAt time.Time,
-) error {
-	return audit.Append(ctx, tx, audit.Entry{
-		ActorID:    actorID,
-		Action:     action,
-		TargetType: "project",
-		TargetID:   member.ProjectID,
-		Summary: map[string]string{
-			"memberActorId": member.ActorID,
-			"role":          member.Role,
-		},
-		CreatedAt: createdAt,
-	})
-}
-
-func validateActorID(actorID string) error {
-	if actorID == "" || strings.TrimSpace(actorID) != actorID || utf8.RuneCountInString(actorID) > 128 {
-		return ErrInvalidActorID
-	}
-	for _, value := range actorID {
-		if value < 0x20 || value == 0x7f {
-			return ErrInvalidActorID
-		}
-	}
-	return nil
-}
-
 func validateRole(role string) error {
 	switch role {
-	case RoleOwner, RoleDeveloper, RoleViewer:
+	case RoleOwner, RoleAdmin, RoleDeveloper, RoleViewer:
 		return nil
 	default:
 		return ErrInvalidRole
 	}
 }
 
-func isUniqueViolation(err error) bool {
-	var databaseError *pgconn.PgError
-	return errors.As(err, &databaseError) && databaseError.Code == "23505"
-}
-
-const memberSelect = `SELECT project_id, actor_id, role, created_by, created_at, updated_at
- FROM project_members`
+const memberSelect = "SELECT project_id,user_id,role,created_by,created_at,updated_at FROM project_members"

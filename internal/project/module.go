@@ -9,6 +9,7 @@ import (
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -30,7 +31,7 @@ type Project struct {
 type CreateCommand struct {
 	Name           string
 	Slug           string
-	ActorID        string
+	Caller         identity.Caller
 	IdempotencyKey string
 }
 
@@ -57,12 +58,12 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 		return Project{}, fmt.Errorf("fingerprint create project: %w", err)
 	}
 
-	createdAt := time.Now().UTC()
+	createdAt := time.Time{}
 	createdProject := Project{
 		ID:        uuid.New(),
 		Name:      command.Name,
 		Slug:      command.Slug,
-		CreatedBy: command.ActorID,
+		CreatedBy: command.Caller.ActorID(),
 		CreatedAt: createdAt,
 	}
 
@@ -73,12 +74,19 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 	defer func() {
 		_ = tx.Rollback()
 	}()
+	if err := m.authorizer.AuthorizeUserInTransaction(ctx, tx, command.Caller); err != nil {
+		return Project{}, err
+	}
+	if err := tx.GetContext(ctx, &createdAt, `SELECT clock_timestamp()`); err != nil {
+		return Project{}, fmt.Errorf("read database time: %w", err)
+	}
+	createdProject.CreatedAt = createdAt
 
 	resourceID, isNew, err := idempotency.Claim(
 		ctx,
 		tx,
 		idempotency.Scope{
-			ActorID:     command.ActorID,
+			ActorID:     command.Caller.ActorID(),
 			CommandType: "project.create",
 			Key:         command.IdempotencyKey,
 		},
@@ -90,13 +98,16 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 		return Project{}, err
 	}
 	if !isNew {
+		if err := m.authorizer.RequireInTransaction(ctx, tx, resourceID, command.Caller, projectauth.PermissionRead); err != nil {
+			return Project{}, err
+		}
 		return replayProjectCreate(ctx, tx, resourceID)
 	}
 
 	_, err = tx.ExecContext(
 		ctx,
-		`INSERT INTO projects (id, name, slug, created_by, created_at)
-		 VALUES ($1, $2, $3, $4, $5)`,
+		`INSERT INTO projects (id, name, slug, created_by, created_at, identity_state)
+		 VALUES ($1, $2, $3, $4, $5, 'governed')`,
 		createdProject.ID,
 		createdProject.Name,
 		createdProject.Slug,
@@ -110,7 +121,7 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 		ctx,
 		tx,
 		createdProject.ID,
-		command.ActorID,
+		command.Caller.UserID(),
 		createdAt,
 	); err != nil {
 		return Project{}, err
@@ -120,7 +131,7 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 		ctx,
 		tx,
 		audit.Entry{
-			ActorID:    command.ActorID,
+			ActorID:    command.Caller.ActorID(),
 			Action:     "project.create",
 			TargetType: "project",
 			TargetID:   createdProject.ID,
@@ -141,21 +152,21 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 	return createdProject, nil
 }
 
-// Get 按标识读取项目；调用者负责先通过项目权限模块完成可见性判断。
-func (m *Module) Get(ctx context.Context, id uuid.UUID) (Project, error) {
+// Get 在同一短事务里核验当前身份/成员并读取项目，避免分离授权快照。
+func (m *Module) Get(ctx context.Context, id uuid.UUID, caller identity.Caller) (Project, error) {
 	var existingProject Project
-	if err := m.db.GetContext(
-		ctx,
-		&existingProject,
-		`SELECT id, name, slug, created_by, created_at
-		 FROM projects
-		 WHERE id = $1`,
-		id,
-	); err != nil {
+	err := m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		if err := m.authorizer.RequireInTransaction(ctx, tx, id, caller, projectauth.PermissionRead); err != nil {
+			return err
+		}
+		return tx.GetContext(ctx, &existingProject, `SELECT id, name, slug, created_by, created_at
+			FROM projects WHERE id = $1 AND identity_state='governed'`, id)
+	})
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Project{}, ErrNotFound
 		}
-		return Project{}, fmt.Errorf("get project: %w", err)
+		return Project{}, err
 	}
 
 	return existingProject, nil
