@@ -22,6 +22,84 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AccessHostLifecycle.
+const (
+	AccessHostLifecycleActive   AccessHostLifecycle = "active"
+	AccessHostLifecycleDeleting AccessHostLifecycle = "deleting"
+)
+
+// Valid indicates whether the value is a known member of the AccessHostLifecycle enum.
+func (e AccessHostLifecycle) Valid() bool {
+	switch e {
+	case AccessHostLifecycleActive:
+		return true
+	case AccessHostLifecycleDeleting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccessHostTlsMode.
+const (
+	AccessHostTlsModeExistingSecret AccessHostTlsMode = "existing_secret"
+	AccessHostTlsModeHttpOnly       AccessHostTlsMode = "http_only"
+	AccessHostTlsModeManaged        AccessHostTlsMode = "managed"
+)
+
+// Valid indicates whether the value is a known member of the AccessHostTlsMode enum.
+func (e AccessHostTlsMode) Valid() bool {
+	switch e {
+	case AccessHostTlsModeExistingSecret:
+		return true
+	case AccessHostTlsModeHttpOnly:
+		return true
+	case AccessHostTlsModeManaged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccessHostInputTlsMode.
+const (
+	AccessHostInputTlsModeExistingSecret AccessHostInputTlsMode = "existing_secret"
+	AccessHostInputTlsModeHttpOnly       AccessHostInputTlsMode = "http_only"
+	AccessHostInputTlsModeManaged        AccessHostInputTlsMode = "managed"
+)
+
+// Valid indicates whether the value is a known member of the AccessHostInputTlsMode enum.
+func (e AccessHostInputTlsMode) Valid() bool {
+	switch e {
+	case AccessHostInputTlsModeExistingSecret:
+		return true
+	case AccessHostInputTlsModeHttpOnly:
+		return true
+	case AccessHostInputTlsModeManaged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccessRouteLifecycle.
+const (
+	AccessRouteLifecycleActive   AccessRouteLifecycle = "active"
+	AccessRouteLifecycleDeleting AccessRouteLifecycle = "deleting"
+)
+
+// Valid indicates whether the value is a known member of the AccessRouteLifecycle enum.
+func (e AccessRouteLifecycle) Valid() bool {
+	switch e {
+	case AccessRouteLifecycleActive:
+		return true
+	case AccessRouteLifecycleDeleting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AuditRecordActorKind.
 const (
 	AuditRecordActorKindSystem AuditRecordActorKind = "system"
@@ -504,18 +582,24 @@ func (e PlatformRole) Valid() bool {
 
 // Defines values for ProjectPermission.
 const (
-	Develop        ProjectPermission = "develop"
-	ManageMembers  ProjectPermission = "manage_members"
-	ManageOwners   ProjectPermission = "manage_owners"
-	Read           ProjectPermission = "read"
-	ReadLogs       ProjectPermission = "read_logs"
-	ResolveUnknown ProjectPermission = "resolve_unknown"
+	Develop            ProjectPermission = "develop"
+	ManageAccessHosts  ProjectPermission = "manage_access_hosts"
+	ManageAccessRoutes ProjectPermission = "manage_access_routes"
+	ManageMembers      ProjectPermission = "manage_members"
+	ManageOwners       ProjectPermission = "manage_owners"
+	Read               ProjectPermission = "read"
+	ReadLogs           ProjectPermission = "read_logs"
+	ResolveUnknown     ProjectPermission = "resolve_unknown"
 )
 
 // Valid indicates whether the value is a known member of the ProjectPermission enum.
 func (e ProjectPermission) Valid() bool {
 	switch e {
 	case Develop:
+		return true
+	case ManageAccessHosts:
+		return true
+	case ManageAccessRoutes:
 		return true
 	case ManageMembers:
 		return true
@@ -774,16 +858,16 @@ func (e UpdateDeploymentTargetRequestStage) Valid() bool {
 
 // Defines values for UserStatus.
 const (
-	Active   UserStatus = "active"
-	Disabled UserStatus = "disabled"
+	UserStatusActive   UserStatus = "active"
+	UserStatusDisabled UserStatus = "disabled"
 )
 
 // Valid indicates whether the value is a known member of the UserStatus enum.
 func (e UserStatus) Valid() bool {
 	switch e {
-	case Active:
+	case UserStatusActive:
 		return true
-	case Disabled:
+	case UserStatusDisabled:
 		return true
 	default:
 		return false
@@ -812,6 +896,58 @@ func (e WebhookAcceptanceState) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// AccessHost defines model for AccessHost.
+type AccessHost struct {
+	ClusterRef      string              `json:"clusterRef"`
+	CreatedAt       time.Time           `json:"createdAt"`
+	Hostname        string              `json:"hostname"`
+	Id              openapi_types.UUID  `json:"id"`
+	IssuerPolicyKey *string             `json:"issuerPolicyKey,omitempty"`
+	Lifecycle       AccessHostLifecycle `json:"lifecycle"`
+	Namespace       string              `json:"namespace"`
+	ProjectId       openapi_types.UUID  `json:"projectId"`
+	SecretBindingId *openapi_types.UUID `json:"secretBindingId,omitempty"`
+	TlsMode         AccessHostTlsMode   `json:"tlsMode"`
+	UpdatedAt       time.Time           `json:"updatedAt"`
+}
+
+// AccessHostLifecycle defines model for AccessHost.Lifecycle.
+type AccessHostLifecycle string
+
+// AccessHostTlsMode defines model for AccessHost.TlsMode.
+type AccessHostTlsMode string
+
+// AccessHostInput defines model for AccessHostInput.
+type AccessHostInput struct {
+	Hostname        string                 `json:"hostname"`
+	IssuerPolicyKey *string                `json:"issuerPolicyKey,omitempty"`
+	SecretBindingId *openapi_types.UUID    `json:"secretBindingId,omitempty"`
+	TlsMode         AccessHostInputTlsMode `json:"tlsMode"`
+}
+
+// AccessHostInputTlsMode defines model for AccessHostInput.TlsMode.
+type AccessHostInputTlsMode string
+
+// AccessRoute defines model for AccessRoute.
+type AccessRoute struct {
+	CreatedAt          time.Time            `json:"createdAt"`
+	DeploymentTargetId openapi_types.UUID   `json:"deploymentTargetId"`
+	HostId             openapi_types.UUID   `json:"hostId"`
+	Id                 openapi_types.UUID   `json:"id"`
+	Lifecycle          AccessRouteLifecycle `json:"lifecycle"`
+	PathPrefix         string               `json:"pathPrefix"`
+	UpdatedAt          time.Time            `json:"updatedAt"`
+}
+
+// AccessRouteLifecycle defines model for AccessRoute.Lifecycle.
+type AccessRouteLifecycle string
+
+// AccessRouteInput defines model for AccessRouteInput.
+type AccessRouteInput struct {
+	DeploymentTargetId openapi_types.UUID `json:"deploymentTargetId"`
+	PathPrefix         string             `json:"pathPrefix"`
 }
 
 // AddProjectMemberRequest defines model for AddProjectMemberRequest.
@@ -1657,14 +1793,23 @@ type DeliveryPipelineId = openapi_types.UUID
 // DeliveryRunId defines model for DeliveryRunId.
 type DeliveryRunId = openapi_types.UUID
 
+// HostId defines model for HostId.
+type HostId = openapi_types.UUID
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
 // IdentityId defines model for IdentityId.
 type IdentityId = openapi_types.UUID
 
+// ProjectId defines model for ProjectId.
+type ProjectId = openapi_types.UUID
+
 // ProviderId defines model for ProviderId.
 type ProviderId = string
+
+// RouteId defines model for RouteId.
+type RouteId = openapi_types.UUID
 
 // UserId defines model for UserId.
 type UserId = openapi_types.UUID
@@ -1801,6 +1946,42 @@ type CreateProjectParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// CreateAccessHostParams defines parameters for CreateAccessHost.
+type CreateAccessHostParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DeleteAccessHostParams defines parameters for DeleteAccessHost.
+type DeleteAccessHostParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// UpdateAccessHostParams defines parameters for UpdateAccessHost.
+type UpdateAccessHostParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CreateAccessRouteParams defines parameters for CreateAccessRoute.
+type CreateAccessRouteParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DeleteAccessRouteParams defines parameters for DeleteAccessRoute.
+type DeleteAccessRouteParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// UpdateAccessRouteParams defines parameters for UpdateAccessRoute.
+type UpdateAccessRouteParams struct {
+	// IdempotencyKey 当前操作者与写操作范围内的幂等标识。
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // ListApplicationsParams defines parameters for ListApplications.
 type ListApplicationsParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
@@ -1929,6 +2110,18 @@ type CreateReleaseJSONRequestBody = CreateReleaseRequest
 
 // CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
 type CreateProjectJSONRequestBody = CreateProjectRequest
+
+// CreateAccessHostJSONRequestBody defines body for CreateAccessHost for application/json ContentType.
+type CreateAccessHostJSONRequestBody = AccessHostInput
+
+// UpdateAccessHostJSONRequestBody defines body for UpdateAccessHost for application/json ContentType.
+type UpdateAccessHostJSONRequestBody = AccessHostInput
+
+// CreateAccessRouteJSONRequestBody defines body for CreateAccessRoute for application/json ContentType.
+type CreateAccessRouteJSONRequestBody = AccessRouteInput
+
+// UpdateAccessRouteJSONRequestBody defines body for UpdateAccessRoute for application/json ContentType.
+type UpdateAccessRouteJSONRequestBody = AccessRouteInput
 
 // CreateApplicationJSONRequestBody defines body for CreateApplication for application/json ContentType.
 type CreateApplicationJSONRequestBody = CreateApplicationRequest
@@ -2079,6 +2272,36 @@ type ServerInterface interface {
 	// GetProject 查询项目
 	// (GET /api/v1/projects/{projectId})
 	GetProject(c *gin.Context, projectId openapi_types.UUID)
+	// ListAccessHosts 查询项目访问域名
+	// (GET /api/v1/projects/{projectId}/access-hosts)
+	ListAccessHosts(c *gin.Context, projectId ProjectId)
+	// CreateAccessHost 为项目声明访问域名
+	// (POST /api/v1/projects/{projectId}/access-hosts)
+	CreateAccessHost(c *gin.Context, projectId ProjectId, params CreateAccessHostParams)
+	// DeleteAccessHost 显式删除域名及其受控入口资源
+	// (DELETE /api/v1/projects/{projectId}/access-hosts/{hostId})
+	DeleteAccessHost(c *gin.Context, projectId ProjectId, hostId HostId, params DeleteAccessHostParams)
+	// GetAccessHost 查询访问域名
+	// (GET /api/v1/projects/{projectId}/access-hosts/{hostId})
+	GetAccessHost(c *gin.Context, projectId ProjectId, hostId HostId)
+	// UpdateAccessHost 修改域名的 TLS 配置
+	// (PATCH /api/v1/projects/{projectId}/access-hosts/{hostId})
+	UpdateAccessHost(c *gin.Context, projectId ProjectId, hostId HostId, params UpdateAccessHostParams)
+	// ListAccessRoutes 查询域名的路径路由
+	// (GET /api/v1/projects/{projectId}/access-hosts/{hostId}/routes)
+	ListAccessRoutes(c *gin.Context, projectId ProjectId, hostId HostId)
+	// CreateAccessRoute 创建路径到 Target Service 的路由
+	// (POST /api/v1/projects/{projectId}/access-hosts/{hostId}/routes)
+	CreateAccessRoute(c *gin.Context, projectId ProjectId, hostId HostId, params CreateAccessRouteParams)
+	// DeleteAccessRoute 删除路径路由
+	// (DELETE /api/v1/projects/{projectId}/access-hosts/{hostId}/routes/{routeId})
+	DeleteAccessRoute(c *gin.Context, projectId ProjectId, hostId HostId, routeId RouteId, params DeleteAccessRouteParams)
+	// GetAccessRoute 查询路径路由
+	// (GET /api/v1/projects/{projectId}/access-hosts/{hostId}/routes/{routeId})
+	GetAccessRoute(c *gin.Context, projectId ProjectId, hostId HostId, routeId RouteId)
+	// UpdateAccessRoute 修改路径路由
+	// (PATCH /api/v1/projects/{projectId}/access-hosts/{hostId}/routes/{routeId})
+	UpdateAccessRoute(c *gin.Context, projectId ProjectId, hostId HostId, routeId RouteId, params UpdateAccessRouteParams)
 	// ListApplications 分页查询项目应用
 	// (GET /api/v1/projects/{projectId}/applications)
 	ListApplications(c *gin.Context, projectId openapi_types.UUID, params ListApplicationsParams)
@@ -3639,6 +3862,517 @@ func (siw *ServerInterfaceWrapper) GetProject(c *gin.Context) {
 	siw.Handler.GetProject(c, projectId)
 }
 
+// ListAccessHosts operation middleware
+func (siw *ServerInterfaceWrapper) ListAccessHosts(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListAccessHosts(c, projectId)
+}
+
+// CreateAccessHost operation middleware
+func (siw *ServerInterfaceWrapper) CreateAccessHost(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateAccessHostParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateAccessHost(c, projectId, params)
+}
+
+// DeleteAccessHost operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAccessHost(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "hostId" -------------
+	var hostId HostId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostId", c.Param("hostId"), &hostId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter hostId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteAccessHostParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteAccessHost(c, projectId, hostId, params)
+}
+
+// GetAccessHost operation middleware
+func (siw *ServerInterfaceWrapper) GetAccessHost(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "hostId" -------------
+	var hostId HostId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostId", c.Param("hostId"), &hostId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter hostId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAccessHost(c, projectId, hostId)
+}
+
+// UpdateAccessHost operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAccessHost(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "hostId" -------------
+	var hostId HostId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostId", c.Param("hostId"), &hostId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter hostId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateAccessHostParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateAccessHost(c, projectId, hostId, params)
+}
+
+// ListAccessRoutes operation middleware
+func (siw *ServerInterfaceWrapper) ListAccessRoutes(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "hostId" -------------
+	var hostId HostId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostId", c.Param("hostId"), &hostId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter hostId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListAccessRoutes(c, projectId, hostId)
+}
+
+// CreateAccessRoute operation middleware
+func (siw *ServerInterfaceWrapper) CreateAccessRoute(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "hostId" -------------
+	var hostId HostId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostId", c.Param("hostId"), &hostId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter hostId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateAccessRouteParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateAccessRoute(c, projectId, hostId, params)
+}
+
+// DeleteAccessRoute operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAccessRoute(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "hostId" -------------
+	var hostId HostId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostId", c.Param("hostId"), &hostId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter hostId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "routeId" -------------
+	var routeId RouteId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "routeId", c.Param("routeId"), &routeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter routeId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteAccessRouteParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteAccessRoute(c, projectId, hostId, routeId, params)
+}
+
+// GetAccessRoute operation middleware
+func (siw *ServerInterfaceWrapper) GetAccessRoute(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "hostId" -------------
+	var hostId HostId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostId", c.Param("hostId"), &hostId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter hostId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "routeId" -------------
+	var routeId RouteId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "routeId", c.Param("routeId"), &routeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter routeId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAccessRoute(c, projectId, hostId, routeId)
+}
+
+// UpdateAccessRoute operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAccessRoute(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", c.Param("projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter projectId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "hostId" -------------
+	var hostId HostId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostId", c.Param("hostId"), &hostId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter hostId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "routeId" -------------
+	var routeId RouteId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "routeId", c.Param("routeId"), &routeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter routeId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateAccessRouteParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateAccessRoute(c, projectId, hostId, routeId, params)
+}
+
 // ListApplications operation middleware
 func (siw *ServerInterfaceWrapper) ListApplications(c *gin.Context) {
 
@@ -4886,6 +5620,16 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/v1/delivery-pipelines/:deliveryPipelineId/runs", wrapper.ListDeliveryRuns)
 	router.GET(options.BaseURL+"/api/v1/delivery-runs/:deliveryRunId", wrapper.GetDeliveryRun)
 	router.POST(options.BaseURL+"/api/v1/delivery-runs/:deliveryRunId/reconcile", wrapper.ReconcileDeliveryRun)
+	router.GET(options.BaseURL+"/api/v1/projects/:projectId/access-hosts", wrapper.ListAccessHosts)
+	router.POST(options.BaseURL+"/api/v1/projects/:projectId/access-hosts", wrapper.CreateAccessHost)
+	router.DELETE(options.BaseURL+"/api/v1/projects/:projectId/access-hosts/:hostId", wrapper.DeleteAccessHost)
+	router.GET(options.BaseURL+"/api/v1/projects/:projectId/access-hosts/:hostId", wrapper.GetAccessHost)
+	router.PATCH(options.BaseURL+"/api/v1/projects/:projectId/access-hosts/:hostId", wrapper.UpdateAccessHost)
+	router.GET(options.BaseURL+"/api/v1/projects/:projectId/access-hosts/:hostId/routes", wrapper.ListAccessRoutes)
+	router.POST(options.BaseURL+"/api/v1/projects/:projectId/access-hosts/:hostId/routes", wrapper.CreateAccessRoute)
+	router.DELETE(options.BaseURL+"/api/v1/projects/:projectId/access-hosts/:hostId/routes/:routeId", wrapper.DeleteAccessRoute)
+	router.GET(options.BaseURL+"/api/v1/projects/:projectId/access-hosts/:hostId/routes/:routeId", wrapper.GetAccessRoute)
+	router.PATCH(options.BaseURL+"/api/v1/projects/:projectId/access-hosts/:hostId/routes/:routeId", wrapper.UpdateAccessRoute)
 }
 
 type GetApplicationRequestObject struct {
@@ -7704,6 +8448,781 @@ func (response GetProjectdefaultJSONResponse) VisitGetProjectResponse(w http.Res
 	return err
 }
 
+type ListAccessHostsRequestObject struct {
+	ProjectId ProjectId `json:"projectId"`
+}
+
+type ListAccessHostsResponseObject interface {
+	VisitListAccessHostsResponse(w http.ResponseWriter) error
+}
+
+type ListAccessHosts200JSONResponse []AccessHost
+
+func (response ListAccessHosts200JSONResponse) VisitListAccessHostsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAccessHosts404JSONResponse Error
+
+func (response ListAccessHosts404JSONResponse) VisitListAccessHostsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAccessHostsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListAccessHostsdefaultJSONResponse) VisitListAccessHostsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessHostRequestObject struct {
+	ProjectId ProjectId `json:"projectId"`
+	Params    CreateAccessHostParams
+	Body      *CreateAccessHostJSONRequestBody
+}
+
+type CreateAccessHostResponseObject interface {
+	VisitCreateAccessHostResponse(w http.ResponseWriter) error
+}
+
+type CreateAccessHost201JSONResponse AccessHost
+
+func (response CreateAccessHost201JSONResponse) VisitCreateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessHost400JSONResponse Error
+
+func (response CreateAccessHost400JSONResponse) VisitCreateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessHost403JSONResponse Error
+
+func (response CreateAccessHost403JSONResponse) VisitCreateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessHost404JSONResponse Error
+
+func (response CreateAccessHost404JSONResponse) VisitCreateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessHost409JSONResponse Error
+
+func (response CreateAccessHost409JSONResponse) VisitCreateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessHostdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateAccessHostdefaultJSONResponse) VisitCreateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAccessHostRequestObject struct {
+	ProjectId ProjectId `json:"projectId"`
+	HostId    HostId    `json:"hostId"`
+	Params    DeleteAccessHostParams
+}
+
+type DeleteAccessHostResponseObject interface {
+	VisitDeleteAccessHostResponse(w http.ResponseWriter) error
+}
+
+type DeleteAccessHost202JSONResponse AccessHost
+
+func (response DeleteAccessHost202JSONResponse) VisitDeleteAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAccessHost403JSONResponse Error
+
+func (response DeleteAccessHost403JSONResponse) VisitDeleteAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAccessHost404JSONResponse Error
+
+func (response DeleteAccessHost404JSONResponse) VisitDeleteAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAccessHost409JSONResponse Error
+
+func (response DeleteAccessHost409JSONResponse) VisitDeleteAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAccessHostdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteAccessHostdefaultJSONResponse) VisitDeleteAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccessHostRequestObject struct {
+	ProjectId ProjectId `json:"projectId"`
+	HostId    HostId    `json:"hostId"`
+}
+
+type GetAccessHostResponseObject interface {
+	VisitGetAccessHostResponse(w http.ResponseWriter) error
+}
+
+type GetAccessHost200JSONResponse AccessHost
+
+func (response GetAccessHost200JSONResponse) VisitGetAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccessHost404JSONResponse Error
+
+func (response GetAccessHost404JSONResponse) VisitGetAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccessHostdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetAccessHostdefaultJSONResponse) VisitGetAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessHostRequestObject struct {
+	ProjectId ProjectId `json:"projectId"`
+	HostId    HostId    `json:"hostId"`
+	Params    UpdateAccessHostParams
+	Body      *UpdateAccessHostJSONRequestBody
+}
+
+type UpdateAccessHostResponseObject interface {
+	VisitUpdateAccessHostResponse(w http.ResponseWriter) error
+}
+
+type UpdateAccessHost200JSONResponse AccessHost
+
+func (response UpdateAccessHost200JSONResponse) VisitUpdateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessHost400JSONResponse Error
+
+func (response UpdateAccessHost400JSONResponse) VisitUpdateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessHost403JSONResponse Error
+
+func (response UpdateAccessHost403JSONResponse) VisitUpdateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessHost404JSONResponse Error
+
+func (response UpdateAccessHost404JSONResponse) VisitUpdateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessHost409JSONResponse Error
+
+func (response UpdateAccessHost409JSONResponse) VisitUpdateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessHostdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateAccessHostdefaultJSONResponse) VisitUpdateAccessHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAccessRoutesRequestObject struct {
+	ProjectId ProjectId `json:"projectId"`
+	HostId    HostId    `json:"hostId"`
+}
+
+type ListAccessRoutesResponseObject interface {
+	VisitListAccessRoutesResponse(w http.ResponseWriter) error
+}
+
+type ListAccessRoutes200JSONResponse []AccessRoute
+
+func (response ListAccessRoutes200JSONResponse) VisitListAccessRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAccessRoutes404JSONResponse Error
+
+func (response ListAccessRoutes404JSONResponse) VisitListAccessRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAccessRoutesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListAccessRoutesdefaultJSONResponse) VisitListAccessRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessRouteRequestObject struct {
+	ProjectId ProjectId `json:"projectId"`
+	HostId    HostId    `json:"hostId"`
+	Params    CreateAccessRouteParams
+	Body      *CreateAccessRouteJSONRequestBody
+}
+
+type CreateAccessRouteResponseObject interface {
+	VisitCreateAccessRouteResponse(w http.ResponseWriter) error
+}
+
+type CreateAccessRoute201JSONResponse AccessRoute
+
+func (response CreateAccessRoute201JSONResponse) VisitCreateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessRoute400JSONResponse Error
+
+func (response CreateAccessRoute400JSONResponse) VisitCreateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessRoute403JSONResponse Error
+
+func (response CreateAccessRoute403JSONResponse) VisitCreateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessRoute404JSONResponse Error
+
+func (response CreateAccessRoute404JSONResponse) VisitCreateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessRoute409JSONResponse Error
+
+func (response CreateAccessRoute409JSONResponse) VisitCreateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessRoutedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateAccessRoutedefaultJSONResponse) VisitCreateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAccessRouteRequestObject struct {
+	ProjectId ProjectId `json:"projectId"`
+	HostId    HostId    `json:"hostId"`
+	RouteId   RouteId   `json:"routeId"`
+	Params    DeleteAccessRouteParams
+}
+
+type DeleteAccessRouteResponseObject interface {
+	VisitDeleteAccessRouteResponse(w http.ResponseWriter) error
+}
+
+type DeleteAccessRoute202JSONResponse AccessRoute
+
+func (response DeleteAccessRoute202JSONResponse) VisitDeleteAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAccessRoute403JSONResponse Error
+
+func (response DeleteAccessRoute403JSONResponse) VisitDeleteAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAccessRoute404JSONResponse Error
+
+func (response DeleteAccessRoute404JSONResponse) VisitDeleteAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAccessRoute409JSONResponse Error
+
+func (response DeleteAccessRoute409JSONResponse) VisitDeleteAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAccessRoutedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteAccessRoutedefaultJSONResponse) VisitDeleteAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccessRouteRequestObject struct {
+	ProjectId ProjectId `json:"projectId"`
+	HostId    HostId    `json:"hostId"`
+	RouteId   RouteId   `json:"routeId"`
+}
+
+type GetAccessRouteResponseObject interface {
+	VisitGetAccessRouteResponse(w http.ResponseWriter) error
+}
+
+type GetAccessRoute200JSONResponse AccessRoute
+
+func (response GetAccessRoute200JSONResponse) VisitGetAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccessRoute404JSONResponse Error
+
+func (response GetAccessRoute404JSONResponse) VisitGetAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccessRoutedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetAccessRoutedefaultJSONResponse) VisitGetAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessRouteRequestObject struct {
+	ProjectId ProjectId `json:"projectId"`
+	HostId    HostId    `json:"hostId"`
+	RouteId   RouteId   `json:"routeId"`
+	Params    UpdateAccessRouteParams
+	Body      *UpdateAccessRouteJSONRequestBody
+}
+
+type UpdateAccessRouteResponseObject interface {
+	VisitUpdateAccessRouteResponse(w http.ResponseWriter) error
+}
+
+type UpdateAccessRoute200JSONResponse AccessRoute
+
+func (response UpdateAccessRoute200JSONResponse) VisitUpdateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessRoute400JSONResponse Error
+
+func (response UpdateAccessRoute400JSONResponse) VisitUpdateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessRoute403JSONResponse Error
+
+func (response UpdateAccessRoute403JSONResponse) VisitUpdateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessRoute404JSONResponse Error
+
+func (response UpdateAccessRoute404JSONResponse) VisitUpdateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessRoute409JSONResponse Error
+
+func (response UpdateAccessRoute409JSONResponse) VisitUpdateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAccessRoutedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateAccessRoutedefaultJSONResponse) VisitUpdateAccessRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListApplicationsRequestObject struct {
 	ProjectId openapi_types.UUID `json:"projectId"`
 	Params    ListApplicationsParams
@@ -10037,6 +11556,36 @@ type StrictServerInterface interface {
 	// GetProject 查询项目
 	// (GET /api/v1/projects/{projectId})
 	GetProject(ctx context.Context, request GetProjectRequestObject) (GetProjectResponseObject, error)
+	// ListAccessHosts 查询项目访问域名
+	// (GET /api/v1/projects/{projectId}/access-hosts)
+	ListAccessHosts(ctx context.Context, request ListAccessHostsRequestObject) (ListAccessHostsResponseObject, error)
+	// CreateAccessHost 为项目声明访问域名
+	// (POST /api/v1/projects/{projectId}/access-hosts)
+	CreateAccessHost(ctx context.Context, request CreateAccessHostRequestObject) (CreateAccessHostResponseObject, error)
+	// DeleteAccessHost 显式删除域名及其受控入口资源
+	// (DELETE /api/v1/projects/{projectId}/access-hosts/{hostId})
+	DeleteAccessHost(ctx context.Context, request DeleteAccessHostRequestObject) (DeleteAccessHostResponseObject, error)
+	// GetAccessHost 查询访问域名
+	// (GET /api/v1/projects/{projectId}/access-hosts/{hostId})
+	GetAccessHost(ctx context.Context, request GetAccessHostRequestObject) (GetAccessHostResponseObject, error)
+	// UpdateAccessHost 修改域名的 TLS 配置
+	// (PATCH /api/v1/projects/{projectId}/access-hosts/{hostId})
+	UpdateAccessHost(ctx context.Context, request UpdateAccessHostRequestObject) (UpdateAccessHostResponseObject, error)
+	// ListAccessRoutes 查询域名的路径路由
+	// (GET /api/v1/projects/{projectId}/access-hosts/{hostId}/routes)
+	ListAccessRoutes(ctx context.Context, request ListAccessRoutesRequestObject) (ListAccessRoutesResponseObject, error)
+	// CreateAccessRoute 创建路径到 Target Service 的路由
+	// (POST /api/v1/projects/{projectId}/access-hosts/{hostId}/routes)
+	CreateAccessRoute(ctx context.Context, request CreateAccessRouteRequestObject) (CreateAccessRouteResponseObject, error)
+	// DeleteAccessRoute 删除路径路由
+	// (DELETE /api/v1/projects/{projectId}/access-hosts/{hostId}/routes/{routeId})
+	DeleteAccessRoute(ctx context.Context, request DeleteAccessRouteRequestObject) (DeleteAccessRouteResponseObject, error)
+	// GetAccessRoute 查询路径路由
+	// (GET /api/v1/projects/{projectId}/access-hosts/{hostId}/routes/{routeId})
+	GetAccessRoute(ctx context.Context, request GetAccessRouteRequestObject) (GetAccessRouteResponseObject, error)
+	// UpdateAccessRoute 修改路径路由
+	// (PATCH /api/v1/projects/{projectId}/access-hosts/{hostId}/routes/{routeId})
+	UpdateAccessRoute(ctx context.Context, request UpdateAccessRouteRequestObject) (UpdateAccessRouteResponseObject, error)
 	// ListApplications 分页查询项目应用
 	// (GET /api/v1/projects/{projectId}/applications)
 	ListApplications(ctx context.Context, request ListApplicationsRequestObject) (ListApplicationsResponseObject, error)
@@ -11330,6 +12879,311 @@ func (sh *strictHandler) GetProject(ctx *gin.Context, projectId openapi_types.UU
 	}
 }
 
+// ListAccessHosts operation middleware
+func (sh *strictHandler) ListAccessHosts(ctx *gin.Context, projectId ProjectId) {
+	var request ListAccessHostsRequestObject
+
+	request.ProjectId = projectId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAccessHosts(ctx, request.(ListAccessHostsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAccessHosts")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListAccessHostsResponseObject); ok {
+		if err := validResponse.VisitListAccessHostsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAccessHost operation middleware
+func (sh *strictHandler) CreateAccessHost(ctx *gin.Context, projectId ProjectId, params CreateAccessHostParams) {
+	var request CreateAccessHostRequestObject
+
+	request.ProjectId = projectId
+	request.Params = params
+
+	var body CreateAccessHostJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAccessHost(ctx, request.(CreateAccessHostRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAccessHost")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateAccessHostResponseObject); ok {
+		if err := validResponse.VisitCreateAccessHostResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteAccessHost operation middleware
+func (sh *strictHandler) DeleteAccessHost(ctx *gin.Context, projectId ProjectId, hostId HostId, params DeleteAccessHostParams) {
+	var request DeleteAccessHostRequestObject
+
+	request.ProjectId = projectId
+	request.HostId = hostId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteAccessHost(ctx, request.(DeleteAccessHostRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteAccessHost")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(DeleteAccessHostResponseObject); ok {
+		if err := validResponse.VisitDeleteAccessHostResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAccessHost operation middleware
+func (sh *strictHandler) GetAccessHost(ctx *gin.Context, projectId ProjectId, hostId HostId) {
+	var request GetAccessHostRequestObject
+
+	request.ProjectId = projectId
+	request.HostId = hostId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAccessHost(ctx, request.(GetAccessHostRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAccessHost")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetAccessHostResponseObject); ok {
+		if err := validResponse.VisitGetAccessHostResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateAccessHost operation middleware
+func (sh *strictHandler) UpdateAccessHost(ctx *gin.Context, projectId ProjectId, hostId HostId, params UpdateAccessHostParams) {
+	var request UpdateAccessHostRequestObject
+
+	request.ProjectId = projectId
+	request.HostId = hostId
+	request.Params = params
+
+	var body UpdateAccessHostJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateAccessHost(ctx, request.(UpdateAccessHostRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateAccessHost")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(UpdateAccessHostResponseObject); ok {
+		if err := validResponse.VisitUpdateAccessHostResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAccessRoutes operation middleware
+func (sh *strictHandler) ListAccessRoutes(ctx *gin.Context, projectId ProjectId, hostId HostId) {
+	var request ListAccessRoutesRequestObject
+
+	request.ProjectId = projectId
+	request.HostId = hostId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAccessRoutes(ctx, request.(ListAccessRoutesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAccessRoutes")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListAccessRoutesResponseObject); ok {
+		if err := validResponse.VisitListAccessRoutesResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAccessRoute operation middleware
+func (sh *strictHandler) CreateAccessRoute(ctx *gin.Context, projectId ProjectId, hostId HostId, params CreateAccessRouteParams) {
+	var request CreateAccessRouteRequestObject
+
+	request.ProjectId = projectId
+	request.HostId = hostId
+	request.Params = params
+
+	var body CreateAccessRouteJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAccessRoute(ctx, request.(CreateAccessRouteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAccessRoute")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateAccessRouteResponseObject); ok {
+		if err := validResponse.VisitCreateAccessRouteResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteAccessRoute operation middleware
+func (sh *strictHandler) DeleteAccessRoute(ctx *gin.Context, projectId ProjectId, hostId HostId, routeId RouteId, params DeleteAccessRouteParams) {
+	var request DeleteAccessRouteRequestObject
+
+	request.ProjectId = projectId
+	request.HostId = hostId
+	request.RouteId = routeId
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteAccessRoute(ctx, request.(DeleteAccessRouteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteAccessRoute")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(DeleteAccessRouteResponseObject); ok {
+		if err := validResponse.VisitDeleteAccessRouteResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAccessRoute operation middleware
+func (sh *strictHandler) GetAccessRoute(ctx *gin.Context, projectId ProjectId, hostId HostId, routeId RouteId) {
+	var request GetAccessRouteRequestObject
+
+	request.ProjectId = projectId
+	request.HostId = hostId
+	request.RouteId = routeId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAccessRoute(ctx, request.(GetAccessRouteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAccessRoute")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetAccessRouteResponseObject); ok {
+		if err := validResponse.VisitGetAccessRouteResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateAccessRoute operation middleware
+func (sh *strictHandler) UpdateAccessRoute(ctx *gin.Context, projectId ProjectId, hostId HostId, routeId RouteId, params UpdateAccessRouteParams) {
+	var request UpdateAccessRouteRequestObject
+
+	request.ProjectId = projectId
+	request.HostId = hostId
+	request.RouteId = routeId
+	request.Params = params
+
+	var body UpdateAccessRouteJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateAccessRoute(ctx, request.(UpdateAccessRouteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateAccessRoute")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(UpdateAccessRouteResponseObject); ok {
+		if err := validResponse.VisitUpdateAccessRouteResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListApplications operation middleware
 func (sh *strictHandler) ListApplications(ctx *gin.Context, projectId openapi_types.UUID, params ListApplicationsParams) {
 	var request ListApplicationsRequestObject
@@ -12180,171 +14034,185 @@ func (sh *strictHandler) AcceptGitHubWebhook(ctx *gin.Context, endpointKey strin
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"lkYZ9Xzyer5Tkq7w4IxmiquvL49eHv3/AQAA//8=",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

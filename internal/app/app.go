@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/HasonoCell/Orbit-DevOps/internal/access"
 	"github.com/HasonoCell/Orbit-DevOps/internal/api"
 	"github.com/HasonoCell/Orbit-DevOps/internal/build"
 	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
@@ -44,6 +45,7 @@ type Config struct {
 	BuildPlatform        string
 	BuildRegistryHost    string
 	BuildRegistryPrefix  string
+	AccessIssuerPolicies map[string]access.IssuerPolicy
 	MigrateOnBoot        bool
 	WebhookConfig        webhook.Config
 }
@@ -114,6 +116,12 @@ func NewWithDependencies(
 		return nil, fmt.Errorf("initialize identity module: %w", err)
 	}
 	authorizer := projectauth.New(db, identityModule)
+	accessModule, err := access.New(db, authorizer, access.Config{ClusterRef: config.LocalClusterRef,
+		Namespace: config.LocalNamespace, IssuerPolicies: config.AccessIssuerPolicies})
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("initialize access module: %w", err)
+	}
 	browserSecurity, err := httpapi.NewBrowserSecurity(config.BrowserSecurity)
 	if err != nil {
 		_ = db.Close()
@@ -159,6 +167,7 @@ func NewWithDependencies(
 	}
 	webhookModule := webhook.New(db, config.WebhookConfig, tracer, propagator)
 	server := httpapi.NewServer(
+		accessModule,
 		projectModule,
 		catalogModule,
 		buildModule,

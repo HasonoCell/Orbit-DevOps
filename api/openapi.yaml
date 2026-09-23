@@ -1913,6 +1913,110 @@ paths:
         default:
           description: 请求失败
           content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+  /api/v1/projects/{projectId}/access-hosts:
+    get:
+      operationId: listAccessHosts
+      summary: 查询项目访问域名
+      parameters: [{$ref: "#/components/parameters/ProjectId"}]
+      responses:
+        "200": {description: 域名列表, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/AccessHost"}}}}}
+        "404": {description: 项目不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+    post:
+      operationId: createAccessHost
+      summary: 为项目声明访问域名
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/AccessHostInput"}}}}
+      responses:
+        "201": {description: 域名已接纳, content: {application/json: {schema: {$ref: "#/components/schemas/AccessHost"}}}}
+        "400": {description: 输入无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 项目权限不足, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 项目不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 域名或幂等键冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/projects/{projectId}/access-hosts/{hostId}:
+    get:
+      operationId: getAccessHost
+      summary: 查询访问域名
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/HostId"}]
+      responses:
+        "200": {description: 访问域名, content: {application/json: {schema: {$ref: "#/components/schemas/AccessHost"}}}}
+        "404": {description: 域名不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+    patch:
+      operationId: updateAccessHost
+      summary: 修改域名的 TLS 配置
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/HostId"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/AccessHostInput"}}}}
+      responses:
+        "200": {description: 域名已更新, content: {application/json: {schema: {$ref: "#/components/schemas/AccessHost"}}}}
+        "400": {description: 输入无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 权限不足, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 域名不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 资源冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+    delete:
+      operationId: deleteAccessHost
+      summary: 显式删除域名及其受控入口资源
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/HostId"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses:
+        "202": {description: 已接纳清理, content: {application/json: {schema: {$ref: "#/components/schemas/AccessHost"}}}}
+        "403": {description: 权限不足, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 域名不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 幂等键冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/projects/{projectId}/access-hosts/{hostId}/routes:
+    get:
+      operationId: listAccessRoutes
+      summary: 查询域名的路径路由
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/HostId"}]
+      responses:
+        "200": {description: 路由列表, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/AccessRoute"}}}}}
+        "404": {description: 域名不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+    post:
+      operationId: createAccessRoute
+      summary: 创建路径到 Target Service 的路由
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/HostId"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/AccessRouteInput"}}}}
+      responses:
+        "201": {description: 路由已接纳, content: {application/json: {schema: {$ref: "#/components/schemas/AccessRoute"}}}}
+        "400": {description: 输入无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 权限不足, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 域名或目标不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 路径或幂等键冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/projects/{projectId}/access-hosts/{hostId}/routes/{routeId}:
+    get:
+      operationId: getAccessRoute
+      summary: 查询路径路由
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/HostId"}, {$ref: "#/components/parameters/RouteId"}]
+      responses:
+        "200": {description: 路由, content: {application/json: {schema: {$ref: "#/components/schemas/AccessRoute"}}}}
+        "404": {description: 路由不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+    patch:
+      operationId: updateAccessRoute
+      summary: 修改路径路由
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/HostId"}, {$ref: "#/components/parameters/RouteId"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/AccessRouteInput"}}}}
+      responses:
+        "200": {description: 路由已更新, content: {application/json: {schema: {$ref: "#/components/schemas/AccessRoute"}}}}
+        "400": {description: 输入无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 权限不足, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 路由或目标不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 路径或幂等键冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+    delete:
+      operationId: deleteAccessRoute
+      summary: 删除路径路由
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/HostId"}, {$ref: "#/components/parameters/RouteId"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses:
+        "202": {description: 已接纳清理, content: {application/json: {schema: {$ref: "#/components/schemas/AccessRoute"}}}}
+        "403": {description: 权限不足, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 路由不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 幂等键冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
 components:
   securitySchemes:
     CookieAuth:
@@ -1920,6 +2024,11 @@ components:
       in: cookie
       name: __Host-orbit-session
   parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     ProviderId:
       name: providerId
       in: path
@@ -1961,7 +2070,61 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    HostId:
+      name: hostId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    RouteId:
+      name: routeId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
   schemas:
+    AccessHostInput:
+      type: object
+      additionalProperties: false
+      required: [hostname, tlsMode]
+      properties:
+        hostname: {type: string, minLength: 4, maxLength: 253}
+        tlsMode: {type: string, enum: [http_only, managed, existing_secret]}
+        issuerPolicyKey: {type: string, minLength: 1, maxLength: 63}
+        secretBindingId: {type: string, format: uuid}
+    AccessHost:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, clusterRef, namespace, hostname, tlsMode, lifecycle, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        projectId: {type: string, format: uuid}
+        clusterRef: {type: string}
+        namespace: {type: string}
+        hostname: {type: string}
+        tlsMode: {type: string, enum: [http_only, managed, existing_secret]}
+        issuerPolicyKey: {type: string}
+        secretBindingId: {type: string, format: uuid}
+        lifecycle: {type: string, enum: [active, deleting]}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    AccessRouteInput:
+      type: object
+      additionalProperties: false
+      required: [pathPrefix, deploymentTargetId]
+      properties:
+        pathPrefix: {type: string, minLength: 1, maxLength: 1024}
+        deploymentTargetId: {type: string, format: uuid}
+    AccessRoute:
+      type: object
+      additionalProperties: false
+      required: [id, hostId, deploymentTargetId, pathPrefix, lifecycle, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        hostId: {type: string, format: uuid}
+        deploymentTargetId: {type: string, format: uuid}
+        pathPrefix: {type: string}
+        lifecycle: {type: string, enum: [active, deleting]}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
     AuthProviderSummary:
       type: object
       additionalProperties: false
@@ -2146,7 +2309,7 @@ components:
         nextCursor: {type: string}
     ProjectPermission:
       type: string
-      enum: [read, read_logs, develop, manage_members, manage_owners, resolve_unknown]
+      enum: [read, read_logs, develop, manage_members, manage_owners, resolve_unknown, manage_access_hosts, manage_access_routes]
     ProjectPermissions:
       type: object
       additionalProperties: false

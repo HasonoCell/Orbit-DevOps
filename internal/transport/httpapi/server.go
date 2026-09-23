@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/HasonoCell/Orbit-DevOps/internal/access"
 	"github.com/HasonoCell/Orbit-DevOps/internal/api"
 	"github.com/HasonoCell/Orbit-DevOps/internal/build"
 	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
@@ -23,6 +24,7 @@ import (
 )
 
 type Server struct {
+	access            *access.Module
 	projects          *project.Module
 	catalog           *catalog.Module
 	builds            *build.Module
@@ -62,6 +64,7 @@ func (s *Server) GetProject(
 }
 
 func NewServer(
+	accessModule *access.Module,
 	projects *project.Module,
 	catalogModule *catalog.Module,
 	buildModule *build.Module,
@@ -78,6 +81,7 @@ func NewServer(
 	propagator propagation.TextMapPropagator,
 ) *Server {
 	return &Server{
+		access:            accessModule,
 		projects:          projects,
 		catalog:           catalogModule,
 		builds:            buildModule,

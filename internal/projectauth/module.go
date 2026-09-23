@@ -28,12 +28,14 @@ const (
 type Permission string
 
 const (
-	PermissionRead           Permission = "read"
-	PermissionReadLogs       Permission = "read_logs"
-	PermissionDevelop        Permission = "develop"
-	PermissionManageMembers  Permission = "manage_members"
-	PermissionManageOwners   Permission = "manage_owners"
-	PermissionResolveUnknown Permission = "resolve_unknown"
+	PermissionRead               Permission = "read"
+	PermissionReadLogs           Permission = "read_logs"
+	PermissionDevelop            Permission = "develop"
+	PermissionManageMembers      Permission = "manage_members"
+	PermissionManageOwners       Permission = "manage_owners"
+	PermissionResolveUnknown     Permission = "resolve_unknown"
+	PermissionManageAccessHosts  Permission = "manage_access_hosts"
+	PermissionManageAccessRoutes Permission = "manage_access_routes"
 )
 
 var (
@@ -232,7 +234,7 @@ func decodeMemberCursor(value string, projectID uuid.UUID) (memberCursor, error)
 
 // GetPermissions 返回有限能力集合，客户端可以据此呈现操作，但服务端仍逐请求重新授权。
 func (m *Module) GetPermissions(ctx context.Context, projectID uuid.UUID, caller identity.Caller) (Permissions, error) {
-	result := Permissions{ProjectID: projectID, Allowed: make([]Permission, 0, 6)}
+	result := Permissions{ProjectID: projectID, Allowed: make([]Permission, 0, 8)}
 	err := m.Read(ctx, caller, func(tx *sqlx.Tx) error {
 		if err := tx.GetContext(ctx, &result.Role, `SELECT pm.role FROM project_members pm JOIN projects p ON p.id=pm.project_id
 			WHERE pm.project_id=$1 AND pm.user_id=$2 AND p.identity_state='governed'`, projectID, caller.UserID()); err != nil {
@@ -243,7 +245,8 @@ func (m *Module) GetPermissions(ctx context.Context, projectID uuid.UUID, caller
 			return err
 		}
 		for _, permission := range []Permission{PermissionRead, PermissionReadLogs, PermissionDevelop,
-			PermissionManageMembers, PermissionManageOwners, PermissionResolveUnknown} {
+			PermissionManageMembers, PermissionManageOwners, PermissionResolveUnknown,
+			PermissionManageAccessHosts, PermissionManageAccessRoutes} {
 			if roleAllows(result.Role, permission) {
 				result.Allowed = append(result.Allowed, permission)
 			}
@@ -412,9 +415,9 @@ func roleAllows(role string, p Permission) bool {
 	switch p {
 	case PermissionRead:
 		return role == RoleOwner || role == RoleAdmin || role == RoleDeveloper || role == RoleViewer
-	case PermissionReadLogs, PermissionDevelop:
+	case PermissionReadLogs, PermissionDevelop, PermissionManageAccessRoutes:
 		return role == RoleOwner || role == RoleAdmin || role == RoleDeveloper
-	case PermissionManageMembers, PermissionResolveUnknown:
+	case PermissionManageMembers, PermissionResolveUnknown, PermissionManageAccessHosts:
 		return role == RoleOwner || role == RoleAdmin
 	case PermissionManageOwners:
 		return role == RoleOwner
