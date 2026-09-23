@@ -57,6 +57,10 @@ func TestGatewayRendersDistinctTLSListenersAndRoutes(t *testing.T) {
 	if secretName != AccessTLSSecretName(hostID) {
 		t.Fatalf("wrong managed secret: %s", secretName)
 	}
+	marker, _, _ := unstructured.NestedString(certificate.Object, "spec", "secretTemplate", "annotations", AccessCertificateAnnotation)
+	if marker != AccessCertificateName(hostID) {
+		t.Fatalf("managed Secret marker missing: %s", marker)
+	}
 }
 
 func TestAccessOwnershipRejectsUnrelatedObjects(t *testing.T) {
@@ -97,5 +101,21 @@ func TestGatewayRejectsForeignTargetService(t *testing.T) {
 	gateway := &GatewayAdapter{base: base}
 	if !errors.Is(gateway.checkBackendOwnership(context.Background(), projectID, targetID), ErrAccessOwnership) {
 		t.Fatal("foreign Service with the stable name must not receive traffic")
+	}
+}
+
+func TestManagedTLSSecretCleanupRequiresDedicatedMarker(t *testing.T) {
+	hostID, projectID := uuid.New(), uuid.New()
+	secret := corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: AccessTLSSecretName(hostID),
+		Labels: map[string]string{AccessHostIDLabel: hostID.String(), ManagedByLabel: ManagedByValue, ProjectIDLabel: projectID.String()}}, Type: corev1.SecretTypeTLS}
+	if ownedManagedTLSSecret(secret, projectID) {
+		t.Fatal("labels alone must not authorize Secret deletion")
+	}
+	secret.Annotations = map[string]string{AccessCertificateAnnotation: AccessCertificateName(hostID)}
+	if !ownedManagedTLSSecret(secret, projectID) {
+		t.Fatal("marked managed Secret should be recognized")
+	}
+	if ownedManagedTLSSecret(secret, uuid.New()) {
+		t.Fatal("different Project must not claim Secret")
 	}
 }

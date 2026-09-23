@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	AccessHostIDLabel        = "orbit-devops.dev/access-host-id"
-	AccessRouteIDLabel       = "orbit-devops.dev/access-route-id"
-	AccessRevisionAnnotation = "orbit-devops.dev/access-revision"
+	AccessHostIDLabel           = "orbit-devops.dev/access-host-id"
+	AccessRouteIDLabel          = "orbit-devops.dev/access-route-id"
+	AccessRevisionAnnotation    = "orbit-devops.dev/access-revision"
+	AccessCertificateAnnotation = "orbit-devops.dev/access-certificate"
 )
 
 var (
@@ -124,7 +125,8 @@ func certificateObject(snapshot access.Snapshot, host access.HostSpec) *unstruct
 			"dnsNames": []any{host.Host.Hostname},
 			"issuerRef": map[string]any{"group": "cert-manager.io", "kind": host.Issuer.Kind,
 				"name": host.Issuer.Name},
-			"secretTemplate": map[string]any{"labels": accessStringMap(owner)}}}}
+			"secretTemplate": map[string]any{"labels": accessStringMap(owner),
+				"annotations": map[string]any{AccessCertificateAnnotation: AccessCertificateName(host.Host.ID)}}}}}
 }
 
 func routeObject(snapshot access.Snapshot, host access.HostSpec, route access.RouteSpec) *unstructured.Unstructured {
@@ -173,6 +175,9 @@ func (a *GatewayAdapter) Reconcile(ctx context.Context, snapshot access.Snapshot
 		if host.Host.TLSMode == "managed" {
 			if host.Issuer.Name == "" || host.Issuer.Kind != "Issuer" && host.Issuer.Kind != "ClusterIssuer" {
 				return ErrAccessBoundary
+			}
+			if err := a.checkManagedSecretOwnership(ctx, snapshot.ProjectID, host.Host.ID); err != nil {
+				return err
 			}
 			certificates[AccessCertificateName(host.Host.ID)] = certificateObject(snapshot, host)
 			managedSecrets[AccessTLSSecretName(host.Host.ID)] = struct{}{}
@@ -239,6 +244,20 @@ func (a *GatewayAdapter) Reconcile(ctx context.Context, snapshot access.Snapshot
 	return nil
 }
 
+func (a *GatewayAdapter) checkManagedSecretOwnership(ctx context.Context, projectID, hostID uuid.UUID) error {
+	secret, err := a.base.client.CoreV1().Secrets(a.base.config.Namespace).Get(ctx, AccessTLSSecretName(hostID), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !ownedManagedTLSSecret(*secret, projectID) {
+		return ErrAccessOwnership
+	}
+	return nil
+}
+
 // Service 可以尚未由 Release 创建；若稳定名称已存在，则必须确属该 Target。
 func (a *GatewayAdapter) checkBackendOwnership(ctx context.Context, projectID, targetID uuid.UUID) error {
 	service, err := a.base.client.CoreV1().Services(a.base.config.Namespace).Get(ctx, ResourceName(targetID), metav1.GetOptions{})
@@ -296,8 +315,7 @@ func (a *GatewayAdapter) needsManagedCleanup(ctx context.Context, projectID uuid
 		if _, found := secrets[secret.Name]; found {
 			continue
 		}
-		id, parseErr := uuid.Parse(secret.Labels[AccessHostIDLabel])
-		if parseErr == nil && secret.Name == AccessTLSSecretName(id) && secret.Type == corev1.SecretTypeTLS {
+		if ownedManagedTLSSecret(secret, projectID) {
 			return true, nil
 		}
 	}
@@ -403,8 +421,7 @@ func (a *GatewayAdapter) deleteStaleManagedSecrets(ctx context.Context, projectI
 		if _, ok := desired[secret.Name]; ok {
 			continue
 		}
-		id, err := uuid.Parse(secret.Labels[AccessHostIDLabel])
-		if err != nil || secret.Name != AccessTLSSecretName(id) || secret.Type != corev1.SecretTypeTLS {
+		if !ownedManagedTLSSecret(secret, projectID) {
 			continue
 		}
 		if err := guard(ctx); err != nil {
@@ -415,6 +432,13 @@ func (a *GatewayAdapter) deleteStaleManagedSecrets(ctx context.Context, projectI
 		}
 	}
 	return nil
+}
+
+func ownedManagedTLSSecret(secret corev1.Secret, projectID uuid.UUID) bool {
+	id, err := uuid.Parse(secret.Labels[AccessHostIDLabel])
+	return err == nil && secret.Name == AccessTLSSecretName(id) && secret.Type == corev1.SecretTypeTLS &&
+		secret.Labels[ManagedByLabel] == ManagedByValue && secret.Labels[ProjectIDLabel] == projectID.String() &&
+		secret.Annotations[AccessCertificateAnnotation] == AccessCertificateName(id)
 }
 
 // AccessErrorCode 只将可公开的有限错误码写入同步表，不保存集群错误正文。
