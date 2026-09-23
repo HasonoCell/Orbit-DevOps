@@ -71,6 +71,7 @@ func run(logger *slog.Logger) error {
 	service, err := internalevent.NewService(internalevent.Config{RedisAddress: config.Queue.RedisAddress,
 		RedisUsername: config.Queue.RedisUsername, RedisPassword: config.Queue.RedisPassword,
 		RedisDB: config.Queue.RedisDB, Queue: config.Queue.Name, Concurrency: config.Queue.Concurrency,
+		Topics:       []string{"webhook_delivery.received.v1", "build_operation.changed.v1", "release_operation.changed.v1", "delivery_run.reconcile.v1"},
 		PollInterval: config.PollInterval, ConsumptionGrace: config.Queue.ConsumptionGrace,
 		TaskTimeout: config.Queue.TaskTimeout, ShutdownTimeout: config.Queue.ShutdownTimeout, Logger: logger}, events, pipelines)
 	if err != nil {

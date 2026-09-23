@@ -27,6 +27,7 @@ type Config struct {
 	RedisAddress, RedisUsername, RedisPassword                   string
 	RedisDB                                                      int
 	Queue                                                        string
+	Topics                                                       []string
 	Concurrency                                                  int
 	PollInterval, ConsumptionGrace, TaskTimeout, ShutdownTimeout time.Duration
 	Logger                                                       *slog.Logger
@@ -56,6 +57,19 @@ func NewService(config Config, events *Module, executor Executor) (*Service, err
 	if config.RedisAddress == "" || events == nil || executor == nil || config.RedisDB < 0 || config.Concurrency < 1 || config.Concurrency > 100 || config.PollInterval <= 0 || config.ConsumptionGrace <= 0 || config.TaskTimeout <= 0 || config.ShutdownTimeout <= 0 {
 		return nil, errors.New("invalid internal event service configuration")
 	}
+	if len(config.Topics) == 0 {
+		config.Topics = []string{"webhook_delivery.received.v1", "build_operation.changed.v1", "release_operation.changed.v1", "delivery_run.reconcile.v1"}
+	}
+	seenTopics := make(map[string]struct{}, len(config.Topics))
+	for _, topic := range config.Topics {
+		if strings.TrimSpace(topic) != topic || topic == "" {
+			return nil, errors.New("invalid internal event topic")
+		}
+		if _, exists := seenTopics[topic]; exists {
+			return nil, errors.New("duplicate internal event topic")
+		}
+		seenTopics[topic] = struct{}{}
+	}
 	if config.Queue == "" {
 		config.Queue = "orbit-devops-pipeline"
 	}
@@ -74,7 +88,7 @@ func (s *Service) Close() error { return s.connection.Close() }
 
 // PublishOnce 在数据库事务外并发发送有界批次，Redis 失败只延迟事件而不丢失事实。
 func (s *Service) PublishOnce(ctx context.Context) error {
-	items, err := s.events.Reserve(ctx, min(s.config.Concurrency, 100), 10*time.Second)
+	items, err := s.events.ReserveTopics(ctx, min(s.config.Concurrency, 100), 10*time.Second, s.config.Topics)
 	if err != nil {
 		return errors.New("internal_event_store_unavailable")
 	}
@@ -176,6 +190,17 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	decoder := json.NewDecoder(bytes.NewReader(task.Payload()))
 	decoder.DisallowUnknownFields()
 	if task.Type() != TaskType || len(task.Payload()) > 1024 || decoder.Decode(&ref) != nil || decoder.Decode(new(any)) != io.EOF || ref.EventID == uuid.Nil || ref.AggregateID == uuid.Nil || ref.ProtocolVersion != 1 || ref.Topic == "" {
+		s.invalid.Add(1)
+		return asynq.SkipRetry
+	}
+	accepted := false
+	for _, topic := range s.config.Topics {
+		if topic == ref.Topic {
+			accepted = true
+			break
+		}
+	}
+	if !accepted {
 		s.invalid.Add(1)
 		return asynq.SkipRetry
 	}

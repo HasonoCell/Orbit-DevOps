@@ -40,6 +40,18 @@ func New(db *sqlx.DB) *Module { return &Module{db: db} }
 
 // Reserve 取得短期运输权；它不代表事件已经被消费者处理。
 func (m *Module) Reserve(ctx context.Context, limit int, lease time.Duration) ([]Reservation, error) {
+	return m.reserve(ctx, limit, lease, nil)
+}
+
+// ReserveTopics 只领取指定业务消费者的事件，避免不同队列互相确认对方的业务事实。
+func (m *Module) ReserveTopics(ctx context.Context, limit int, lease time.Duration, topics []string) ([]Reservation, error) {
+	if len(topics) == 0 {
+		return nil, errors.New("internal event topics are required")
+	}
+	return m.reserve(ctx, limit, lease, topics)
+}
+
+func (m *Module) reserve(ctx context.Context, limit int, lease time.Duration, topics []string) ([]Reservation, error) {
 	if limit < 1 || limit > 1000 || lease <= 0 {
 		return nil, errors.New("invalid internal event reservation")
 	}
@@ -47,7 +59,8 @@ func (m *Module) Reserve(ctx context.Context, limit int, lease time.Duration) ([
 	if _, err := m.db.ExecContext(ctx, `UPDATE internal_event_outbox SET state='quarantined',
 		publish_token=NULL, publish_expires_at=NULL, last_error_code='unsupported_protocol_version', updated_at=$1
 		WHERE id IN (SELECT id FROM internal_event_outbox WHERE state IN ('pending','published')
-		AND protocol_version<>1 ORDER BY id FOR UPDATE SKIP LOCKED LIMIT $2)`, now, limit); err != nil {
+		AND protocol_version<>1 AND ($3::text[] IS NULL OR topic=ANY($3::text[]))
+		ORDER BY id FOR UPDATE SKIP LOCKED LIMIT $2)`, now, limit, topics); err != nil {
 		return nil, fmt.Errorf("quarantine internal events: %w", err)
 	}
 	items := make([]Reservation, 0)
@@ -55,12 +68,13 @@ func (m *Module) Reserve(ctx context.Context, limit int, lease time.Duration) ([
 	if err := m.db.SelectContext(ctx, &items, `WITH due AS (
 		SELECT id FROM internal_event_outbox WHERE state IN ('pending','published')
 		AND protocol_version=1 AND next_dispatch_at<=$1
+		AND ($5::text[] IS NULL OR topic=ANY($5::text[]))
 		AND (publish_expires_at IS NULL OR publish_expires_at<=$1)
 		ORDER BY next_dispatch_at,id FOR UPDATE SKIP LOCKED LIMIT $2)
 		UPDATE internal_event_outbox e SET publish_token=$3,publish_expires_at=$4,
 		reservation_count=reservation_count+1,updated_at=$1 FROM due WHERE e.id=due.id
 		RETURNING e.id AS event_id,e.topic,e.aggregate_id,e.protocol_version,e.available_at,
-		e.publish_token,e.reservation_count`, now, limit, token, now.Add(lease)); err != nil {
+		e.publish_token,e.reservation_count`, now, limit, token, now.Add(lease), topics); err != nil {
 		return nil, fmt.Errorf("reserve internal events: %w", err)
 	}
 	return items, nil
