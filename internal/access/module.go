@@ -28,9 +28,10 @@ var (
 )
 
 type Config struct {
-	ClusterRef     string
-	Namespace      string
-	IssuerPolicies map[string]IssuerPolicy
+	ClusterRef       string
+	Namespace        string
+	GatewayClassName string
+	IssuerPolicies   map[string]IssuerPolicy
 }
 
 type IssuerPolicy struct{ Kind, Name string }
