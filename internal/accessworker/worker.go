@@ -66,6 +66,8 @@ func (w *Worker) reconcile(ctx context.Context, projectID uuid.UUID) error {
 		return nil
 	}
 	if errors.Is(err, access.ErrLeaseLost) {
+		// 若只是期望修订覆盖了本轮，尽快释放仍由自己持有的租约；令牌变化时更新自然无效。
+		_ = w.module.FailReconcile(ctx, lease, "access_revision_changed", false)
 		return nil
 	}
 	attention := errors.Is(err, kube.ErrAccessBoundary) || errors.Is(err, kube.ErrAccessOwnership)
