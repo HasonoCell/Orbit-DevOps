@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +37,32 @@ type Scope struct {
 type record struct {
 	RequestHash []byte    `db:"request_hash"`
 	ResourceID  uuid.UUID `db:"resource_id"`
+}
+
+// Replay 在外部预检之前读取已提交结果；仍需调用方先完成本次身份授权。
+func Replay(ctx context.Context, tx *sqlx.Tx, scope Scope, requestHash []byte, destination any) (bool, error) {
+	var saved struct {
+		RequestHash     []byte `db:"request_hash"`
+		ResponsePayload []byte `db:"response_payload"`
+	}
+	err := tx.GetContext(ctx, &saved, `SELECT request_hash,response_payload FROM idempotency_records
+		WHERE actor_id=$1 AND command_type=$2 AND idempotency_key=$3`, scope.ActorID, scope.CommandType, scope.Key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read idempotent replay: %w", err)
+	}
+	if !bytes.Equal(saved.RequestHash, requestHash) {
+		if recorder, ok := ctx.Value(conflictRecorderKey{}).(ConflictRecorder); ok {
+			recorder.RecordIdempotencyConflict(scope.CommandType)
+		}
+		return false, ErrConflict
+	}
+	if err := json.Unmarshal(saved.ResponsePayload, destination); err != nil {
+		return false, fmt.Errorf("decode idempotent replay: %w", err)
+	}
+	return true, nil
 }
 
 func Fingerprint(value any) ([]byte, error) {

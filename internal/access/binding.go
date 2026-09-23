@@ -63,6 +63,14 @@ func (m *Module) RegisterSecret(ctx context.Context, command RegisterSecretComma
 	if m.secretVerifier == nil {
 		return SecretBinding{}, identity.ErrUnavailable
 	}
+	hash, err := idempotency.Fingerprint(struct {
+		ProjectID            uuid.UUID
+		Hostname, SecretName string
+	}{command.ProjectID, hostname, command.SecretName})
+	if err != nil {
+		return SecretBinding{}, err
+	}
+	scope := idempotency.Scope{ActorID: command.Caller.ActorID(), CommandType: "access_secret_binding.register", Key: command.IdempotencyKey}
 	preflight, err := m.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return SecretBinding{}, err
@@ -71,18 +79,20 @@ func (m *Module) RegisterSecret(ctx context.Context, command RegisterSecretComma
 		_ = preflight.Rollback()
 		return SecretBinding{}, err
 	}
+	var replayed SecretBinding
+	found, err := idempotency.Replay(ctx, preflight, scope, hash, &replayed)
+	if err != nil {
+		_ = preflight.Rollback()
+		return SecretBinding{}, err
+	}
 	if err := preflight.Commit(); err != nil {
 		return SecretBinding{}, err
 	}
+	if found {
+		return replayed, nil
+	}
 	if err := m.secretVerifier.VerifyTLSSecret(ctx, m.config.Namespace, command.SecretName, hostname); err != nil {
 		return SecretBinding{}, ErrInvalidSecret
-	}
-	hash, err := idempotency.Fingerprint(struct {
-		ProjectID            uuid.UUID
-		Hostname, SecretName string
-	}{command.ProjectID, hostname, command.SecretName})
-	if err != nil {
-		return SecretBinding{}, err
 	}
 	tx, err := m.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -103,7 +113,6 @@ func (m *Module) RegisterSecret(ctx context.Context, command RegisterSecretComma
 	binding := SecretBinding{ID: uuid.New(), ProjectID: command.ProjectID, ClusterRef: m.config.ClusterRef,
 		Namespace: m.config.Namespace, Hostname: hostname, SecretName: command.SecretName,
 		State: "active", CreatedAt: now, UpdatedAt: now}
-	scope := idempotency.Scope{ActorID: command.Caller.ActorID(), CommandType: "access_secret_binding.register", Key: command.IdempotencyKey}
 	_, isNew, err := idempotency.Claim(ctx, tx, scope, hash, binding.ID, now)
 	if err != nil {
 		return SecretBinding{}, err
