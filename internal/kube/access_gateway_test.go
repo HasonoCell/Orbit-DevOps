@@ -69,4 +69,7 @@ func TestAccessOwnershipRejectsUnrelatedObjects(t *testing.T) {
 	if AccessErrorCode(ErrAccessOwnership) != "access_ownership_conflict" || !errors.Is(ErrAccessBoundary, ErrAccessBoundary) {
 		t.Fatal("missing bounded ownership errors")
 	}
+	if AccessErrorCode(ErrAccessPending) != "access_controller_pending" {
+		t.Fatal("pending controller must remain retryable")
+	}
 }

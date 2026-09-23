@@ -31,6 +31,7 @@ var (
 	certificateResource = schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificates"}
 	ErrAccessOwnership  = errors.New("access Kubernetes resource ownership conflict")
 	ErrAccessBoundary   = errors.New("access Kubernetes boundary violation")
+	ErrAccessPending    = errors.New("access Kubernetes controller has not observed the updated Gateway")
 )
 
 type GatewayAdapter struct {
@@ -208,6 +209,15 @@ func (a *GatewayAdapter) Reconcile(ctx context.Context, snapshot access.Snapshot
 		}
 	}
 	// 新 Gateway spec 不再引用旧证书后，才删除 Orbit 自有 Certificate 和托管 Secret。
+	needsCleanup, err := a.needsManagedCleanup(ctx, snapshot.ProjectID, certificates, managedSecrets)
+	if err != nil {
+		return err
+	}
+	if needsCleanup {
+		if err := a.confirmGatewayDetached(ctx, snapshot.ProjectID, len(activeHosts) > 0); err != nil {
+			return err
+		}
+	}
 	if err := a.deleteStaleDynamic(ctx, certificateResource, snapshot.ProjectID, certificates, guard); err != nil {
 		return err
 	}
@@ -215,6 +225,55 @@ func (a *GatewayAdapter) Reconcile(ctx context.Context, snapshot access.Snapshot
 		return err
 	}
 	return nil
+}
+
+// 删除托管证书前确认新 Gateway 已被控制器观察，防止切换 TLS 时过早撤掉仍被使用的 Secret。
+func (a *GatewayAdapter) confirmGatewayDetached(ctx context.Context, projectID uuid.UUID, gatewayExpected bool) error {
+	gateway, err := a.dynamic.Resource(gatewayResource).Namespace(a.base.config.Namespace).Get(ctx, GatewayName(projectID), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		if gatewayExpected {
+			return ErrAccessPending
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !hasOwnership(gateway.GetLabels(), accessLabels(projectID, uuid.Nil, uuid.Nil)) {
+		return ErrAccessOwnership
+	}
+	if !gatewayExpected || readyConditions(gateway, "Programmed") != "ready" {
+		return ErrAccessPending
+	}
+	return nil
+}
+
+func (a *GatewayAdapter) needsManagedCleanup(ctx context.Context, projectID uuid.UUID,
+	certificates map[string]*unstructured.Unstructured, secrets map[string]struct{}) (bool, error) {
+	selector := labels.SelectorFromSet(map[string]string{ManagedByLabel: ManagedByValue, ProjectIDLabel: projectID.String()}).String()
+	listed, err := a.dynamic.Resource(certificateResource).Namespace(a.base.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return false, err
+	}
+	for _, object := range listed.Items {
+		if _, found := certificates[object.GetName()]; !found {
+			return true, nil
+		}
+	}
+	listedSecrets, err := a.base.client.CoreV1().Secrets(a.base.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return false, err
+	}
+	for _, secret := range listedSecrets.Items {
+		if _, found := secrets[secret.Name]; found {
+			continue
+		}
+		id, parseErr := uuid.Parse(secret.Labels[AccessHostIDLabel])
+		if parseErr == nil && secret.Name == AccessTLSSecretName(id) && secret.Type == corev1.SecretTypeTLS {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (a *GatewayAdapter) applyDynamic(ctx context.Context, resource schema.GroupVersionResource,
@@ -335,6 +394,9 @@ func AccessErrorCode(err error) string {
 	}
 	if errors.Is(err, ErrAccessBoundary) {
 		return "access_boundary_violation"
+	}
+	if errors.Is(err, ErrAccessPending) {
+		return "access_controller_pending"
 	}
 	if apierrors.IsNotFound(err) {
 		return "access_dependency_not_found"
