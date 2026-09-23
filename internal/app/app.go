@@ -46,6 +46,7 @@ type Config struct {
 	BuildRegistryHost    string
 	BuildRegistryPrefix  string
 	AccessIssuerPolicies map[string]access.IssuerPolicy
+	GatewayClassName     string
 	MigrateOnBoot        bool
 	WebhookConfig        webhook.Config
 }
@@ -60,6 +61,7 @@ type Dependencies struct {
 	GitSourceInspector pipeline.GitSourceInspector
 	RecoveryPublisher  releaseworker.RecoveryPublisher
 	SecretVerifier     access.SecretVerifier
+	AccessObserver     access.ControllerObserver
 	Logger             *slog.Logger
 	Metrics            *observability.Metrics
 	Tracer             trace.Tracer
@@ -118,7 +120,8 @@ func NewWithDependencies(
 	}
 	authorizer := projectauth.New(db, identityModule)
 	accessModule, err := access.New(db, authorizer, access.Config{ClusterRef: config.LocalClusterRef,
-		Namespace: config.LocalNamespace, IssuerPolicies: config.AccessIssuerPolicies}, identityModule, dependencies.SecretVerifier)
+		Namespace: config.LocalNamespace, GatewayClassName: config.GatewayClassName,
+		IssuerPolicies: config.AccessIssuerPolicies}, identityModule, dependencies.SecretVerifier)
 	if err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("initialize access module: %w", err)
@@ -169,6 +172,7 @@ func NewWithDependencies(
 	webhookModule := webhook.New(db, config.WebhookConfig, tracer, propagator)
 	server := httpapi.NewServer(
 		accessModule,
+		dependencies.AccessObserver,
 		projectModule,
 		catalogModule,
 		buildModule,

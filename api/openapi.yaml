@@ -1965,6 +1965,15 @@ paths:
         "404": {description: 域名不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         "409": {description: 幂等键冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/projects/{projectId}/access-hosts/{hostId}/status:
+    get:
+      operationId: getAccessHostStatus
+      summary: 分层查询入口调和、控制器与 DNS 状态
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/HostId"}]
+      responses:
+        "200": {description: 点时入口诊断, content: {application/json: {schema: {$ref: "#/components/schemas/AccessHostStatus"}}}}
+        "404": {description: 域名不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/projects/{projectId}/access-hosts/{hostId}/routes:
     get:
       operationId: listAccessRoutes
@@ -2163,6 +2172,55 @@ components:
         lifecycle: {type: string, enum: [active, deleting]}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+    AccessHostStatus:
+      type: object
+      additionalProperties: false
+      required: [host, sync, controller, dns]
+      properties:
+        host: {$ref: "#/components/schemas/AccessHost"}
+        sync: {$ref: "#/components/schemas/AccessSyncStatus"}
+        controller: {$ref: "#/components/schemas/AccessControllerStatus"}
+        dns: {$ref: "#/components/schemas/AccessDnsStatus"}
+    AccessSyncStatus:
+      type: object
+      additionalProperties: false
+      required: [desiredRevision, appliedRevision, state]
+      properties:
+        desiredRevision: {type: integer, format: int64}
+        appliedRevision: {type: integer, format: int64}
+        state: {type: string, enum: [pending, applying, applied, retrying, attention_required, deleting]}
+        lastErrorCode: {type: string}
+    AccessControllerStatus:
+      type: object
+      additionalProperties: false
+      required: [gatewayState, listenerState, routes, certificateState, secretState, addresses, observedAt]
+      properties:
+        gatewayState: {type: string, enum: [ready, not_ready, unknown]}
+        listenerState: {type: string, enum: [ready, not_ready, unknown]}
+        routes: {type: array, items: {$ref: "#/components/schemas/AccessRouteObservation"}}
+        certificateState: {type: string, enum: [ready, not_ready, unknown, not_applicable]}
+        certificateNotAfter: {type: string, format: date-time}
+        secretState: {type: string, enum: [ready, not_ready, unknown, not_applicable]}
+        addresses: {type: array, items: {type: string}}
+        errorCode: {type: string}
+        observedAt: {type: string, format: date-time}
+    AccessRouteObservation:
+      type: object
+      additionalProperties: false
+      required: [routeId, accepted, resolvedRefs]
+      properties:
+        routeId: {type: string, format: uuid}
+        accepted: {type: string, enum: [ready, not_ready, unknown]}
+        resolvedRefs: {type: string, enum: [ready, not_ready, unknown]}
+    AccessDnsStatus:
+      type: object
+      additionalProperties: false
+      required: [state, answers, observedAt]
+      properties:
+        state: {type: string, enum: [verified, mismatch, unavailable, not_configured]}
+        answers: {type: array, items: {type: string}}
+        errorCode: {type: string}
+        observedAt: {type: string, format: date-time}
     AccessRouteInput:
       type: object
       additionalProperties: false

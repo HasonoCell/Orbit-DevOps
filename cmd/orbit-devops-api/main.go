@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/HasonoCell/Orbit-DevOps/internal/access"
 	"github.com/HasonoCell/Orbit-DevOps/internal/app"
 	"github.com/HasonoCell/Orbit-DevOps/internal/githubsource"
 	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
@@ -66,6 +67,13 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	var accessObserver access.ControllerObserver
+	if config.Access.GatewayClassName != "" {
+		accessObserver, err = kube.NewGatewayAdapter(adapter, config.Access.GatewayClassName)
+		if err != nil {
+			return err
+		}
+	}
 	githubAdapter, err := githubsource.New(githubsource.Config{APIBaseURL: config.GitHubSource.APIBaseURL, Token: config.GitHubSource.Token, EndpointKeys: webhookEndpointKeys(config.GitHubWebhook.Endpoints), Timeout: config.GitHubSource.Timeout})
 	if err != nil {
 		return err
@@ -75,6 +83,10 @@ func run(logger *slog.Logger) error {
 		oidcConfig = &identity.OIDCConfig{Adapter: identity.NewCoreOSOIDCAdapter(config.OIDC.HTTPTimeout),
 			ClientSecrets: config.OIDC.ClientSecrets, RedirectURL: config.OIDC.RedirectURL,
 			EncryptionKey: config.OIDC.EncryptionKey}
+	}
+	issuerPolicies := make(map[string]access.IssuerPolicy, len(config.Access.IssuerPolicies))
+	for key, policy := range config.Access.IssuerPolicies {
+		issuerPolicies[key] = access.IssuerPolicy{Kind: policy.Kind, Name: policy.Name}
 	}
 	runtime, err := app.NewWithDependencies(ctx, app.Config{
 		DatabaseURL: config.DatabaseURL,
@@ -87,6 +99,8 @@ func run(logger *slog.Logger) error {
 		OIDC:                 oidcConfig,
 		LocalClusterRef:      config.Kubernetes.ClusterRef,
 		LocalNamespace:       config.Kubernetes.Namespace,
+		GatewayClassName:     config.Access.GatewayClassName,
+		AccessIssuerPolicies: issuerPolicies,
 		BuildAllowedGitHosts: config.SourceBuild.AllowedGitHosts,
 		BuildPlatform:        config.SourceBuild.Platform,
 		BuildRegistryHost:    config.SourceBuild.RegistryHost,
@@ -99,6 +113,7 @@ func run(logger *slog.Logger) error {
 	}, app.Dependencies{
 		RuntimeSource:      adapter,
 		SecretVerifier:     adapter,
+		AccessObserver:     accessObserver,
 		GitSourceInspector: githubAdapter,
 		RecoveryPublisher:  adapter,
 		Logger:             logger,

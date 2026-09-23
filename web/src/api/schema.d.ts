@@ -1072,6 +1072,23 @@ export interface paths {
         patch: operations["updateAccessHost"];
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/access-hosts/{hostId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分层查询入口调和、控制器与 DNS 状态 */
+        get: operations["getAccessHostStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/access-hosts/{hostId}/routes": {
         parameters: {
             query?: never;
@@ -1197,6 +1214,54 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        AccessHostStatus: {
+            host: components["schemas"]["AccessHost"];
+            sync: components["schemas"]["AccessSyncStatus"];
+            controller: components["schemas"]["AccessControllerStatus"];
+            dns: components["schemas"]["AccessDnsStatus"];
+        };
+        AccessSyncStatus: {
+            /** Format: int64 */
+            desiredRevision: number;
+            /** Format: int64 */
+            appliedRevision: number;
+            /** @enum {string} */
+            state: "pending" | "applying" | "applied" | "retrying" | "attention_required" | "deleting";
+            lastErrorCode?: string;
+        };
+        AccessControllerStatus: {
+            /** @enum {string} */
+            gatewayState: "ready" | "not_ready" | "unknown";
+            /** @enum {string} */
+            listenerState: "ready" | "not_ready" | "unknown";
+            routes: components["schemas"]["AccessRouteObservation"][];
+            /** @enum {string} */
+            certificateState: "ready" | "not_ready" | "unknown" | "not_applicable";
+            /** Format: date-time */
+            certificateNotAfter?: string;
+            /** @enum {string} */
+            secretState: "ready" | "not_ready" | "unknown" | "not_applicable";
+            addresses: string[];
+            errorCode?: string;
+            /** Format: date-time */
+            observedAt: string;
+        };
+        AccessRouteObservation: {
+            /** Format: uuid */
+            routeId: string;
+            /** @enum {string} */
+            accepted: "ready" | "not_ready" | "unknown";
+            /** @enum {string} */
+            resolvedRefs: "ready" | "not_ready" | "unknown";
+        };
+        AccessDnsStatus: {
+            /** @enum {string} */
+            state: "verified" | "mismatch" | "unavailable" | "not_configured";
+            answers: string[];
+            errorCode?: string;
+            /** Format: date-time */
+            observedAt: string;
         };
         AccessRouteInput: {
             pathPrefix: string;
@@ -6053,6 +6118,47 @@ export interface operations {
             };
             /** @description 资源冲突 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAccessHostStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                hostId: components["parameters"]["HostId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 点时入口诊断 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessHostStatus"];
+                };
+            };
+            /** @description 域名不可见 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

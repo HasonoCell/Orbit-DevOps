@@ -25,6 +25,7 @@ import (
 
 type Server struct {
 	access            *access.Module
+	accessObserver    access.ControllerObserver
 	projects          *project.Module
 	catalog           *catalog.Module
 	builds            *build.Module
@@ -65,6 +66,7 @@ func (s *Server) GetProject(
 
 func NewServer(
 	accessModule *access.Module,
+	accessObserver access.ControllerObserver,
 	projects *project.Module,
 	catalogModule *catalog.Module,
 	buildModule *build.Module,
@@ -82,6 +84,7 @@ func NewServer(
 ) *Server {
 	return &Server{
 		access:            accessModule,
+		accessObserver:    accessObserver,
 		projects:          projects,
 		catalog:           catalogModule,
 		builds:            buildModule,

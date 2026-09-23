@@ -75,6 +75,44 @@ func (s *Server) GetAccessHost(ctx context.Context, request api.GetAccessHostReq
 	return api.GetAccessHost200JSONResponse(accessHostResponse(host)), nil
 }
 
+func (s *Server) GetAccessHostStatus(ctx context.Context, request api.GetAccessHostStatusRequestObject) (api.GetAccessHostStatusResponseObject, error) {
+	observability.SetRequestProjectID(ctx, request.ProjectId)
+	status, err := s.access.GetHostStatus(httpRequestContext(ctx), request.ProjectId, request.HostId, requestCaller(ctx), s.accessObserver)
+	if err != nil {
+		if errors.Is(err, access.ErrHostNotFound) || errors.Is(err, projectauth.ErrNotMember) {
+			return api.GetAccessHostStatus404JSONResponse{Code: "access_host_not_found", Message: "access host not found"}, nil
+		}
+		return nil, err
+	}
+	routes := make([]api.AccessRouteObservation, 0, len(status.Controller.Routes))
+	for _, route := range status.Controller.Routes {
+		routes = append(routes, api.AccessRouteObservation{RouteId: route.RouteID,
+			Accepted: api.AccessRouteObservationAccepted(route.Accepted), ResolvedRefs: api.AccessRouteObservationResolvedRefs(route.ResolvedRefs)})
+	}
+	return api.GetAccessHostStatus200JSONResponse{
+		Host: accessHostResponse(status.Host),
+		Sync: api.AccessSyncStatus{DesiredRevision: status.Sync.DesiredRevision,
+			AppliedRevision: status.Sync.AppliedRevision, State: api.AccessSyncStatusState(status.Sync.State),
+			LastErrorCode: status.Sync.LastErrorCode},
+		Controller: api.AccessControllerStatus{GatewayState: api.AccessControllerStatusGatewayState(status.Controller.GatewayState),
+			ListenerState:       api.AccessControllerStatusListenerState(status.Controller.ListenerState),
+			CertificateState:    api.AccessControllerStatusCertificateState(status.Controller.CertificateState),
+			CertificateNotAfter: status.Controller.CertificateNotAfter,
+			SecretState:         api.AccessControllerStatusSecretState(status.Controller.SecretState),
+			Addresses:           status.Controller.Addresses, Routes: routes, ObservedAt: status.Controller.ObservedAt,
+			ErrorCode: optionalErrorCode(status.Controller.ErrorCode)},
+		Dns: api.AccessDnsStatus{State: api.AccessDnsStatusState(status.DNS.State), Answers: status.DNS.Answers,
+			ErrorCode: optionalErrorCode(status.DNS.ErrorCode), ObservedAt: status.DNS.ObservedAt},
+	}, nil
+}
+
+func optionalErrorCode(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 func (s *Server) ListAccessRoutes(ctx context.Context, request api.ListAccessRoutesRequestObject) (api.ListAccessRoutesResponseObject, error) {
 	observability.SetRequestProjectID(ctx, request.ProjectId)
 	routes, err := s.access.ListRoutes(httpRequestContext(ctx), request.ProjectId, request.HostId, requestCaller(ctx))
