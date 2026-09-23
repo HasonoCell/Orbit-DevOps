@@ -132,7 +132,11 @@ func (m *Module) RegisterSecret(ctx context.Context, command RegisterSecretComma
 	return binding, tx.Commit()
 }
 
-func (m *Module) ListSecretBindings(ctx context.Context, caller identity.Caller) ([]SecretBinding, error) {
+func (m *Module) ListSecretBindings(ctx context.Context, caller identity.Caller, page Page) ([]SecretBinding, error) {
+	page, err := page.normalized()
+	if err != nil {
+		return nil, err
+	}
 	result := make([]SecretBinding, 0)
 	tx, err := m.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -143,7 +147,7 @@ func (m *Module) ListSecretBindings(ctx context.Context, caller identity.Caller)
 		return nil, err
 	}
 	if err := tx.SelectContext(ctx, &result, `SELECT `+bindingColumns+` FROM access_secret_bindings
-		ORDER BY created_at,id LIMIT 100`); err != nil {
+		ORDER BY created_at,id LIMIT $1 OFFSET $2`, page.Limit, page.Offset); err != nil {
 		return nil, err
 	}
 	return result, tx.Commit()

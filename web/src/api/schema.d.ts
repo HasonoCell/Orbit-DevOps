@@ -2034,6 +2034,8 @@ export interface components {
     };
     responses: never;
     parameters: {
+        AccessPageLimit: number;
+        AccessPageOffset: number;
         ProjectId: string;
         ProviderId: string;
         IdentityId: string;
@@ -5846,7 +5848,10 @@ export interface operations {
     };
     listAccessHosts: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: components["parameters"]["AccessPageLimit"];
+                offset?: components["parameters"]["AccessPageOffset"];
+            };
             header?: never;
             path: {
                 projectId: components["parameters"]["ProjectId"];
@@ -6179,7 +6184,10 @@ export interface operations {
     };
     listAccessRoutes: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: components["parameters"]["AccessPageLimit"];
+                offset?: components["parameters"]["AccessPageOffset"];
+            };
             header?: never;
             path: {
                 projectId: components["parameters"]["ProjectId"];
@@ -6476,7 +6484,10 @@ export interface operations {
     };
     listAccessSecretBindings: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: components["parameters"]["AccessPageLimit"];
+                offset?: components["parameters"]["AccessPageOffset"];
+            };
             header?: never;
             path?: never;
             cookie?: never;

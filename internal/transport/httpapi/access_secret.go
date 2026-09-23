@@ -17,8 +17,8 @@ func accessSecretBindingResponse(binding access.SecretBinding) api.AccessSecretB
 		CreatedAt: binding.CreatedAt, UpdatedAt: binding.UpdatedAt}
 }
 
-func (s *Server) ListAccessSecretBindings(ctx context.Context, _ api.ListAccessSecretBindingsRequestObject) (api.ListAccessSecretBindingsResponseObject, error) {
-	bindings, err := s.access.ListSecretBindings(httpRequestContext(ctx), requestCaller(ctx))
+func (s *Server) ListAccessSecretBindings(ctx context.Context, request api.ListAccessSecretBindingsRequestObject) (api.ListAccessSecretBindingsResponseObject, error) {
+	bindings, err := s.access.ListSecretBindings(httpRequestContext(ctx), requestCaller(ctx), accessPage(request.Params.Limit, request.Params.Offset))
 	if err != nil {
 		if errors.Is(err, identity.ErrForbidden) || errors.Is(err, identity.ErrRecentAuthenticationRequired) {
 			return api.ListAccessSecretBindings403JSONResponse{Code: "platform_permission_denied", Message: "platform administrator authorization required"}, nil

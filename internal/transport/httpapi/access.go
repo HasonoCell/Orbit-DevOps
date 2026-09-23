@@ -24,9 +24,20 @@ func accessRouteResponse(route access.Route) api.AccessRoute {
 		CreatedAt: route.CreatedAt, UpdatedAt: route.UpdatedAt}
 }
 
+func accessPage(limit *api.AccessPageLimit, offset *api.AccessPageOffset) access.Page {
+	page := access.Page{}
+	if limit != nil {
+		page.Limit = *limit
+	}
+	if offset != nil {
+		page.Offset = *offset
+	}
+	return page
+}
+
 func (s *Server) ListAccessHosts(ctx context.Context, request api.ListAccessHostsRequestObject) (api.ListAccessHostsResponseObject, error) {
 	observability.SetRequestProjectID(ctx, request.ProjectId)
-	hosts, err := s.access.ListHosts(httpRequestContext(ctx), request.ProjectId, requestCaller(ctx))
+	hosts, err := s.access.ListHosts(httpRequestContext(ctx), request.ProjectId, requestCaller(ctx), accessPage(request.Params.Limit, request.Params.Offset))
 	if err != nil {
 		if errors.Is(err, projectauth.ErrNotMember) {
 			return api.ListAccessHosts404JSONResponse{Code: "project_not_found", Message: "project not found"}, nil
@@ -115,7 +126,7 @@ func optionalErrorCode(value string) *string {
 
 func (s *Server) ListAccessRoutes(ctx context.Context, request api.ListAccessRoutesRequestObject) (api.ListAccessRoutesResponseObject, error) {
 	observability.SetRequestProjectID(ctx, request.ProjectId)
-	routes, err := s.access.ListRoutes(httpRequestContext(ctx), request.ProjectId, request.HostId, requestCaller(ctx))
+	routes, err := s.access.ListRoutes(httpRequestContext(ctx), request.ProjectId, request.HostId, requestCaller(ctx), accessPage(request.Params.Limit, request.Params.Offset))
 	if err != nil {
 		if errors.Is(err, access.ErrHostNotFound) || errors.Is(err, projectauth.ErrNotMember) {
 			return api.ListAccessRoutes404JSONResponse{Code: "access_host_not_found", Message: "access host not found"}, nil

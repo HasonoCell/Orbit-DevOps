@@ -25,6 +25,7 @@ var (
 	ErrHostNotFound  = errors.New("access host not found")
 	ErrRouteNotFound = errors.New("access route not found")
 	ErrConflict      = errors.New("access resource conflict")
+	ErrInvalidPage   = errors.New("invalid access list page")
 )
 
 type Config struct {
@@ -71,6 +72,18 @@ type Route struct {
 	Lifecycle          string    `db:"lifecycle" json:"lifecycle"`
 	CreatedAt          time.Time `db:"created_at" json:"createdAt"`
 	UpdatedAt          time.Time `db:"updated_at" json:"updatedAt"`
+}
+
+type Page struct{ Limit, Offset int }
+
+func (page Page) normalized() (Page, error) {
+	if page.Limit == 0 {
+		page.Limit = 50
+	}
+	if page.Limit < 1 || page.Limit > 100 || page.Offset < 0 || page.Offset > 10000 {
+		return Page{}, ErrInvalidPage
+	}
+	return page, nil
 }
 
 type HostInput struct {
@@ -303,13 +316,17 @@ func (m *Module) GetHost(ctx context.Context, projectID, hostID uuid.UUID, calle
 	return host, err
 }
 
-func (m *Module) ListHosts(ctx context.Context, projectID uuid.UUID, caller identity.Caller) ([]Host, error) {
+func (m *Module) ListHosts(ctx context.Context, projectID uuid.UUID, caller identity.Caller, page Page) ([]Host, error) {
+	page, err := page.normalized()
+	if err != nil {
+		return nil, err
+	}
 	hosts := make([]Host, 0)
-	err := m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
+	err = m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
 		if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, projectID, caller, projectauth.PermissionRead); err != nil {
 			return err
 		}
-		return tx.SelectContext(ctx, &hosts, `SELECT `+hostColumns+` FROM access_hosts WHERE project_id=$1 ORDER BY created_at,id LIMIT 100`, projectID)
+		return tx.SelectContext(ctx, &hosts, `SELECT `+hostColumns+` FROM access_hosts WHERE project_id=$1 ORDER BY created_at,id LIMIT $2 OFFSET $3`, projectID, page.Limit, page.Offset)
 	})
 	return hosts, err
 }
@@ -408,9 +425,13 @@ func (m *Module) GetRoute(ctx context.Context, projectID, hostID, routeID uuid.U
 	return route, err
 }
 
-func (m *Module) ListRoutes(ctx context.Context, projectID, hostID uuid.UUID, caller identity.Caller) ([]Route, error) {
+func (m *Module) ListRoutes(ctx context.Context, projectID, hostID uuid.UUID, caller identity.Caller, page Page) ([]Route, error) {
+	page, err := page.normalized()
+	if err != nil {
+		return nil, err
+	}
 	routes := make([]Route, 0)
-	err := m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
+	err = m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
 		if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, projectID, caller, projectauth.PermissionRead); err != nil {
 			return err
 		}
@@ -421,7 +442,7 @@ func (m *Module) ListRoutes(ctx context.Context, projectID, hostID uuid.UUID, ca
 		if !exists {
 			return ErrHostNotFound
 		}
-		return tx.SelectContext(ctx, &routes, `SELECT `+routeColumns+` FROM access_routes WHERE host_id=$1 ORDER BY path_prefix,id LIMIT 100`, hostID)
+		return tx.SelectContext(ctx, &routes, `SELECT `+routeColumns+` FROM access_routes WHERE host_id=$1 ORDER BY path_prefix,id LIMIT $2 OFFSET $3`, hostID, page.Limit, page.Offset)
 	})
 	return routes, err
 }
