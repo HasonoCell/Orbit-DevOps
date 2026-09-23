@@ -128,7 +128,7 @@ func (a *GatewayAdapter) observeResource(ctx context.Context, resource schema.Gr
 	if err != nil {
 		return nil, err
 	}
-	if !hasOwnership(object.GetLabels(), owner) {
+	if !hasAccessOwnership(object.GetLabels(), owner) {
 		return nil, ErrAccessOwnership
 	}
 	return object, nil

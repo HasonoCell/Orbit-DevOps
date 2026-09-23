@@ -1,12 +1,16 @@
 package kube
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/access"
 	"github.com/google/uuid"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestGatewayRendersDistinctTLSListenersAndRoutes(t *testing.T) {
@@ -71,5 +75,27 @@ func TestAccessOwnershipRejectsUnrelatedObjects(t *testing.T) {
 	}
 	if AccessErrorCode(ErrAccessPending) != "access_controller_pending" {
 		t.Fatal("pending controller must remain retryable")
+	}
+	owner := accessLabels(projectID, hostID, uuid.New())
+	wrongHost := accessLabels(projectID, uuid.New(), uuid.New())
+	if hasAccessOwnership(wrongHost, owner) {
+		t.Fatal("Host identity must be checked")
+	}
+}
+
+func TestGatewayRejectsForeignTargetService(t *testing.T) {
+	projectID, targetID := uuid.New(), uuid.New()
+	client := fake.NewSimpleClientset(&corev1.Service{ObjectMeta: metav1.ObjectMeta{
+		Name: ResourceName(targetID), Namespace: "orbit-test", Labels: map[string]string{
+			ManagedByLabel: ManagedByValue, ProjectIDLabel: uuid.New().String(), TargetIDLabel: targetID.String(),
+		},
+	}})
+	base, err := New(client, Config{ClusterRef: "kind-orbit", Namespace: "orbit-test", FieldManager: "orbit-access"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway := &GatewayAdapter{base: base}
+	if !errors.Is(gateway.checkBackendOwnership(context.Background(), projectID, targetID), ErrAccessOwnership) {
+		t.Fatal("foreign Service with the stable name must not receive traffic")
 	}
 }

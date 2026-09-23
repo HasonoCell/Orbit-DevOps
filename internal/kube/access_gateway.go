@@ -70,6 +70,15 @@ func accessLabels(projectID, hostID, routeID uuid.UUID) map[string]string {
 	return result
 }
 
+func hasAccessOwnership(existing, expected map[string]string) bool {
+	for _, key := range []string{ManagedByLabel, ProjectIDLabel, AccessHostIDLabel, AccessRouteIDLabel} {
+		if existing[key] != expected[key] {
+			return false
+		}
+	}
+	return true
+}
+
 func accessMetadata(name, namespace string, labels map[string]string, revision int64) map[string]any {
 	return map[string]any{"name": name, "namespace": namespace, "labels": accessStringMap(labels),
 		"annotations": map[string]any{AccessRevisionAnnotation: fmt.Sprint(revision)}}
@@ -182,6 +191,9 @@ func (a *GatewayAdapter) Reconcile(ctx context.Context, snapshot access.Snapshot
 		if !ok {
 			continue
 		}
+		if err := a.checkBackendOwnership(ctx, snapshot.ProjectID, route.Route.DeploymentTargetID); err != nil {
+			return err
+		}
 		routes[AccessRouteName(route.Route.ID)] = routeObject(snapshot, host, route)
 	}
 	// 旧 Route 先退出匹配；之后才修改 listener 或证书引用。
@@ -227,6 +239,22 @@ func (a *GatewayAdapter) Reconcile(ctx context.Context, snapshot access.Snapshot
 	return nil
 }
 
+// Service 可以尚未由 Release 创建；若稳定名称已存在，则必须确属该 Target。
+func (a *GatewayAdapter) checkBackendOwnership(ctx context.Context, projectID, targetID uuid.UUID) error {
+	service, err := a.base.client.CoreV1().Services(a.base.config.Namespace).Get(ctx, ResourceName(targetID), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	labels := service.GetLabels()
+	if labels[ManagedByLabel] != ManagedByValue || labels[ProjectIDLabel] != projectID.String() || labels[TargetIDLabel] != targetID.String() {
+		return ErrAccessOwnership
+	}
+	return nil
+}
+
 // 删除托管证书前确认新 Gateway 已被控制器观察，防止切换 TLS 时过早撤掉仍被使用的 Secret。
 func (a *GatewayAdapter) confirmGatewayDetached(ctx context.Context, projectID uuid.UUID, gatewayExpected bool) error {
 	gateway, err := a.dynamic.Resource(gatewayResource).Namespace(a.base.config.Namespace).Get(ctx, GatewayName(projectID), metav1.GetOptions{})
@@ -239,7 +267,7 @@ func (a *GatewayAdapter) confirmGatewayDetached(ctx context.Context, projectID u
 	if err != nil {
 		return err
 	}
-	if !hasOwnership(gateway.GetLabels(), accessLabels(projectID, uuid.Nil, uuid.Nil)) {
+	if !hasAccessOwnership(gateway.GetLabels(), accessLabels(projectID, uuid.Nil, uuid.Nil)) {
 		return ErrAccessOwnership
 	}
 	if !gatewayExpected || readyConditions(gateway, "Programmed") != "ready" {
@@ -283,7 +311,7 @@ func (a *GatewayAdapter) applyDynamic(ctx context.Context, resource schema.Group
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
-	if err == nil && !hasOwnership(existing.GetLabels(), object.GetLabels()) {
+	if err == nil && !hasAccessOwnership(existing.GetLabels(), object.GetLabels()) {
 		return ErrAccessOwnership
 	}
 	if err := guard(ctx); err != nil {
@@ -308,7 +336,7 @@ func (a *GatewayAdapter) deleteDynamic(ctx context.Context, resource schema.Grou
 	if err != nil {
 		return err
 	}
-	if !hasOwnership(existing.GetLabels(), owner) {
+	if !hasAccessOwnership(existing.GetLabels(), owner) {
 		return ErrAccessOwnership
 	}
 	if err := guard(ctx); err != nil {
@@ -332,11 +360,10 @@ func (a *GatewayAdapter) deleteStaleDynamic(ctx context.Context, resource schema
 		if _, ok := desired[existing.GetName()]; ok {
 			continue
 		}
-		owner := accessLabels(projectID, uuid.Nil, uuid.Nil)
 		if !ownedAccessName(resource, existing) {
 			return ErrAccessOwnership
 		}
-		if err := a.deleteDynamic(ctx, resource, existing.GetName(), owner, guard); err != nil {
+		if err := a.deleteDynamic(ctx, resource, existing.GetName(), existing.GetLabels(), guard); err != nil {
 			return err
 		}
 	}
@@ -348,6 +375,9 @@ func ownedAccessName(resource schema.GroupVersionResource, object unstructured.U
 	routeID := object.GetLabels()[AccessRouteIDLabel]
 	switch resource.Resource {
 	case "httproutes":
+		if _, err := uuid.Parse(hostID); err != nil {
+			return false
+		}
 		if routeID != "" {
 			id, err := uuid.Parse(routeID)
 			return err == nil && object.GetName() == AccessRouteName(id)
