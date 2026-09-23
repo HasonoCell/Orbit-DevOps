@@ -250,6 +250,15 @@ func (m *Module) AuthorizeInTx(ctx context.Context, tx *sqlx.Tx, caller Caller) 
 	return m.authorizeInTx(ctx, tx, caller, false)
 }
 
+// RequirePlatformAdminInTx 在当前事务中重新核验平台角色与近期主认证，不授予任何项目权限。
+func (m *Module) RequirePlatformAdminInTx(ctx context.Context, tx *sqlx.Tx, caller Caller) error {
+	if _, err := m.AuthorizeInTx(ctx, tx, caller); err != nil {
+		return err
+	}
+	_, err := requireAdministrator(ctx, tx, caller, true)
+	return err
+}
+
 // AuthorizeSecurityInTx 由成员安全变更消费，直接取得排他控制锁，不可先走共享门禁。
 func (m *Module) AuthorizeSecurityInTx(ctx context.Context, tx *sqlx.Tx, caller Caller) (User, error) {
 	return m.authorizeInTx(ctx, tx, caller, true)

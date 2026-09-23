@@ -98,6 +98,7 @@ func run(logger *slog.Logger) error {
 		},
 	}, app.Dependencies{
 		RuntimeSource:      adapter,
+		SecretVerifier:     adapter,
 		GitSourceInspector: githubAdapter,
 		RecoveryPublisher:  adapter,
 		Logger:             logger,

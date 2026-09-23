@@ -2017,6 +2017,36 @@ paths:
         "404": {description: 路由不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         "409": {description: 幂等键冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/platform/access-secret-bindings:
+    get:
+      operationId: listAccessSecretBindings
+      summary: 平台管理员查询已有 TLS Secret 授权登记
+      responses:
+        "200": {description: 授权列表, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/AccessSecretBinding"}}}}}
+        "403": {description: 需要平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+    post:
+      operationId: registerAccessSecretBinding
+      summary: 平台管理员登记已有 TLS Secret 给指定 Project 和 hostname
+      parameters: [{$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/AccessSecretBindingInput"}}}}
+      responses:
+        "201": {description: 已登记, content: {application/json: {schema: {$ref: "#/components/schemas/AccessSecretBinding"}}}}
+        "400": {description: 输入无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 授权或幂等冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/platform/access-secret-bindings/{bindingId}:
+    delete:
+      operationId: revokeAccessSecretBinding
+      summary: 平台管理员撤销已有 TLS Secret 授权
+      parameters: [{$ref: "#/components/parameters/BindingId"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses:
+        "200": {description: 已撤销, content: {application/json: {schema: {$ref: "#/components/schemas/AccessSecretBinding"}}}}
+        "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 登记不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 幂等冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
 components:
   securitySchemes:
     CookieAuth:
@@ -2080,7 +2110,34 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    BindingId:
+      name: bindingId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
   schemas:
+    AccessSecretBindingInput:
+      type: object
+      additionalProperties: false
+      required: [projectId, hostname, secretName]
+      properties:
+        projectId: {type: string, format: uuid}
+        hostname: {type: string, minLength: 4, maxLength: 253}
+        secretName: {type: string, minLength: 1, maxLength: 253}
+    AccessSecretBinding:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, clusterRef, namespace, hostname, secretName, state, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        projectId: {type: string, format: uuid}
+        clusterRef: {type: string}
+        namespace: {type: string}
+        hostname: {type: string}
+        secretName: {type: string}
+        state: {type: string, enum: [active, revoked]}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
     AccessHostInput:
       type: object
       additionalProperties: false

@@ -36,9 +36,16 @@ type Config struct {
 type IssuerPolicy struct{ Kind, Name string }
 
 type Module struct {
-	db         *sqlx.DB
-	authorizer *projectauth.Module
-	config     Config
+	db             *sqlx.DB
+	authorizer     *projectauth.Module
+	config         Config
+	identities     *identity.Module
+	secretVerifier SecretVerifier
+}
+
+// SecretVerifier 只供平台管理员登记前验证既有 TLS Secret，不用于普通状态查询。
+type SecretVerifier interface {
+	VerifyTLSSecret(context.Context, string, string, string) error
 }
 
 type Host struct {
@@ -88,11 +95,11 @@ type RouteCommand struct {
 	DeploymentTargetID uuid.UUID
 }
 
-func New(db *sqlx.DB, authorizer *projectauth.Module, config Config) (*Module, error) {
+func New(db *sqlx.DB, authorizer *projectauth.Module, config Config, identities *identity.Module, verifier SecretVerifier) (*Module, error) {
 	if db == nil || authorizer == nil || config.ClusterRef == "" || config.Namespace == "" {
 		return nil, errors.New("invalid access module configuration")
 	}
-	return &Module{db: db, authorizer: authorizer, config: config}, nil
+	return &Module{db: db, authorizer: authorizer, config: config, identities: identities, secretVerifier: verifier}, nil
 }
 
 // NormalizeHostname 把同一 DNS 名的大小写与尾点统一，拒绝通配、IP 和非完整域名。
