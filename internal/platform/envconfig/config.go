@@ -34,6 +34,29 @@ type API struct {
 	SourceBuild   SourceBuild
 	GitHubWebhook GitHubWebhook
 	GitHubSource  GitHubSource
+	Access        Access
+}
+
+// Access 只接受由部署者设置的 GatewayClass 与 Issuer 策略，不接受请求中的原始 K8s 引用。
+type Access struct {
+	GatewayClassName string
+	IssuerPolicies   map[string]AccessIssuerPolicy
+}
+
+type AccessIssuerPolicy struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+type GatewayWorker struct {
+	Address             string
+	DatabaseURL         string
+	Kubernetes          Kubernetes
+	Access              Access
+	Queue               ReleaseQueue
+	PollInterval        time.Duration
+	MaintenanceInterval time.Duration
+	LeaseDuration       time.Duration
 }
 
 type OIDC struct {
@@ -204,6 +227,10 @@ func LoadAPI() (API, error) {
 	if err != nil {
 		return API{}, err
 	}
+	accessConfig, err := loadAccess()
+	if err != nil {
+		return API{}, err
+	}
 	return API{
 		Address:       value("ORBIT_DEVOPS_API_ADDRESS", "127.0.0.1:8080"),
 		DatabaseURL:   value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
@@ -218,7 +245,89 @@ func LoadAPI() (API, error) {
 		SourceBuild:   loadSourceBuild(),
 		GitHubWebhook: githubWebhook,
 		GitHubSource:  GitHubSource{APIBaseURL: value("ORBIT_DEVOPS_GITHUB_API_URL", "https://api.github.com"), Token: os.Getenv("ORBIT_DEVOPS_GITHUB_API_TOKEN"), Timeout: githubTimeout},
+		Access:        accessConfig,
 	}, nil
+}
+
+func loadAccess() (Access, error) {
+	config := Access{GatewayClassName: strings.TrimSpace(os.Getenv("ORBIT_DEVOPS_GATEWAY_CLASS_NAME")), IssuerPolicies: map[string]AccessIssuerPolicy{}}
+	if raw := strings.TrimSpace(os.Getenv("ORBIT_DEVOPS_ACCESS_ISSUER_POLICIES_JSON")); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &config.IssuerPolicies); err != nil {
+			return Access{}, errors.New("ORBIT_DEVOPS_ACCESS_ISSUER_POLICIES_JSON must be a JSON policy map")
+		}
+	}
+	for key, policy := range config.IssuerPolicies {
+		if key == "" || (policy.Kind != "Issuer" && policy.Kind != "ClusterIssuer") || policy.Name == "" {
+			return Access{}, errors.New("invalid access issuer policy")
+		}
+	}
+	return config, nil
+}
+
+// LoadGatewayWorker 分离入口写入进程，不把集群写权限授予 Pipeline Worker。
+func LoadGatewayWorker() (GatewayWorker, error) {
+	kubernetes, err := loadKubernetes()
+	if err != nil {
+		return GatewayWorker{}, err
+	}
+	accessConfig, err := loadAccess()
+	if err != nil {
+		return GatewayWorker{}, err
+	}
+	if accessConfig.GatewayClassName == "" {
+		return GatewayWorker{}, errors.New("ORBIT_DEVOPS_GATEWAY_CLASS_NAME is required")
+	}
+	poll, err := duration("ORBIT_DEVOPS_GATEWAY_WORKER_POLL_INTERVAL", time.Second)
+	if err != nil {
+		return GatewayWorker{}, err
+	}
+	maintenance, err := duration("ORBIT_DEVOPS_GATEWAY_MAINTENANCE_INTERVAL", time.Minute)
+	if err != nil {
+		return GatewayWorker{}, err
+	}
+	lease, err := duration("ORBIT_DEVOPS_GATEWAY_LEASE_DURATION", 45*time.Second)
+	if err != nil {
+		return GatewayWorker{}, err
+	}
+	queue, err := loadGatewayQueue()
+	if err != nil {
+		return GatewayWorker{}, err
+	}
+	if lease >= queue.TaskTimeout {
+		return GatewayWorker{}, errors.New("gateway lease must be shorter than task timeout")
+	}
+	return GatewayWorker{Address: value("ORBIT_DEVOPS_GATEWAY_WORKER_ADDRESS", "127.0.0.1:9094"),
+		DatabaseURL: value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL), Kubernetes: kubernetes,
+		Access: accessConfig, Queue: queue, PollInterval: poll, MaintenanceInterval: maintenance,
+		LeaseDuration: lease}, nil
+}
+
+func loadGatewayQueue() (ReleaseQueue, error) {
+	config := ReleaseQueue{RedisAddress: value("ORBIT_DEVOPS_REDIS_ADDRESS", "127.0.0.1:6379"),
+		RedisUsername: os.Getenv("ORBIT_DEVOPS_REDIS_USERNAME"), RedisPassword: os.Getenv("ORBIT_DEVOPS_REDIS_PASSWORD"),
+		Name: value("ORBIT_DEVOPS_GATEWAY_QUEUE_NAME", "orbit-devops-gateway")}
+	var err error
+	config.RedisDB, err = nonNegativeInteger("ORBIT_DEVOPS_REDIS_DB", 0)
+	if err != nil {
+		return ReleaseQueue{}, err
+	}
+	config.Concurrency, err = nonNegativeInteger("ORBIT_DEVOPS_GATEWAY_QUEUE_CONCURRENCY", 2)
+	if err != nil || config.Concurrency < 1 || config.Concurrency > 100 {
+		return ReleaseQueue{}, errors.New("invalid gateway queue concurrency")
+	}
+	config.ConsumptionGrace, err = duration("ORBIT_DEVOPS_GATEWAY_CONSUMPTION_GRACE", 30*time.Second)
+	if err != nil {
+		return ReleaseQueue{}, err
+	}
+	config.TaskTimeout, err = duration("ORBIT_DEVOPS_GATEWAY_TASK_TIMEOUT", 60*time.Second)
+	if err != nil {
+		return ReleaseQueue{}, err
+	}
+	config.ShutdownTimeout, err = duration("ORBIT_DEVOPS_GATEWAY_SHUTDOWN_TIMEOUT", 15*time.Second)
+	if err != nil {
+		return ReleaseQueue{}, err
+	}
+	return config, nil
 }
 
 func loadOIDC() (OIDC, error) {
