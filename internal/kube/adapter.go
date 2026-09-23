@@ -18,6 +18,7 @@ import (
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -42,8 +43,9 @@ type ReadFailureRecorder interface {
 }
 
 type Adapter struct {
-	client kubernetes.Interface
-	config Config
+	client     kubernetes.Interface
+	config     Config
+	restConfig *rest.Config
 }
 
 func New(client kubernetes.Interface, config Config) (*Adapter, error) {

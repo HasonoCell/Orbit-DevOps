@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -65,7 +66,20 @@ func NewVerifiedLocalAdapter(
 	if err := verifyKindIdentity(ctx, client, expectedContext, config.Namespace); err != nil {
 		return nil, err
 	}
-	return New(client, config)
+	adapter, err := New(client, config)
+	if err != nil {
+		return nil, err
+	}
+	adapter.restConfig = restConfig
+	return adapter, nil
+}
+
+// DynamicClient 只从已验证的本地 Kind 连接创建 Gateway API/cert-manager 客户端。
+func (a *Adapter) DynamicClient() (dynamic.Interface, error) {
+	if a.restConfig == nil {
+		return nil, errors.New("dynamic client requires verified local Kubernetes context")
+	}
+	return dynamic.NewForConfig(a.restConfig)
 }
 
 func requireLoopbackServer(server string) error {
