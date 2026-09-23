@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -251,13 +252,16 @@ func LoadAPI() (API, error) {
 
 func loadAccess() (Access, error) {
 	config := Access{GatewayClassName: strings.TrimSpace(os.Getenv("ORBIT_DEVOPS_GATEWAY_CLASS_NAME")), IssuerPolicies: map[string]AccessIssuerPolicy{}}
+	if config.GatewayClassName != "" && len(validation.IsDNS1123Subdomain(config.GatewayClassName)) > 0 {
+		return Access{}, errors.New("ORBIT_DEVOPS_GATEWAY_CLASS_NAME must be a Kubernetes DNS name")
+	}
 	if raw := strings.TrimSpace(os.Getenv("ORBIT_DEVOPS_ACCESS_ISSUER_POLICIES_JSON")); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &config.IssuerPolicies); err != nil {
 			return Access{}, errors.New("ORBIT_DEVOPS_ACCESS_ISSUER_POLICIES_JSON must be a JSON policy map")
 		}
 	}
 	for key, policy := range config.IssuerPolicies {
-		if key == "" || (policy.Kind != "Issuer" && policy.Kind != "ClusterIssuer") || policy.Name == "" {
+		if len(validation.IsDNS1123Label(key)) > 0 || (policy.Kind != "Issuer" && policy.Kind != "ClusterIssuer") || len(validation.IsDNS1123Subdomain(policy.Name)) > 0 {
 			return Access{}, errors.New("invalid access issuer policy")
 		}
 	}

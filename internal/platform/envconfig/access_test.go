@@ -24,4 +24,12 @@ func TestGatewayWorkerRequiresControlledClassAndIssuerPolicy(t *testing.T) {
 	if _, err := envconfig.LoadGatewayWorker(); err == nil {
 		t.Fatal("uncontrolled issuer kind must fail")
 	}
+	t.Setenv("ORBIT_DEVOPS_ACCESS_ISSUER_POLICIES_JSON", `{"local":{"kind":"Issuer","name":"bad name"}}`)
+	if _, err := envconfig.LoadGatewayWorker(); err == nil {
+		t.Fatal("invalid issuer resource name must fail")
+	}
+	t.Setenv("ORBIT_DEVOPS_GATEWAY_CLASS_NAME", "bad class")
+	if _, err := envconfig.LoadGatewayWorker(); err == nil {
+		t.Fatal("invalid GatewayClass name must fail")
+	}
 }
