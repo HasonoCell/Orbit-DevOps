@@ -10,6 +10,12 @@ const user = {
 const project = { id: "p-1", name: "Yuuki", slug: "yuuki", createdBy: "u-1", createdAt: "2026-01-01T00:00:00Z" };
 const application = { id: "a-1", projectId: "p-1", name: "Payment Service", slug: "payment-service", createdBy: "u-1", createdAt: "2026-01-01T00:00:00Z" };
 
+test.beforeEach(async ({ page }) => {
+  for (const path of ["applications/*/builds?*", "applications/*/delivery-pipelines?*", "deployment-targets/*/releases?*"]) {
+    await page.route("**/api/v1/" + path, (route) => route.fulfill({ json: { items: [] } }));
+  }
+});
+
 async function catalog(page: Page, role: "owner" | "viewer" = "owner") {
   await page.route("**/api/v1/users/me", (route) => route.fulfill({ json: { kind: "user", user, mustChangePassword: false } }));
   await page.route("**/api/v1/projects?*", (route) => route.fulfill({ json: { items: [project] } }));
@@ -81,7 +87,7 @@ test("项目与应用深链可刷新，观察者看不到可用的创建操作",
   await expect(page.getByRole("heading", { name: "Yuuki" })).toBeVisible();
   await expect(page.getByRole("button", { name: "创建应用" }).first()).toBeDisabled();
   await page.getByRole("link", { name: /Payment Service/ }).click();
-  await expect(page.getByText("生产阶段")).toBeVisible();
+  await expect(page.getByText("生产环境")).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Payment Service" })).toBeVisible();
 });
