@@ -12,20 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { oidcReturnPathKey, safeNextPath } from "@/lib/return-path";
 
 const loginSchema = z.object({
   loginName: z.string().trim().min(3, "登录名至少需要 3 个字符"),
   password: z.string().min(1, "请输入密码"),
 });
 type LoginValues = z.infer<typeof loginSchema>;
-
-// next 只允许本站路径，避免登录后跳转到外部地址或回到登录页。
-export function safeNextPath(next: string | null): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\") || next.startsWith("/login") || next.startsWith("/auth/callback")) {
-    return "/projects";
-  }
-  return next;
-}
 
 export function LoginPage() {
   const queryClient = useQueryClient();
@@ -38,13 +31,19 @@ export function LoginPage() {
   const login = useMutation({
     mutationFn: (values: LoginValues) => loginLocal(values.loginName, values.password),
     onSuccess(result) {
+      // 登录者可能已变化；先丢弃上一个会话的资源缓存，再写入新身份。
+      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "principal" && query.queryKey[0] !== "auth-providers" });
       queryClient.setQueryData(principalQueryKey, result);
       navigate(result.kind === "pending" ? "/admission" : result.mustChangePassword ? "/account/password" : next, { replace: true });
     },
   });
   const oidc = useMutation({
     mutationFn: startOIDCLogin,
-    onSuccess(authorizationUrl) { window.location.assign(authorizationUrl); },
+    onSuccess(authorizationUrl) {
+      // OIDC 经外部站点往返；只暂存已校验的资源路径，不保存凭据。
+      sessionStorage.setItem(oidcReturnPathKey, next);
+      window.location.assign(authorizationUrl);
+    },
   });
 
   if (principal.isSuccess) {
