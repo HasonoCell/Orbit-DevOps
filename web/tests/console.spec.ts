@@ -113,6 +113,10 @@ test("创建项目关闭后清理草稿、错误和旧命令键", async ({ page 
   await page.getByLabel("项目标识").fill("demo");
   await page.getByRole("dialog").getByRole("button", { name: "创建项目" }).click();
   await expect(page.getByText("标识已被占用，请更换标识。")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "创建项目" }).click();
+  await expect.poll(() => keys.length).toBe(2);
+  expect(keys[1]).toBe(keys[0]);
+  await expect(page.getByRole("dialog").getByRole("button", { name: "创建项目" })).toBeEnabled();
   await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.getByRole("button", { name: "创建项目" }).first().click();
@@ -122,9 +126,9 @@ test("创建项目关闭后清理草稿、错误和旧命令键", async ({ page 
   await page.getByLabel("项目名称").fill("Demo");
   await page.getByLabel("项目标识").fill("demo");
   await page.getByRole("dialog").getByRole("button", { name: "创建项目" }).click();
-  await expect.poll(() => keys.length).toBe(2);
+  await expect.poll(() => keys.length).toBe(3);
   expect(keys[0]).not.toBe("");
-  expect(keys[1]).not.toBe(keys[0]);
+  expect(keys[2]).not.toBe(keys[0]);
 });
 
 test("创建应用的标识已被占用时提示更换标识", async ({ page }) => {
@@ -374,6 +378,13 @@ test("新密码表单按后端 Unicode 字符和弱口令规则校验", async ({
   await confirmPassword.fill("passwordpassword");
   await submit.click();
   await expect(page.getByText("请避免常见弱密码或重复同一字符")).toBeVisible();
+  expect(submissions).toBe(0);
+
+  await page.getByLabel("当前密码").fill("Abcdefgh1234567");
+  await newPassword.fill("Abcdefgh1234567");
+  await confirmPassword.fill("Abcdefgh1234567");
+  await submit.click();
+  await expect(page.getByText("新密码不能与当前密码相同")).toBeVisible();
   expect(submissions).toBe(0);
 
   const unicodePassword = "🔒".repeat(14) + "A";

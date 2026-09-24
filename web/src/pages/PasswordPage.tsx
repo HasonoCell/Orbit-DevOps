@@ -36,6 +36,9 @@ const passwordSchema = z.object({
   if (value.mode === "change" && !value.currentPassword) {
     context.addIssue({ code: "custom", path: ["currentPassword"], message: "请输入当前密码" });
   }
+  if (value.mode === "change" && value.currentPassword && value.newPassword === value.currentPassword) {
+    context.addIssue({ code: "custom", path: ["newPassword"], message: "新密码不能与当前密码相同" });
+  }
   if (value.mode === "establish") {
     const loginName = value.loginName?.trim().toLowerCase() ?? "";
     if (loginName.length < 3 || loginName.length > 128 || !/^[a-z0-9][a-z0-9._@+-]*$/.test(loginName)) {
