@@ -99,6 +99,7 @@ paths:
         "204": {description: 密码已修改，需要重新登录}
         "400": {description: 密码或请求无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         "401": {description: 当前密码无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "409": {description: 登录名已被使用, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/users/me/sessions:
     get:

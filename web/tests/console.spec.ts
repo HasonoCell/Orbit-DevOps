@@ -162,6 +162,33 @@ test("OIDC 登录后返回原应用深链", async ({ page }) => {
   await expect(page).toHaveURL(/\/projects\/p-1\/applications\/a-1$/);
 });
 
+test("OIDC 回跳没有有效会话时返回登录并保留目标地址", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("orbit:oidc-return-path", "/projects/p-1"));
+  await page.route("**/api/v1/users/me", (route) => route.fulfill({ status: 401, json: { code: "authentication_required", message: "未登录" } }));
+  await page.route("**/api/v1/auth/providers", (route) => route.fulfill({ json: [{ id: "local", type: "local", displayName: "本地账号", available: true }] }));
+  await page.goto("/auth/callback");
+  await expect(page).toHaveURL(/\/login\?next=/);
+  await expect(page.getByText("登录工作区")).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("next")).toBe("/projects/p-1");
+});
+
+test("OIDC 回跳的临时身份错误允许重试", async ({ page }) => {
+  let attempts = 0;
+  await page.route("**/api/v1/users/me", (route) => {
+    attempts++;
+    return route.fulfill(attempts === 1
+      ? { status: 503, json: { code: "identity_unavailable", message: "身份服务暂不可用" } }
+      : { json: { kind: "user", user, mustChangePassword: false } });
+  });
+  await page.route("**/api/v1/projects?*", (route) => route.fulfill({ json: { items: [project] } }));
+  await page.goto("/auth/callback");
+  await expect(page.getByRole("heading", { name: "登录未完成" })).toBeVisible();
+  const attemptsBeforeRetry = attempts;
+  await page.getByRole("button", { name: "重试" }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+  expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
+});
+
 test("创建表单按 OpenAPI 限制名称与标识长度", async ({ page }) => {
   await catalog(page);
   let submissions = 0;
@@ -190,6 +217,19 @@ test("OIDC-only 用户可以首次设置本地登录密码", async ({ page }) =>
   await page.getByLabel("确认新密码").fill("long-password-123");
   await page.getByRole("button", { name: "确认设置" }).click();
   await expect.poll(() => body).toEqual({ loginName: "alice-local", newPassword: "long-password-123" });
+});
+
+test("首次设置本地密码遇到登录名冲突时提示更换名称", async ({ page }) => {
+  await page.route("**/api/v1/users/me", (route) => route.fulfill({ json: { kind: "user", user, mustChangePassword: false } }));
+  await page.route("**/api/v1/users/me/password", (route) => route.fulfill({ status: 409, json: { code: "login_name_conflict", message: "login name is already in use" } }));
+  await page.goto("/account/password");
+  await page.getByRole("button", { name: "首次设置本地密码" }).click();
+  await page.getByLabel("登录名").fill("alice-local");
+  await page.getByLabel("新密码", { exact: true }).fill("long-password-123");
+  await page.getByLabel("确认新密码").fill("long-password-123");
+  await page.getByRole("button", { name: "确认设置" }).click();
+  await expect(page.getByText("登录名已被占用，请更换登录名。")).toBeVisible();
+  await expect(page).toHaveURL(/\/account\/password$/);
 });
 
 test("已有本地密码账号提交旧密码和新密码", async ({ page }) => {

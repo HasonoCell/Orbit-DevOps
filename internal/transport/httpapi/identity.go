@@ -100,6 +100,9 @@ func (s *Server) ChangeCurrentPassword(ctx context.Context, request api.ChangeCu
 		if errors.Is(err, identity.ErrUnauthenticated) {
 			return api.ChangeCurrentPassword401JSONResponse{Code: "invalid_credentials", Message: "current password is invalid"}, nil
 		}
+		if errors.Is(err, identity.ErrLoginNameConflict) {
+			return api.ChangeCurrentPassword409JSONResponse{Code: "login_name_conflict", Message: "login name is already in use"}, nil
+		}
 		return nil, err
 	}
 	s.browserSecurity.ClearSessionCookie(ginContext(ctx))
