@@ -2443,6 +2443,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description 首次设置本地密码需要近期认证 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description 登录名已被使用 */
             409: {
                 headers: {
@@ -3319,7 +3328,7 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
-            /** @description 幂等键已经用于不同请求 */
+            /** @description 项目标识已被使用或幂等键已经用于不同请求 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3788,7 +3797,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description 幂等键已经用于不同请求 */
+            /** @description 项目内应用标识已被使用或幂等键已经用于不同请求 */
             409: {
                 headers: {
                     [name: string]: unknown;

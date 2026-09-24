@@ -121,6 +121,9 @@ func (s *Server) CreateProject(
 				Message: "idempotency key was already used with a different request",
 			}, nil
 		}
+		if errors.Is(err, project.ErrSlugConflict) {
+			return api.CreateProject409JSONResponse{Code: "slug_conflict", Message: "project slug is already in use"}, nil
+		}
 		return nil, err
 	}
 	observability.SetRequestProjectID(ctx, createdProject.ID)

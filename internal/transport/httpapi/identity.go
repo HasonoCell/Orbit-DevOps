@@ -123,7 +123,7 @@ func (s *Server) ListUsers(ctx context.Context, request api.ListUsersRequestObje
 			return api.ListUsers400JSONResponse{Code: "invalid_cursor", Message: "user cursor is invalid"}, nil
 		}
 		if identityForbidden(err) {
-			return api.ListUsers403JSONResponse{Code: "platform_permission_denied", Message: "platform administrator required"}, nil
+			return api.ListUsers403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		}
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (s *Server) CreateLocalUser(ctx context.Context, request api.CreateLocalUse
 		case errors.Is(err, identity.ErrInvalidCommand), errors.Is(err, identity.ErrInvalidPassword):
 			return api.CreateLocalUser400JSONResponse{Code: "invalid_user", Message: "user input is invalid"}, nil
 		case identityForbidden(err):
-			return api.CreateLocalUser403JSONResponse{Code: "platform_permission_denied", Message: "recent platform administrator authentication required"}, nil
+			return api.CreateLocalUser403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		case errors.Is(err, identity.ErrLoginNameConflict):
 			return api.CreateLocalUser409JSONResponse{Code: "login_name_conflict", Message: "login name is already in use"}, nil
 		default:
@@ -158,7 +158,7 @@ func (s *Server) GetUser(ctx context.Context, request api.GetUserRequestObject) 
 	user, err := s.identities.GetUser(httpRequestContext(ctx), requestCaller(ctx), request.UserId)
 	if err != nil {
 		if identityForbidden(err) {
-			return api.GetUser403JSONResponse{Code: "platform_permission_denied", Message: "platform administrator required"}, nil
+			return api.GetUser403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		}
 		if errors.Is(err, identity.ErrUserNotFound) {
 			return api.GetUser404JSONResponse{Code: "user_not_found", Message: "user not found"}, nil
@@ -174,7 +174,7 @@ func (s *Server) ChangeUserPlatformRole(ctx context.Context, request api.ChangeU
 	})
 	if err != nil {
 		if identityForbidden(err) {
-			return api.ChangeUserPlatformRole403JSONResponse{Code: "platform_permission_denied", Message: "recent platform administrator authentication required"}, nil
+			return api.ChangeUserPlatformRole403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		}
 		if errors.Is(err, identity.ErrUserNotFound) {
 			return api.ChangeUserPlatformRole404JSONResponse{Code: "user_not_found", Message: "user not found"}, nil
@@ -191,7 +191,7 @@ func (s *Server) DisableUser(ctx context.Context, request api.DisableUserRequest
 	user, err := s.identities.DisableUser(httpRequestContext(ctx), identity.DisableUserCommand{Caller: requestCaller(ctx), UserID: request.UserId})
 	if err != nil {
 		if identityForbidden(err) {
-			return api.DisableUser403JSONResponse{Code: "platform_permission_denied", Message: "recent platform administrator authentication required"}, nil
+			return api.DisableUser403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		}
 		if errors.Is(err, identity.ErrUserNotFound) {
 			return api.DisableUser404JSONResponse{Code: "user_not_found", Message: "user not found"}, nil
@@ -208,7 +208,7 @@ func (s *Server) EnableUser(ctx context.Context, request api.EnableUserRequestOb
 	user, err := s.identities.EnableUser(httpRequestContext(ctx), identity.EnableUserCommand{Caller: requestCaller(ctx), UserID: request.UserId})
 	if err != nil {
 		if identityForbidden(err) {
-			return api.EnableUser403JSONResponse{Code: "platform_permission_denied", Message: "recent platform administrator authentication required"}, nil
+			return api.EnableUser403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		}
 		if errors.Is(err, identity.ErrUserNotFound) {
 			return api.EnableUser404JSONResponse{Code: "user_not_found", Message: "user not found"}, nil
@@ -228,7 +228,7 @@ func (s *Server) ResetUserLocalPassword(ctx context.Context, request api.ResetUs
 			return api.ResetUserLocalPassword400JSONResponse{Code: "invalid_password", Message: "password does not meet policy"}, nil
 		}
 		if identityForbidden(err) {
-			return api.ResetUserLocalPassword403JSONResponse{Code: "platform_permission_denied", Message: "recent platform administrator authentication required"}, nil
+			return api.ResetUserLocalPassword403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		}
 		if errors.Is(err, identity.ErrUserNotFound) {
 			return api.ResetUserLocalPassword404JSONResponse{Code: "user_not_found", Message: "user not found"}, nil
@@ -274,6 +274,18 @@ func userResponse(user identity.User) api.User {
 func identityForbidden(err error) bool {
 	return errors.Is(err, identity.ErrForbidden) || errors.Is(err, identity.ErrRecentAuthenticationRequired) ||
 		errors.Is(err, identity.ErrPasswordChangeRequired)
+}
+
+// identityForbiddenError 保留权限不足、近期认证和临时密码限制三种不同的失败原因。
+func identityForbiddenError(err error, deniedCode, deniedMessage string) api.Error {
+	switch {
+	case errors.Is(err, identity.ErrRecentAuthenticationRequired):
+		return api.Error{Code: "recent_authentication_required", Message: "recent authentication required"}
+	case errors.Is(err, identity.ErrPasswordChangeRequired):
+		return api.Error{Code: "password_change_required", Message: "password change required"}
+	default:
+		return api.Error{Code: deniedCode, Message: deniedMessage}
+	}
 }
 
 func requestSourceIP(ctx context.Context) string {

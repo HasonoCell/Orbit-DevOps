@@ -79,6 +79,41 @@ test("创建项目使用幂等键，并进入新项目", async ({ page }) => {
   expect(submittedKey).not.toBe("");
 });
 
+test("创建项目的标识已被占用时提示更换标识", async ({ page }) => {
+  await catalog(page);
+  await page.route("**/api/v1/projects", (route) => route.fulfill({ status: 409, json: { code: "slug_conflict", message: "project slug is already in use" } }));
+  await page.goto("/projects");
+  await page.getByRole("button", { name: "创建项目" }).first().click();
+  await page.getByLabel("项目名称").fill("Another Yuuki");
+  await page.getByLabel("项目标识").fill("yuuki");
+  await page.getByRole("dialog").getByRole("button", { name: "创建项目" }).click();
+  await expect(page.getByText("标识已被占用，请更换标识。")).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("创建应用的标识已被占用时提示更换标识", async ({ page }) => {
+  await catalog(page);
+  await page.route("**/api/v1/projects/p-1/applications", (route) => route.fulfill({ status: 409, json: { code: "slug_conflict", message: "application slug is already in use in this project" } }));
+  await page.goto("/projects/p-1");
+  await page.getByRole("button", { name: "创建应用" }).first().click();
+  await page.getByLabel("应用名称").fill("Another Payment Service");
+  await page.getByLabel("应用标识").fill("payment-service");
+  await page.getByRole("dialog").getByRole("button", { name: "创建应用" }).click();
+  await expect(page.getByText("标识已被占用，请更换标识。")).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("项目权限拒绝不会误导用户重新认证", async ({ page }) => {
+  await catalog(page);
+  await page.route("**/api/v1/projects/p-1/applications", (route) => route.fulfill({ status: 403, json: { code: "project_permission_denied", message: "current project role cannot create applications" } }));
+  await page.goto("/projects/p-1");
+  await page.getByRole("button", { name: "创建应用" }).first().click();
+  await page.getByLabel("应用名称").fill("Catalog");
+  await page.getByLabel("应用标识").fill("catalog");
+  await page.getByRole("dialog").getByRole("button", { name: "创建应用" }).click();
+  await expect(page.getByText("当前账号无权执行此操作，请联系管理员确认权限。")).toBeVisible();
+});
+
 test("项目 owner 可以创建应用，移动端可打开导航", async ({ page }) => {
   await catalog(page);
   await page.route("**/api/v1/projects/p-1/applications", (route) => route.fulfill({ json: { ...application, id: "a-2", name: "Catalog", slug: "catalog" } }));
@@ -230,6 +265,18 @@ test("首次设置本地密码遇到登录名冲突时提示更换名称", async
   await page.getByRole("button", { name: "确认设置" }).click();
   await expect(page.getByText("登录名已被占用，请更换登录名。")).toBeVisible();
   await expect(page).toHaveURL(/\/account\/password$/);
+});
+
+test("首次设置本地密码遇到近期认证过期时提示重新登录", async ({ page }) => {
+  await page.route("**/api/v1/users/me", (route) => route.fulfill({ json: { kind: "user", user, mustChangePassword: false } }));
+  await page.route("**/api/v1/users/me/password", (route) => route.fulfill({ status: 403, json: { code: "recent_authentication_required", message: "recent authentication required" } }));
+  await page.goto("/account/password");
+  await page.getByRole("button", { name: "首次设置本地密码" }).click();
+  await page.getByLabel("登录名").fill("alice-local");
+  await page.getByLabel("新密码", { exact: true }).fill("long-password-123");
+  await page.getByLabel("确认新密码").fill("long-password-123");
+  await page.getByRole("button", { name: "确认设置" }).click();
+  await expect(page.getByText("身份验证已过期，请重新登录后再试。")).toBeVisible();
 });
 
 test("已有本地密码账号提交旧密码和新密码", async ({ page }) => {

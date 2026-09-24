@@ -10,6 +10,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
 	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/pgerrors"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -18,6 +19,7 @@ import (
 var (
 	ErrIdempotencyConflict = idempotency.ErrConflict
 	ErrNotFound            = errors.New("project not found")
+	ErrSlugConflict        = errors.New("project slug already exists")
 )
 
 type Project struct {
@@ -115,6 +117,9 @@ func (m *Module) Create(ctx context.Context, command CreateCommand) (Project, er
 		createdProject.CreatedAt,
 	)
 	if err != nil {
+		if pgerrors.IsUniqueConstraint(err, "projects_slug_key") {
+			return Project{}, ErrSlugConflict
+		}
 		return Project{}, fmt.Errorf("insert project: %w", err)
 	}
 	if err := m.authorizer.CreateInitialOwner(

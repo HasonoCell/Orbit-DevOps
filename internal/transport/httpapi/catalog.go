@@ -43,6 +43,8 @@ func (s *Server) CreateApplication(
 				Code:    "idempotency_conflict",
 				Message: "idempotency key was already used with a different request",
 			}, nil
+		case errors.Is(err, catalog.ErrApplicationSlugConflict):
+			return api.CreateApplication409JSONResponse{Code: "slug_conflict", Message: "application slug is already in use in this project"}, nil
 		default:
 			return nil, err
 		}

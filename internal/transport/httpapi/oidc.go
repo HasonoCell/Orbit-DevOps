@@ -44,7 +44,7 @@ func (s *Server) StartExternalIdentityBinding(ctx context.Context, request api.S
 	})
 	if err != nil {
 		if identityForbidden(err) {
-			return api.StartExternalIdentityBinding403JSONResponse{Code: "recent_authentication_required", Message: "recent authentication required"}, nil
+			return api.StartExternalIdentityBinding403JSONResponse(identityForbiddenError(err, "permission_denied", "identity binding is forbidden")), nil
 		}
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (s *Server) UnbindExternalIdentity(ctx context.Context, request api.UnbindE
 	err := s.identities.UnbindExternalIdentity(httpRequestContext(ctx), requestCaller(ctx), request.IdentityId)
 	if err != nil {
 		if identityForbidden(err) {
-			return api.UnbindExternalIdentity403JSONResponse{Code: "recent_authentication_required", Message: "recent authentication required"}, nil
+			return api.UnbindExternalIdentity403JSONResponse(identityForbiddenError(err, "permission_denied", "identity unbinding is forbidden")), nil
 		}
 		if errors.Is(err, identity.ErrUserNotFound) {
 			return api.UnbindExternalIdentity404JSONResponse{Code: "external_identity_not_found", Message: "external identity not found"}, nil
@@ -148,7 +148,7 @@ func (s *Server) ListAdmissions(ctx context.Context, request api.ListAdmissionsR
 			return api.ListAdmissions400JSONResponse{Code: "invalid_cursor", Message: "admission cursor is invalid"}, nil
 		}
 		if identityForbidden(err) {
-			return api.ListAdmissions403JSONResponse{Code: "platform_permission_denied", Message: "platform administrator required"}, nil
+			return api.ListAdmissions403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		}
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func (s *Server) ApproveAdmission(ctx context.Context, request api.ApproveAdmiss
 	user, err := s.identities.ApproveAdmission(httpRequestContext(ctx), requestCaller(ctx), request.IdentityId)
 	if err != nil {
 		if identityForbidden(err) {
-			return api.ApproveAdmission403JSONResponse{Code: "platform_permission_denied", Message: "recent platform administrator authentication required"}, nil
+			return api.ApproveAdmission403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		}
 		if errors.Is(err, identity.ErrUserNotFound) {
 			return api.ApproveAdmission404JSONResponse{Code: "admission_not_found", Message: "admission not found"}, nil
@@ -190,7 +190,7 @@ func (s *Server) ReopenAdmission(ctx context.Context, request api.ReopenAdmissio
 	item, err := s.identities.ReopenAdmission(httpRequestContext(ctx), requestCaller(ctx), request.IdentityId)
 	if err != nil {
 		if identityForbidden(err) {
-			return api.ReopenAdmission403JSONResponse{Code: "platform_permission_denied", Message: "recent platform administrator authentication required"}, nil
+			return api.ReopenAdmission403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		}
 		if errors.Is(err, identity.ErrUserNotFound) {
 			return api.ReopenAdmission404JSONResponse{Code: "admission_not_found", Message: "admission not found"}, nil
@@ -208,7 +208,7 @@ func rejectAdmissionError(err error) (api.RejectAdmissionResponseObject, bool) {
 		return nil, false
 	}
 	if identityForbidden(err) {
-		return api.RejectAdmission403JSONResponse{Code: "platform_permission_denied", Message: "recent platform administrator authentication required"}, true
+		return api.RejectAdmission403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), true
 	}
 	if errors.Is(err, identity.ErrUserNotFound) {
 		return api.RejectAdmission404JSONResponse{Code: "admission_not_found", Message: "admission not found"}, true

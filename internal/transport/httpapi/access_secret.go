@@ -21,7 +21,7 @@ func (s *Server) ListAccessSecretBindings(ctx context.Context, request api.ListA
 	bindings, err := s.access.ListSecretBindings(httpRequestContext(ctx), requestCaller(ctx), accessPage(request.Params.Limit, request.Params.Offset))
 	if err != nil {
 		if errors.Is(err, identity.ErrForbidden) || errors.Is(err, identity.ErrRecentAuthenticationRequired) {
-			return api.ListAccessSecretBindings403JSONResponse{Code: "platform_permission_denied", Message: "platform administrator authorization required"}, nil
+			return api.ListAccessSecretBindings403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator authorization required")), nil
 		}
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func (s *Server) RegisterAccessSecretBinding(ctx context.Context, request api.Re
 		case errors.Is(err, access.ErrInvalidSecret), errors.Is(err, access.ErrBindingNotFound):
 			return api.RegisterAccessSecretBinding400JSONResponse{Code: "invalid_tls_secret_binding", Message: "TLS Secret cannot be registered"}, nil
 		case errors.Is(err, identity.ErrForbidden), errors.Is(err, identity.ErrRecentAuthenticationRequired):
-			return api.RegisterAccessSecretBinding403JSONResponse{Code: "platform_permission_denied", Message: "recent platform administrator authentication required"}, nil
+			return api.RegisterAccessSecretBinding403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		case errors.Is(err, access.ErrConflict), errors.Is(err, idempotency.ErrConflict):
 			return api.RegisterAccessSecretBinding409JSONResponse{Code: "tls_secret_binding_conflict", Message: "TLS Secret binding or idempotency key conflicts"}, nil
 		default:
@@ -57,7 +57,7 @@ func (s *Server) RevokeAccessSecretBinding(ctx context.Context, request api.Revo
 	if err != nil {
 		switch {
 		case errors.Is(err, identity.ErrForbidden), errors.Is(err, identity.ErrRecentAuthenticationRequired):
-			return api.RevokeAccessSecretBinding403JSONResponse{Code: "platform_permission_denied", Message: "recent platform administrator authentication required"}, nil
+			return api.RevokeAccessSecretBinding403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
 		case errors.Is(err, access.ErrBindingNotFound):
 			return api.RevokeAccessSecretBinding404JSONResponse{Code: "tls_secret_binding_not_found", Message: "TLS Secret binding not found"}, nil
 		case errors.Is(err, idempotency.ErrConflict):

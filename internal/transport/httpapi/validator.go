@@ -73,7 +73,9 @@ func StrictHandlerOptions() api.StrictGinServerOptions {
 				write(c, http.StatusUnauthorized, "authentication_required", "authentication required")
 			case errors.Is(err, identity.ErrPasswordChangeRequired):
 				write(c, http.StatusForbidden, "password_change_required", "password change required")
-			case errors.Is(err, identity.ErrForbidden), errors.Is(err, identity.ErrRecentAuthenticationRequired), errors.Is(err, projectauth.ErrForbidden):
+			case errors.Is(err, identity.ErrRecentAuthenticationRequired):
+				write(c, http.StatusForbidden, "recent_authentication_required", "recent authentication required")
+			case errors.Is(err, identity.ErrForbidden), errors.Is(err, projectauth.ErrForbidden):
 				write(c, http.StatusForbidden, "permission_denied", "permission denied")
 			case errors.Is(err, identity.ErrUnavailable), errors.Is(err, context.DeadlineExceeded):
 				write(c, http.StatusServiceUnavailable, "dependency_unavailable", "required dependency unavailable")

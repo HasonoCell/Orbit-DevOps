@@ -11,6 +11,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/access"
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/pgerrors"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -23,6 +24,7 @@ var (
 	ErrInvalidStage             = errors.New("invalid deployment target stage")
 	ErrTargetStageConflict      = errors.New("deployment target stage already exists")
 	ErrProjectNotFound          = errors.New("project not found")
+	ErrApplicationSlugConflict  = errors.New("application slug already exists in project")
 )
 
 const (
@@ -186,6 +188,9 @@ func (m *Module) CreateApplication(
 		created.CreatedBy,
 		created.CreatedAt,
 	); err != nil {
+		if pgerrors.IsUniqueConstraint(err, "applications_project_id_slug_key") {
+			return Application{}, ErrApplicationSlugConflict
+		}
 		return Application{}, fmt.Errorf("insert application: %w", err)
 	}
 
