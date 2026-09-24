@@ -14,6 +14,26 @@ registry_service="${registry_name}.${build_namespace}.svc.cluster.local:5000"
 git_image="alpine/git:v2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26"
 buildkit_image="moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef"
 nginx_image="nginx:mainline-alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3"
+image_mirror_prefix="${ORBIT_DEVOPS_KIND_IMAGE_MIRROR_PREFIX:-}"
+
+# 镜像源只改变下载路径；版本和 digest 仍由上面的固定引用约束。
+docker_image_source() {
+  local image="$1"
+  if [ -z "${image_mirror_prefix}" ]; then
+    printf '%s' "${image}"
+    return
+  fi
+  printf '%s/%s' "${image_mirror_prefix%/}" "${image}"
+}
+
+node_pull_image="$(docker_image_source "${node_image}")"
+registry_pull_image="$(docker_image_source "library/${registry_image}")"
+if [ -z "${image_mirror_prefix}" ]; then
+  registry_pull_image="${registry_image}"
+fi
+git_pull_image="$(docker_image_source "${git_image}")"
+buildkit_pull_image="$(docker_image_source "${buildkit_image}")"
+nginx_pull_image="$(docker_image_source "${nginx_image}")"
 
 for command_name in docker kind kubectl rg; do
   if ! command -v "${command_name}" >/dev/null 2>&1; then
@@ -25,7 +45,7 @@ done
 if ! kind get clusters | rg --fixed-strings --line-regexp --quiet "${cluster_name}"; then
   kind create cluster \
     --name "${cluster_name}" \
-    --image "${node_image}" \
+    --image "${node_pull_image}" \
     --wait 120s
 fi
 
@@ -36,10 +56,10 @@ if ! docker inspect "${registry_name}" >/dev/null 2>&1; then
     --name "${registry_name}" \
     --network kind \
     -p "127.0.0.1:${registry_port}:5000" \
-    "${registry_image}" >/dev/null
+    "${registry_pull_image}" >/dev/null
 fi
-if [ "$(docker inspect "${registry_name}" --format '{{.Config.Image}}')" != "${registry_image}" ]; then
-  echo "本地 Registry ${registry_name} 没有使用固定镜像 ${registry_image}" >&2
+if [ "$(docker inspect "${registry_name}" --format '{{.Config.Image}}')" != "${registry_pull_image}" ]; then
+  echo "本地 Registry ${registry_name} 没有使用固定镜像 ${registry_pull_image}" >&2
   exit 1
 fi
 if [ "$(docker inspect "${registry_name}" --format '{{.State.Running}}')" != "true" ]; then
@@ -52,8 +72,8 @@ if [ -z "${registry_ip}" ]; then
 fi
 
 # 由宿主 Docker 拉取并只导入本机架构，避免 Kind 节点重复访问公共 Registry。
-docker pull "${git_image}" >/dev/null
-docker pull "${buildkit_image}" >/dev/null
+docker pull "${git_pull_image}" >/dev/null
+docker pull "${buildkit_pull_image}" >/dev/null
 # 固定基础镜像预置到任务 Registry，BuildKit 通过服务端 Mirror 配置读取，避免验收依赖 Docker Hub 实时可用性。
 kind_node="$(kind get nodes --name "${cluster_name}" | head -n 1)"
 case "$(docker exec "${kind_node}" uname -m)" in
@@ -61,11 +81,11 @@ case "$(docker exec "${kind_node}" uname -m)" in
   x86_64) kind_architecture="amd64" ;;
   *) echo "无法识别 Kind 节点架构" >&2; exit 1 ;;
 esac
-docker pull --platform "linux/${kind_architecture}" "${nginx_image}" >/dev/null
-docker tag "${nginx_image}" "127.0.0.1:${registry_port}/library/nginx:mainline-alpine"
+docker pull --platform "linux/${kind_architecture}" "${nginx_pull_image}" >/dev/null
+docker tag "${nginx_pull_image}" "127.0.0.1:${registry_port}/library/nginx:mainline-alpine"
 docker push "127.0.0.1:${registry_port}/library/nginx:mainline-alpine" >/dev/null
-docker tag "${git_image}" orbit-devops-local/alpine-git:s4
-docker tag "${buildkit_image}" orbit-devops-local/buildkit:s4
+docker tag "${git_pull_image}" orbit-devops-local/alpine-git:s4
+docker tag "${buildkit_pull_image}" orbit-devops-local/buildkit:s4
 build_image_directory="$(mktemp -d)"
 trap 'rm -rf "${build_image_directory}"' EXIT
 docker save -o "${build_image_directory}/build-images.tar" \
