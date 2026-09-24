@@ -254,6 +254,11 @@ func newTestEnvironmentWithDependencies(
 	t *testing.T,
 	dependencies app.Dependencies,
 ) *testEnvironment {
+	return newTestEnvironmentWithConfig(t, dependencies, nil)
+}
+
+func newTestEnvironmentWithConfig(t *testing.T, dependencies app.Dependencies,
+	configure func(*app.Config)) *testEnvironment {
 	t.Helper()
 
 	ctx := context.Background()
@@ -305,7 +310,11 @@ func newTestEnvironmentWithDependencies(
 	if err != nil {
 		t.Fatal("resolve integration administrator")
 	}
-	runtime, err := app.NewWithDependencies(ctx, integrationAppConfig(databaseURL), dependencies)
+	config := integrationAppConfig(databaseURL)
+	if configure != nil {
+		configure(&config)
+	}
+	runtime, err := app.NewWithDependencies(ctx, config, dependencies)
 	if err != nil {
 		t.Fatalf("start Orbit-DevOps: %v", err)
 	}
