@@ -21,9 +21,13 @@ export async function startOIDCLogin(providerId: string): Promise<string> {
   return requireData(result, "开始 OIDC 登录").authorizationUrl;
 }
 
-export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+export type PasswordCommand =
+  | { currentPassword: string; newPassword: string }
+  | { loginName: string; newPassword: string };
+
+export async function changePassword(command: PasswordCommand): Promise<void> {
   const result = await client.PUT("/api/v1/users/me/password", {
-    body: { currentPassword, newPassword },
+    body: command,
   });
   requireSuccess(result, "修改密码");
 }

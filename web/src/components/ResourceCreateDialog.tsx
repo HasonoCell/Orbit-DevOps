@@ -9,8 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const resourceSchema = z.object({
-  name: z.string().trim().min(1, "请输入名称").max(120, "名称不能超过 120 个字符"),
-  slug: z.string().trim().regex(/^[a-z][a-z0-9-]*$/, "标识需以小写字母开头，只能包含小写字母、数字和连字符"),
+  name: z.string().trim().min(1, "请输入名称").max(100, "名称不能超过 100 个字符"),
+  slug: z.string().trim().max(63, "标识不能超过 63 个字符").regex(/^[a-z][a-z0-9-]*$/, "标识需以小写字母开头，只能包含小写字母、数字和连字符"),
 });
 export type ResourceValues = z.infer<typeof resourceSchema>;
 
