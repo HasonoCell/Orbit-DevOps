@@ -88,7 +88,6 @@ export function LoginPage() {
         </div>}
       </div>
     </main>
-    <footer className="border-t border-[#d8dee4] bg-[#f6f8fa] px-6 py-5 text-center text-xs text-[#57606a]">Orbit DevOps · 仅供授权用户使用</footer>
   </div>;
 }
 
