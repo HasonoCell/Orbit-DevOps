@@ -54,6 +54,11 @@ type ControllerObserver interface {
 	ObserveHost(context.Context, Snapshot, HostSpec, []RouteSpec) (ControllerObservation, error)
 }
 
+// DNSResolver 是入口状态的外部 DNS 边界，测试可注入受控解析结果。
+type DNSResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
+
 type syncStatusRow struct {
 	DesiredRevision int64   `db:"desired_revision"`
 	AppliedRevision int64   `db:"applied_revision"`
@@ -109,11 +114,15 @@ func (m *Module) GetHostStatus(ctx context.Context, projectID, hostID uuid.UUID,
 		return result, nil
 	}
 	result.Controller = observed
-	result.DNS = verifyDNS(ctx, host.Hostname, observed.Addresses)
+	resolver := m.config.DNSResolver
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	result.DNS = verifyDNS(ctx, resolver, host.Hostname, observed.Addresses)
 	return result, nil
 }
 
-func verifyDNS(ctx context.Context, hostname string, gatewayAddresses []string) DNSObservation {
+func verifyDNS(ctx context.Context, resolver DNSResolver, hostname string, gatewayAddresses []string) DNSObservation {
 	result := DNSObservation{State: "unavailable", Answers: []string{}, ObservedAt: time.Now().UTC()}
 	if len(gatewayAddresses) == 0 {
 		result.ErrorCode = "gateway_address_unavailable"
@@ -121,7 +130,7 @@ func verifyDNS(ctx context.Context, hostname string, gatewayAddresses []string) 
 	}
 	query, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	hostIPs, err := net.DefaultResolver.LookupIPAddr(query, hostname)
+	hostIPs, err := resolver.LookupIPAddr(query, hostname)
 	if err != nil {
 		result.ErrorCode = "dns_lookup_failed"
 		return result
@@ -135,7 +144,7 @@ func verifyDNS(ctx context.Context, hostname string, gatewayAddresses []string) 
 			targets = append(targets, parsed.String())
 			continue
 		}
-		addresses, lookupErr := net.DefaultResolver.LookupIPAddr(query, address)
+		addresses, lookupErr := resolver.LookupIPAddr(query, address)
 		if lookupErr != nil {
 			result.ErrorCode = "gateway_address_lookup_failed"
 			return result

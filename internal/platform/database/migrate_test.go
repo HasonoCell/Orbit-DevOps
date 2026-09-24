@@ -369,6 +369,45 @@ func TestDispatchTerminologyMigrationRenamesSchema(t *testing.T) {
 	}
 }
 
+func TestAccessGatewayMigrationCanUpgradeAndRollback(t *testing.T) {
+	ctx := context.Background()
+	container, err := postgres.Run(ctx, "postgres:17-alpine",
+		postgres.WithDatabase("orbitdevops"), postgres.WithUsername("orbitdevops"),
+		postgres.WithPassword("orbitdevops"), postgres.BasicWaitStrategies())
+	if err != nil {
+		t.Fatalf("start PostgreSQL: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := container.Terminate(context.Background()); err != nil {
+			t.Errorf("terminate PostgreSQL: %v", err)
+		}
+	})
+	databaseURL, err := container.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("get PostgreSQL connection string: %v", err)
+	}
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open PostgreSQL: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	// 从上一版本迁入、回退并再次升级，确保入口 Schema 不会把数据库留在 dirty 状态。
+	migrateDatabaseToVersion(t, databaseURL, 24)
+	for _, version := range []uint{25, 24, 25} {
+		migrateDatabaseToVersion(t, databaseURL, version)
+		for _, table := range []string{"access_secret_bindings", "access_hosts", "access_routes", "project_gateway_sync"} {
+			var exists bool
+			if err := database.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil {
+				t.Fatalf("inspect table %s at migration %d: %v", table, version, err)
+			}
+			if exists != (version == 25) {
+				t.Fatalf("table %s existence at migration %d = %t", table, version, exists)
+			}
+		}
+	}
+}
+
 func migrateDatabaseToVersion(t *testing.T, databaseURL string, version uint) {
 	t.Helper()
 	source, err := iofs.New(migrations, "migrations")

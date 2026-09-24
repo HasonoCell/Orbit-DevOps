@@ -33,6 +33,7 @@ type Config struct {
 	Namespace        string
 	GatewayClassName string
 	IssuerPolicies   map[string]IssuerPolicy
+	DNSResolver      DNSResolver
 }
 
 type IssuerPolicy struct{ Kind, Name string }

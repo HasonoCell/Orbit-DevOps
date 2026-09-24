@@ -62,6 +62,7 @@ type Dependencies struct {
 	RecoveryPublisher  releaseworker.RecoveryPublisher
 	SecretVerifier     access.SecretVerifier
 	AccessObserver     access.ControllerObserver
+	AccessDNSResolver  access.DNSResolver
 	Logger             *slog.Logger
 	Metrics            *observability.Metrics
 	Tracer             trace.Tracer
@@ -121,7 +122,8 @@ func NewWithDependencies(
 	authorizer := projectauth.New(db, identityModule)
 	accessModule, err := access.New(db, authorizer, access.Config{ClusterRef: config.LocalClusterRef,
 		Namespace: config.LocalNamespace, GatewayClassName: config.GatewayClassName,
-		IssuerPolicies: config.AccessIssuerPolicies}, identityModule, dependencies.SecretVerifier)
+		IssuerPolicies: config.AccessIssuerPolicies, DNSResolver: dependencies.AccessDNSResolver},
+		identityModule, dependencies.SecretVerifier)
 	if err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("initialize access module: %w", err)
