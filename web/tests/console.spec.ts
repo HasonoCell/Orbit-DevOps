@@ -105,3 +105,118 @@ test("业务请求 401 会重新核验会话并返回登录", async ({ page }) =
   await expect(page).toHaveURL(/\/login\?next=/);
   await expect(page.getByText("登录工作区")).toBeVisible();
 });
+
+test("会话失效后换账号不会展示旧账号的项目缓存", async ({ page }) => {
+  const bob = { ...user, id: "u-2", displayName: "Bob" };
+  let identity: "alice" | "expired" | "bob" = "alice";
+  let bobProjectsRequested = 0;
+  let releaseBobProjects = () => {};
+  const bobProjectsGate = new Promise<void>((resolve) => { releaseBobProjects = resolve; });
+  await page.route("**/api/v1/users/me", (route) => route.fulfill(identity === "expired" ? { status: 401, json: { message: "会话已失效" } } : { json: { kind: "user", user: identity === "alice" ? user : bob, mustChangePassword: false } }));
+  await page.route("**/api/v1/projects?*", async (route) => {
+    if (identity === "bob") {
+      bobProjectsRequested++;
+      await bobProjectsGate;
+      return route.fulfill({ json: { items: [{ ...project, id: "p-2", name: "Bob 的项目" }] } });
+    }
+    return route.fulfill({ json: { items: [project] } });
+  });
+  await page.route("**/api/v1/projects/p-1", (route) => {
+    if (identity === "alice") {
+      identity = "expired";
+      return route.fulfill({ status: 401, json: { message: "会话已失效" } });
+    }
+    return route.fulfill({ status: 404, json: { message: "该项目不可见" } });
+  });
+  await page.route("**/api/v1/auth/providers", (route) => route.fulfill({ json: [{ id: "local", type: "local", displayName: "本地账号", available: true }] }));
+  await page.route("**/api/v1/auth/login", (route) => { identity = "bob"; return route.fulfill({ json: { kind: "user", user: bob, mustChangePassword: false } }); });
+  await page.route("**/api/v1/projects/p-1/permissions", (route) => route.fulfill({ status: 404, json: { message: "该项目不可见" } }));
+  await page.route("**/api/v1/projects/p-1/applications?*", (route) => route.fulfill({ status: 404, json: { message: "该项目不可见" } }));
+  await page.goto("/projects");
+  await expect(page.getByRole("link", { name: /Yuuki/ })).toBeVisible();
+  await page.getByRole("link", { name: /Yuuki/ }).click();
+  await expect(page).toHaveURL(/\/login\?next=/);
+  await page.getByLabel("登录名").fill("bob");
+  await page.getByLabel("密码", { exact: true }).fill("secret");
+  await page.getByRole("button", { name: "使用本地账号登录" }).click();
+  await page.getByRole("link", { name: /Orbit DevOps/ }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect.poll(() => bobProjectsRequested).toBe(1);
+  const oldProjectVisible = await page.getByRole("link", { name: /Yuuki/ }).isVisible();
+  releaseBobProjects();
+  expect(oldProjectVisible).toBe(false);
+  await expect(page.getByRole("link", { name: /Bob 的项目/ })).toBeVisible();
+});
+
+test("OIDC 登录后返回原应用深链", async ({ page }) => {
+  let authenticated = false;
+  await page.route("**/api/v1/users/me", (route) => route.fulfill(authenticated ? { json: { kind: "user", user, mustChangePassword: false } } : { status: 401, json: { message: "未登录" } }));
+  await page.route("**/api/v1/auth/providers", (route) => route.fulfill({ json: [{ id: "oidc", type: "oidc", displayName: "企业登录", available: true }] }));
+  await page.route("**/api/v1/auth/oidc/oidc/start", (route) => { authenticated = true; return route.fulfill({ json: { authorizationUrl: new URL("/auth/callback", route.request().url()).href } }); });
+  await page.route("**/api/v1/projects/p-1", (route) => route.fulfill({ json: project }));
+  await page.route("**/api/v1/applications/a-1", (route) => route.fulfill({ json: application }));
+  await page.route("**/api/v1/applications/a-1/deployment-targets?*", (route) => route.fulfill({ json: { items: [] } }));
+  await page.goto("/projects/p-1/applications/a-1");
+  await expect(page).toHaveURL(/\/login\?next=/);
+  await page.getByRole("button", { name: "企业登录" }).click();
+  await expect(page).toHaveURL(/\/projects\/p-1\/applications\/a-1$/);
+});
+
+test("创建表单按 OpenAPI 限制名称与标识长度", async ({ page }) => {
+  await catalog(page);
+  let submissions = 0;
+  await page.route("**/api/v1/projects", (route) => { submissions++; return route.fulfill({ status: 400, json: { message: "长度不合法" } }); });
+  await page.goto("/projects");
+  await page.getByRole("button", { name: "创建项目" }).first().click();
+  await page.getByLabel("项目名称").fill("A".repeat(101));
+  await page.getByLabel("项目标识").fill("a".repeat(64));
+  await page.getByRole("dialog").getByRole("button", { name: "创建项目" }).click();
+  await expect(page.getByText("名称不能超过 100 个字符")).toBeVisible();
+  await expect(page.getByText("标识不能超过 63 个字符")).toBeVisible();
+  expect(submissions).toBe(0);
+});
+
+test("OIDC-only 用户可以首次设置本地登录密码", async ({ page }) => {
+  let authenticated = true;
+  await page.route("**/api/v1/users/me", (route) => route.fulfill(authenticated ? { json: { kind: "user", user, mustChangePassword: false } } : { status: 401, json: { message: "需要重新登录" } }));
+  await page.route("**/api/v1/auth/providers", (route) => route.fulfill({ json: [{ id: "oidc", type: "oidc", displayName: "企业登录", available: true }] }));
+  let body: Record<string, unknown> | undefined;
+  await page.route("**/api/v1/users/me/password", (route) => { body = route.request().postDataJSON(); authenticated = false; return route.fulfill({ status: 204 }); });
+  await page.goto("/account");
+  await page.getByRole("link", { name: /密码/ }).click();
+  await page.getByRole("button", { name: "首次设置本地密码" }).click();
+  await page.getByLabel("登录名").fill("alice-local");
+  await page.getByLabel("新密码", { exact: true }).fill("long-password-123");
+  await page.getByLabel("确认新密码").fill("long-password-123");
+  await page.getByRole("button", { name: "确认设置" }).click();
+  await expect.poll(() => body).toEqual({ loginName: "alice-local", newPassword: "long-password-123" });
+});
+
+test("已有本地密码账号提交旧密码和新密码", async ({ page }) => {
+  let authenticated = true;
+  await page.route("**/api/v1/users/me", (route) => route.fulfill(authenticated ? { json: { kind: "user", user, mustChangePassword: false } } : { status: 401, json: { message: "需要重新登录" } }));
+  await page.route("**/api/v1/auth/providers", (route) => route.fulfill({ json: [{ id: "local", type: "local", displayName: "本地账号", available: true }] }));
+  let body: Record<string, unknown> | undefined;
+  await page.route("**/api/v1/users/me/password", (route) => { body = route.request().postDataJSON(); authenticated = false; return route.fulfill({ status: 204 }); });
+  await page.goto("/account/password");
+  await page.getByLabel("当前密码").fill("old-password");
+  await page.getByLabel("新密码", { exact: true }).fill("new-password-123");
+  await page.getByLabel("确认新密码").fill("new-password-123");
+  await page.getByRole("button", { name: "确认修改" }).click();
+  await expect.poll(() => body).toEqual({ currentPassword: "old-password", newPassword: "new-password-123" });
+});
+
+test("项目列表游标可以翻页并返回第一页", async ({ page }) => {
+  await page.route("**/api/v1/users/me", (route) => route.fulfill({ json: { kind: "user", user, mustChangePassword: false } }));
+  await page.route("**/api/v1/projects?*", (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    return route.fulfill({ json: cursor === "page-2" ? { items: [{ ...project, id: "p-2", name: "第二页项目" }] } : { items: [project], nextCursor: "page-2" } });
+  });
+  await page.goto("/projects");
+  await expect(page.getByRole("link", { name: /Yuuki/ })).toBeVisible();
+  await page.getByRole("button", { name: "下一页" }).click();
+  await expect(page).toHaveURL(/cursor=page-2/);
+  await expect(page.getByRole("link", { name: /第二页项目/ })).toBeVisible();
+  await page.getByRole("button", { name: "返回第一页" }).last().click();
+  await expect(page.getByRole("link", { name: /Yuuki/ })).toBeVisible();
+});
