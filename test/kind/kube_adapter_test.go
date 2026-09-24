@@ -246,7 +246,7 @@ func newKindAdapter(t *testing.T) (*kube.Adapter, kubernetes.Interface) {
 	if os.Getenv("ORBIT_DEVOPS_KIND_E2E") != "1" {
 		t.Skip("set ORBIT_DEVOPS_KIND_E2E=1 to run task-local Kind acceptance")
 	}
-	kubeconfigPath := clientcmd.RecommendedHomeFile
+	kubeconfigPath := kindKubeconfigPath()
 	adapter, err := kube.NewVerifiedLocalAdapter(
 		context.Background(),
 		kubeconfigPath,
@@ -314,4 +314,9 @@ func environmentOrDefault(name string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// kindKubeconfigPath 优先使用本轮测试的隔离配置，避免读取用户当前的集群上下文。
+func kindKubeconfigPath() string {
+	return environmentOrDefault("ORBIT_DEVOPS_KUBECONFIG", clientcmd.RecommendedHomeFile)
 }

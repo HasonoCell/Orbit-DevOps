@@ -28,7 +28,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -71,7 +70,7 @@ func TestKindBuildExecutor(t *testing.T) {
 		t.Fatal("ORBIT_DEVOPS_KIND_BUILD_REGISTRY is required")
 	}
 	buildNamespace := environmentOrDefault("ORBIT_DEVOPS_BUILD_NAMESPACE", "orbit-devops-s4-build")
-	adapter, err := buildkube.NewVerifiedLocalAdapter(context.Background(), clientcmd.RecommendedHomeFile, kindContext, buildkube.Config{
+	adapter, err := buildkube.NewVerifiedLocalAdapter(context.Background(), kindKubeconfigPath(), kindContext, buildkube.Config{
 		Namespace: buildNamespace, FieldManager: "orbit-devops-build-worker",
 		GitImage: kindBuildGitImage, BuildkitImage: kindBuildkitImage, RegistryInsecure: true,
 		ActiveDeadline: 5 * time.Minute, TTL: time.Hour, CPU: "1", Memory: "1Gi", PollInterval: 250 * time.Millisecond,
@@ -351,7 +350,7 @@ func eventuallyDeliveryPhase(t *testing.T, db *sqlx.DB, runID uuid.UUID, phase s
 
 func newKindBuildAdapter(t *testing.T) *buildkube.Adapter {
 	t.Helper()
-	adapter, err := buildkube.NewVerifiedLocalAdapter(context.Background(), clientcmd.RecommendedHomeFile, kindContext, buildkube.Config{
+	adapter, err := buildkube.NewVerifiedLocalAdapter(context.Background(), kindKubeconfigPath(), kindContext, buildkube.Config{
 		Namespace:    environmentOrDefault("ORBIT_DEVOPS_BUILD_NAMESPACE", "orbit-devops-s4-build"),
 		FieldManager: "orbit-devops-build-worker", GitImage: kindBuildGitImage, BuildkitImage: kindBuildkitImage,
 		RegistryInsecure: true, DockerHubMirror: os.Getenv("ORBIT_DEVOPS_KIND_BUILD_REGISTRY"),
