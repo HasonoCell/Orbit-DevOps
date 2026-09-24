@@ -98,7 +98,7 @@ func TestReleaseHistoryCursorAndDetailRemainExplainable(t *testing.T) {
 		t,
 		"/api/v1/deployment-targets/"+target.ID,
 		"update-target-after-release",
-		`{"stage":"development","replicas":3,"containerPort":9090}`,
+		`{"replicas":3,"containerPort":9090}`,
 	)
 	update.Body.Close()
 	if update.StatusCode != http.StatusOK {
@@ -145,7 +145,7 @@ func TestRollbackCopiesSourceSnapshotAndIsIdempotent(t *testing.T) {
 		t,
 		"/api/v1/deployment-targets/"+target.ID,
 		"update-before-rollback",
-		`{"stage":"development","replicas":4,"containerPort":7070}`,
+		`{"replicas":4,"containerPort":7070}`,
 	)
 	update.Body.Close()
 	if update.StatusCode != http.StatusOK {

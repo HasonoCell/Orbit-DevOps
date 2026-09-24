@@ -101,6 +101,10 @@ func (s *Server) CreateDeploymentTarget(
 	)
 	if err != nil {
 		switch {
+		case errors.Is(err, catalog.ErrInvalidStage):
+			return api.CreateDeploymentTarget400JSONResponse{
+				Code: "invalid_deployment_target_stage", Message: "deployment target stage must be development or production",
+			}, nil
 		case errors.Is(err, catalog.ErrApplicationNotFound), errors.Is(err, projectauth.ErrNotMember):
 			return api.CreateDeploymentTarget404JSONResponse{
 				Code:    "application_not_found",
@@ -115,6 +119,10 @@ func (s *Server) CreateDeploymentTarget(
 			return api.CreateDeploymentTarget409JSONResponse{
 				Code:    "idempotency_conflict",
 				Message: "idempotency key was already used with a different request",
+			}, nil
+		case errors.Is(err, catalog.ErrTargetStageConflict):
+			return api.CreateDeploymentTarget409JSONResponse{
+				Code: "deployment_target_stage_conflict", Message: "application already has a deployment target for this stage",
 			}, nil
 		default:
 			return nil, err
@@ -155,7 +163,6 @@ func (s *Server) UpdateDeploymentTarget(
 		httpRequestContext(ctx),
 		catalog.UpdateDeploymentTargetCommand{
 			ID:             request.DeploymentTargetId,
-			Stage:          string(request.Body.Stage),
 			Replicas:       request.Body.Replicas,
 			ContainerPort:  request.Body.ContainerPort,
 			Caller:         requestCaller(ctx),

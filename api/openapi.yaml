@@ -1062,6 +1062,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeploymentTarget"
+        "400":
+          description: 部署阶段无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: 应用不存在
           content:
@@ -1075,7 +1081,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: 幂等键已经用于不同请求
+          description: 同一应用已存在该阶段的部署目标，或幂等键已经用于不同请求
           content:
             application/json:
               schema:
@@ -2568,6 +2574,7 @@ components:
           type: string
           enum:
             - development
+            - production
         replicas:
           type: integer
           minimum: 1
@@ -2580,14 +2587,9 @@ components:
       type: object
       additionalProperties: false
       required:
-        - stage
         - replicas
         - containerPort
       properties:
-        stage:
-          type: string
-          enum:
-            - development
         replicas:
           type: integer
           minimum: 1
@@ -2621,6 +2623,7 @@ components:
           type: string
           enum:
             - development
+            - production
         clusterRef:
           type: string
         namespace:
@@ -2969,6 +2972,7 @@ components:
           type: string
           enum:
             - development
+            - production
         clusterRef:
           type: string
         namespace:

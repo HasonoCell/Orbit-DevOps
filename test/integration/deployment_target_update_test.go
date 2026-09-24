@@ -24,7 +24,7 @@ func TestDeploymentTargetUpdateIsIdempotentAndDoesNotRewriteRelease(t *testing.T
 		t,
 		"/api/v1/deployment-targets/"+target.ID,
 		"target-update-first",
-		`{"stage":"development","replicas":1,"containerPort":9090}`,
+		`{"replicas":1,"containerPort":9090}`,
 	)
 	defer firstUpdate.Body.Close()
 	if firstUpdate.StatusCode != http.StatusOK {
@@ -39,7 +39,7 @@ func TestDeploymentTargetUpdateIsIdempotentAndDoesNotRewriteRelease(t *testing.T
 		t,
 		"/api/v1/deployment-targets/"+target.ID,
 		"target-update-second",
-		`{"stage":"development","replicas":3,"containerPort":7070}`,
+		`{"replicas":3,"containerPort":7070}`,
 	)
 	defer secondUpdate.Body.Close()
 	if secondUpdate.StatusCode != http.StatusOK {
@@ -51,7 +51,7 @@ func TestDeploymentTargetUpdateIsIdempotentAndDoesNotRewriteRelease(t *testing.T
 		t,
 		"/api/v1/deployment-targets/"+target.ID,
 		"target-update-first",
-		`{"stage":"development","replicas":1,"containerPort":9090}`,
+		`{"replicas":1,"containerPort":9090}`,
 	)
 	defer replay.Body.Close()
 	if replay.StatusCode != http.StatusOK {
@@ -83,7 +83,7 @@ func TestDeploymentTargetUpdateIsIdempotentAndDoesNotRewriteRelease(t *testing.T
 		t,
 		"/api/v1/deployment-targets/"+target.ID,
 		"target-update-first",
-		`{"stage":"development","replicas":4,"containerPort":6060}`,
+		`{"replicas":4,"containerPort":6060}`,
 	)
 	defer conflict.Body.Close()
 	if conflict.StatusCode != http.StatusConflict {

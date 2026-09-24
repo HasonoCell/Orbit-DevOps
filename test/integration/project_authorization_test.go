@@ -149,7 +149,7 @@ func TestProjectRolesProtectResourcesAndMembership(t *testing.T) {
 		http.MethodPut,
 		"/api/v1/deployment-targets/"+target.ID,
 		"viewer-update-target",
-		`{"stage":"development","replicas":2,"containerPort":8080}`,
+		`{"replicas":2,"containerPort":8080}`,
 	)
 	defer viewerTargetUpdate.Body.Close()
 	assertError(t, viewerTargetUpdate, http.StatusForbidden, "project_permission_denied")

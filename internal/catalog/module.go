@@ -13,16 +13,22 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 )
 
 var (
 	ErrApplicationNotFound      = errors.New("application not found")
 	ErrDeploymentTargetNotFound = errors.New("deployment target not found")
+	ErrInvalidStage             = errors.New("invalid deployment target stage")
+	ErrTargetStageConflict      = errors.New("deployment target stage already exists")
 	ErrProjectNotFound          = errors.New("project not found")
 )
 
-const DevelopmentStage = "development"
+const (
+	DevelopmentStage = "development"
+	ProductionStage  = "production"
+)
 
 type Config struct {
 	ClusterRef string
@@ -71,7 +77,6 @@ type CreateDeploymentTargetCommand struct {
 
 type UpdateDeploymentTargetCommand struct {
 	ID             uuid.UUID
-	Stage          string
 	Replicas       int
 	ContainerPort  int
 	Caller         identity.Caller
@@ -235,6 +240,9 @@ func (m *Module) CreateDeploymentTarget(
 	ctx context.Context,
 	command CreateDeploymentTargetCommand,
 ) (DeploymentTarget, error) {
+	if command.Stage != DevelopmentStage && command.Stage != ProductionStage {
+		return DeploymentTarget{}, ErrInvalidStage
+	}
 	requestHash, err := idempotency.Fingerprint(struct {
 		ApplicationID uuid.UUID `json:"applicationId"`
 		Stage         string    `json:"stage"`
@@ -334,6 +342,10 @@ func (m *Module) CreateDeploymentTarget(
 		created.CreatedAt,
 		created.UpdatedAt,
 	); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.ConstraintName == "deployment_targets_application_id_stage_key" {
+			return DeploymentTarget{}, ErrTargetStageConflict
+		}
 		return DeploymentTarget{}, fmt.Errorf("insert deployment target: %w", err)
 	}
 
@@ -403,12 +415,10 @@ func (m *Module) UpdateDeploymentTarget(
 ) (DeploymentTarget, error) {
 	requestHash, err := idempotency.Fingerprint(struct {
 		ID            uuid.UUID `json:"id"`
-		Stage         string    `json:"stage"`
 		Replicas      int       `json:"replicas"`
 		ContainerPort int       `json:"containerPort"`
 	}{
 		ID:            command.ID,
-		Stage:         command.Stage,
 		Replicas:      command.Replicas,
 		ContainerPort: command.ContainerPort,
 	})
@@ -487,16 +497,14 @@ func (m *Module) UpdateDeploymentTarget(
 	}
 
 	updated := current
-	updated.Stage = command.Stage
 	updated.Replicas = command.Replicas
 	updated.ContainerPort = command.ContainerPort
 	updated.UpdatedAt = updatedAt
 	if _, err := tx.ExecContext(
 		ctx,
 		`UPDATE deployment_targets
-		 SET stage = $1, replicas = $2, container_port = $3, updated_at = $4
-		 WHERE id = $5`,
-		updated.Stage,
+		 SET replicas = $1, container_port = $2, updated_at = $3
+		 WHERE id = $4`,
 		updated.Replicas,
 		updated.ContainerPort,
 		updated.UpdatedAt,

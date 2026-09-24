@@ -1465,13 +1465,11 @@ export interface components {
         };
         CreateDeploymentTargetRequest: {
             /** @enum {string} */
-            stage: "development";
+            stage: "development" | "production";
             replicas: number;
             containerPort: number;
         };
         UpdateDeploymentTargetRequest: {
-            /** @enum {string} */
-            stage: "development";
             replicas: number;
             containerPort: number;
         };
@@ -1481,7 +1479,7 @@ export interface components {
             /** Format: uuid */
             applicationId: string;
             /** @enum {string} */
-            stage: "development";
+            stage: "development" | "production";
             clusterRef: string;
             namespace: string;
             replicas: number;
@@ -1626,7 +1624,7 @@ export interface components {
             /** Format: uuid */
             applicationId: string;
             /** @enum {string} */
-            stage: "development";
+            stage: "development" | "production";
             clusterRef: string;
             namespace: string;
             replicas: number;
@@ -4463,6 +4461,15 @@ export interface operations {
                     "application/json": components["schemas"]["DeploymentTarget"];
                 };
             };
+            /** @description 部署阶段无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description 当前项目角色不能创建部署目标 */
             403: {
                 headers: {
@@ -4481,7 +4488,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description 幂等键已经用于不同请求 */
+            /** @description 同一应用已存在该阶段的部署目标，或幂等键已经用于不同请求 */
             409: {
                 headers: {
                     [name: string]: unknown;
