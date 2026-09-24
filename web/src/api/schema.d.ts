@@ -1302,18 +1302,27 @@ export interface components {
         ChangePasswordRequest: {
             /** Format: password */
             currentPassword?: string;
-            /** Format: password */
+            /**
+             * Format: password
+             * @description 按 Unicode 字符计数；UTF-8 最多 512 字节，且不能是常见弱口令或单字符重复。
+             */
             newPassword: string;
             loginName?: string;
         };
         CreateLocalUserRequest: {
             loginName: string;
             displayName: string;
-            /** Format: password */
+            /**
+             * Format: password
+             * @description 按 Unicode 字符计数；UTF-8 最多 512 字节，且不能是常见弱口令或单字符重复。
+             */
             temporaryPassword: string;
         };
         ResetLocalPasswordRequest: {
-            /** Format: password */
+            /**
+             * Format: password
+             * @description 按 Unicode 字符计数；UTF-8 最多 512 字节，且不能是常见弱口令或单字符重复。
+             */
             temporaryPassword: string;
             loginName?: string;
         };

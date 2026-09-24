@@ -91,6 +91,42 @@ test("创建项目的标识已被占用时提示更换标识", async ({ page }) 
   await expect(page.getByRole("dialog")).toBeVisible();
 });
 
+test("创建项目关闭后清理草稿、错误和旧命令键", async ({ page }) => {
+  await catalog(page);
+  const keys: string[] = [];
+  await page.route("**/api/v1/projects", (route) => {
+    keys.push(route.request().headers()["idempotency-key"] ?? "");
+    return route.fulfill({ status: 409, json: { code: "slug_conflict", message: "project slug is already in use" } });
+  });
+  await page.goto("/projects");
+  await page.getByRole("button", { name: "创建项目" }).first().click();
+  await page.getByLabel("项目名称").fill("Discarded");
+  await page.getByLabel("项目标识").fill("discarded");
+  await page.getByRole("dialog").getByRole("button", { name: "取消" }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "创建项目" }).first().click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByLabel("项目名称")).toHaveValue("");
+  await expect(page.getByLabel("项目标识")).toHaveValue("");
+
+  await page.getByLabel("项目名称").fill("Demo");
+  await page.getByLabel("项目标识").fill("demo");
+  await page.getByRole("dialog").getByRole("button", { name: "创建项目" }).click();
+  await expect(page.getByText("标识已被占用，请更换标识。")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "创建项目" }).first().click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByLabel("项目名称")).toHaveValue("");
+  await expect(page.getByText("标识已被占用，请更换标识。")).not.toBeVisible();
+  await page.getByLabel("项目名称").fill("Demo");
+  await page.getByLabel("项目标识").fill("demo");
+  await page.getByRole("dialog").getByRole("button", { name: "创建项目" }).click();
+  await expect.poll(() => keys.length).toBe(2);
+  expect(keys[0]).not.toBe("");
+  expect(keys[1]).not.toBe(keys[0]);
+});
+
 test("创建应用的标识已被占用时提示更换标识", async ({ page }) => {
   await catalog(page);
   await page.route("**/api/v1/projects/p-1/applications", (route) => route.fulfill({ status: 409, json: { code: "slug_conflict", message: "application slug is already in use in this project" } }));
@@ -101,6 +137,22 @@ test("创建应用的标识已被占用时提示更换标识", async ({ page }) 
   await page.getByRole("dialog").getByRole("button", { name: "创建应用" }).click();
   await expect(page.getByText("标识已被占用，请更换标识。")).toBeVisible();
   await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("创建应用按 Esc 关闭后不保留上次错误", async ({ page }) => {
+  await catalog(page);
+  await page.route("**/api/v1/projects/p-1/applications", (route) => route.fulfill({ status: 409, json: { code: "slug_conflict", message: "application slug is already in use in this project" } }));
+  await page.goto("/projects/p-1");
+  await page.getByRole("button", { name: "创建应用" }).first().click();
+  await page.getByLabel("应用名称").fill("Catalog");
+  await page.getByLabel("应用标识").fill("catalog");
+  await page.getByRole("dialog").getByRole("button", { name: "创建应用" }).click();
+  await expect(page.getByText("标识已被占用，请更换标识。")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "创建应用" }).first().click();
+  await expect(page.getByLabel("应用名称")).toHaveValue("");
+  await expect(page.getByText("标识已被占用，请更换标识。")).not.toBeVisible();
 });
 
 test("项目权限拒绝不会误导用户重新认证", async ({ page }) => {
@@ -291,6 +343,44 @@ test("已有本地密码账号提交旧密码和新密码", async ({ page }) => 
   await page.getByLabel("确认新密码").fill("new-password-123");
   await page.getByRole("button", { name: "确认修改" }).click();
   await expect.poll(() => body).toEqual({ currentPassword: "old-password", newPassword: "new-password-123" });
+});
+
+test("新密码表单按后端 Unicode 字符和弱口令规则校验", async ({ page }) => {
+  await page.route("**/api/v1/users/me", (route) => route.fulfill({ json: { kind: "user", user, mustChangePassword: false } }));
+  let submissions = 0;
+  await page.route("**/api/v1/users/me/password", (route) => {
+    submissions++;
+    return route.fulfill({ status: 400, json: { code: "invalid_password", message: "密码无效" } });
+  });
+  await page.goto("/account/password");
+  await page.getByLabel("当前密码").fill("old-password");
+  const newPassword = page.getByLabel("新密码", { exact: true });
+  const confirmPassword = page.getByLabel("确认新密码");
+  const submit = page.getByRole("button", { name: "确认修改" });
+
+  await newPassword.fill("Abcdef123456");
+  await confirmPassword.fill("Abcdef123456");
+  await submit.click();
+  await expect(page.getByText("新密码需为 15–128 个字符")).toBeVisible();
+  expect(submissions).toBe(0);
+
+  await newPassword.fill("a".repeat(128) + "b");
+  await confirmPassword.fill("a".repeat(128) + "b");
+  await submit.click();
+  await expect(page.getByText("新密码需为 15–128 个字符")).toBeVisible();
+  expect(submissions).toBe(0);
+
+  await newPassword.fill("passwordpassword");
+  await confirmPassword.fill("passwordpassword");
+  await submit.click();
+  await expect(page.getByText("请避免常见弱密码或重复同一字符")).toBeVisible();
+  expect(submissions).toBe(0);
+
+  const unicodePassword = "🔒".repeat(14) + "A";
+  await newPassword.fill(unicodePassword);
+  await confirmPassword.fill(unicodePassword);
+  await submit.click();
+  await expect.poll(() => submissions).toBe(1);
 });
 
 test("项目列表游标可以翻页并返回第一页", async ({ page }) => {

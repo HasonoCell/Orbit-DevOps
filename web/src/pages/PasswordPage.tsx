@@ -11,11 +11,26 @@ import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const weakPasswords = new Set([
+  "passwordpassword", "password123456789", "123456789012345", "1234567890123456",
+  "correct horse battery staple", "qwertyuiopasdfgh",
+]);
+
 const passwordSchema = z.object({
   mode: z.enum(["change", "establish"]),
   currentPassword: z.string().optional(),
   loginName: z.string().optional(),
-  newPassword: z.string().min(12, "新密码至少需要 12 个字符").max(512, "密码过长"),
+  newPassword: z.string().superRefine((password, context) => {
+    // 与后端按 Unicode 字符和 UTF-8 字节校验的边界保持一致；服务端仍是最终裁决。
+    const characters = Array.from(password);
+    if (characters.length < 15 || characters.length > 128) {
+      context.addIssue({ code: "custom", message: "新密码需为 15–128 个字符" });
+    } else if (new TextEncoder().encode(password).length > 512) {
+      context.addIssue({ code: "custom", message: "新密码的 UTF-8 长度不能超过 512 字节" });
+    } else if (weakPasswords.has(password.toLowerCase()) || characters.every((character) => character === characters[0])) {
+      context.addIssue({ code: "custom", message: "请避免常见弱密码或重复同一字符" });
+    }
+  }),
   confirmPassword: z.string().min(1, "请再次输入新密码"),
 }).superRefine((value, context) => {
   if (value.mode === "change" && !value.currentPassword) {
@@ -58,6 +73,7 @@ export function PasswordPage() {
     {!principal.mustChangePassword && <div role="group" aria-label="本地密码操作" className="flex flex-wrap gap-2"><Button type="button" variant={mode === "change" ? "secondary" : "outline"} onClick={() => switchMode("change")}>修改已有密码</Button><Button type="button" variant={mode === "establish" ? "secondary" : "outline"} onClick={() => switchMode("establish")}>首次设置本地密码</Button></div>}
     {mode === "change" ? <PasswordField id="current-password" label="当前密码" autoComplete="current-password" register={form.register("currentPassword")} error={form.formState.errors.currentPassword?.message} /> : <div className="space-y-2"><Label htmlFor="local-login-name">登录名</Label><Input id="local-login-name" autoComplete="username" autoCapitalize="none" spellCheck={false} {...form.register("loginName")} aria-invalid={!!form.formState.errors.loginName} />{form.formState.errors.loginName && <p role="alert" className="text-sm text-destructive">{form.formState.errors.loginName.message}</p>}<p className="text-xs text-muted-foreground">首次设置需要近期 OIDC 登录；如果认证已过期，请重新登录后再操作。</p></div>}
     <PasswordField id="new-password" label="新密码" autoComplete="new-password" register={form.register("newPassword")} error={form.formState.errors.newPassword?.message} />
+    <p className="text-xs text-muted-foreground">需为 15–128 个字符，UTF-8 不超过 512 字节；请勿使用常见弱密码或全部由同一字符组成的密码。</p>
     <PasswordField id="confirm-password" label="确认新密码" autoComplete="new-password" register={form.register("confirmPassword")} error={form.formState.errors.confirmPassword?.message} />
     {mutation.error && <Alert variant="destructive" role="alert"><AlertDescription>{errorText(mutation.error)}</AlertDescription></Alert>}
     <div className="flex items-center justify-between gap-4">{!principal.mustChangePassword && <Link className="text-sm text-primary hover:underline" to="/account">返回账号</Link>}<Button className="ml-auto" disabled={mutation.isPending} type="submit">{mutation.isPending ? "正在提交…" : mode === "establish" ? "确认设置" : "确认修改"}</Button></div>
