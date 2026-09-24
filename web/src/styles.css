@@ -7,38 +7,38 @@
 
 /* 统一语义色由 Orbit 控制；shadcn/ui 只负责组件结构与交互原语。 */
 :root {
-  --background: #f5f7fb;
-  --foreground: #18243a;
+  --background: #ffffff;
+  --foreground: #1d2939;
   --card: #ffffff;
-  --card-foreground: #18243a;
+  --card-foreground: #1d2939;
   --popover: #ffffff;
-  --popover-foreground: #18243a;
-  --primary: #4f5fd7;
+  --popover-foreground: #1d2939;
+  --primary: #247958;
   --primary-foreground: #ffffff;
-  --secondary: #eef1f7;
+  --secondary: #f4f6f5;
   --secondary-foreground: #26364e;
-  --muted: #f1f3f8;
-  --muted-foreground: #617087;
-  --accent: #edf0ff;
-  --accent-foreground: #3444ad;
+  --muted: #f7f8fa;
+  --muted-foreground: #66758b;
+  --accent: #edf6f1;
+  --accent-foreground: #216448;
   --destructive: #ba344a;
-  --border: #dde3ed;
-  --input: #d7deea;
-  --ring: #6978e1;
-  --chart-1: #4f5fd7;
+  --border: #e6e8e7;
+  --input: #d4dad7;
+  --ring: #247958;
+  --chart-1: #247958;
   --chart-2: #187d55;
   --chart-3: #b9781a;
   --chart-4: #ba344a;
   --chart-5: #68788f;
-  --radius: 0.625rem;
-  --sidebar: #101827;
-  --sidebar-foreground: #dce5f2;
-  --sidebar-primary: #6d7cf0;
+  --radius: 0.375rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1d2939;
+  --sidebar-primary: #247958;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #25334d;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #26344a;
-  --sidebar-ring: #8a98fb;
+  --sidebar-accent: #edf6f1;
+  --sidebar-accent-foreground: #216448;
+  --sidebar-border: #e6e8e7;
+  --sidebar-ring: #247958;
 }
 
 @theme inline {
