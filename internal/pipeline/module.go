@@ -13,6 +13,7 @@ import (
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
 	"github.com/HasonoCell/Orbit-DevOps/internal/build"
+	"github.com/HasonoCell/Orbit-DevOps/internal/catalog"
 	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
@@ -22,13 +23,14 @@ import (
 )
 
 var (
-	ErrNotFound            = errors.New("delivery pipeline not found")
-	ErrApplicationNotFound = errors.New("application not found")
-	ErrTargetNotFound      = errors.New("deployment target not found")
-	ErrInvalidInput        = errors.New("invalid delivery pipeline input")
-	ErrRevisionConflict    = errors.New("delivery pipeline revision conflict")
-	ErrEnabledConflict     = errors.New("an enabled delivery pipeline already owns this source")
-	ErrNameConflict        = errors.New("delivery pipeline name already exists")
+	ErrNotFound               = errors.New("delivery pipeline not found")
+	ErrApplicationNotFound    = errors.New("application not found")
+	ErrTargetNotFound         = errors.New("deployment target not found")
+	ErrAutoReleaseTargetStage = errors.New("auto_release target must be development")
+	ErrInvalidInput           = errors.New("invalid delivery pipeline input")
+	ErrRevisionConflict       = errors.New("delivery pipeline revision conflict")
+	ErrEnabledConflict        = errors.New("an enabled delivery pipeline already owns this source")
+	ErrNameConflict           = errors.New("delivery pipeline name already exists")
 )
 
 var endpointKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
@@ -218,6 +220,9 @@ func (m *Module) Enable(ctx context.Context, command StateCommand) (Detail, erro
 		if current.Pipeline.CurrentRevision != before.Pipeline.CurrentRevision {
 			return Detail{}, ErrRevisionConflict
 		}
+		if err := m.validateTarget(ctx, tx, current.Pipeline.ProjectID, current.Pipeline.ApplicationID, current.Revision.Mode, current.Revision.DeploymentTargetID); err != nil {
+			return Detail{}, err
+		}
 		if current.Pipeline.Enabled {
 			return current, nil
 		}
@@ -340,12 +345,18 @@ func (m *Module) validateTarget(ctx context.Context, tx *sqlx.Tx, projectID, app
 	if mode == ModeBuildOnly {
 		return nil
 	}
-	var matches bool
-	if err := tx.GetContext(ctx, &matches, `SELECT EXISTS (SELECT 1 FROM deployment_targets t JOIN applications a ON a.id=t.application_id WHERE t.id=$1 AND t.application_id=$2 AND a.project_id=$3)`, targetID, applicationID, projectID); err != nil {
+	var stage string
+	if err := tx.GetContext(ctx, &stage, `SELECT t.stage FROM deployment_targets t
+		JOIN applications a ON a.id=t.application_id
+		WHERE t.id=$1 AND t.application_id=$2 AND a.project_id=$3`, targetID, applicationID, projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrTargetNotFound
+		}
 		return fmt.Errorf("validate delivery pipeline target: %w", err)
 	}
-	if !matches {
-		return ErrTargetNotFound
+	// 自动发布的配置入口与最终接纳共同限制目的地，避免系统身份绕开人工生产发布。
+	if stage != catalog.DevelopmentStage {
+		return ErrAutoReleaseTargetStage
 	}
 	return nil
 }

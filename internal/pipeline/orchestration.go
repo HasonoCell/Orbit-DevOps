@@ -505,6 +505,20 @@ func (m *Module) createAutomaticRelease(ctx context.Context, check sourceCheck, 
 		ReleaseID: releaseID, ReleaseOperationID: operationID, DeliveryRunID: check.RunID,
 		ActorID: systemActorID, TraceParent: check.TraceParent, TraceState: check.TraceState, CreatedAt: now,
 	}); err != nil {
+		if errors.Is(err, delivery.ErrAutomaticReleaseTargetStage) {
+			const reason = "auto_release_target_stage_forbidden"
+			// 接纳尚未写入 Release/Operation，同一事务可直接把 Run 终结为可诊断的 blocked。
+			if _, updateErr := tx.ExecContext(ctx, `UPDATE delivery_runs SET phase='blocked',
+				phase_version=phase_version+1,reason_code=$3,updated_at=$4,finished_at=$4
+				WHERE id=$1 AND phase_version=$2`, check.RunID, check.PhaseVersion, reason, now); updateErr != nil {
+				return updateErr
+			}
+			if commitErr := tx.Commit(); commitErr != nil {
+				return commitErr
+			}
+			m.recorder.RecordTransition("source_verification", "blocked", reason, 0)
+			return nil
+		}
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE delivery_runs SET phase='release_created',

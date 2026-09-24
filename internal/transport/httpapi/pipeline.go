@@ -23,6 +23,8 @@ func (s *Server) CreateDeliveryPipeline(ctx context.Context, request api.CreateD
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, pipeline.ErrAutoReleaseTargetStage):
+			return api.CreateDeliveryPipeline400JSONResponse{Code: "auto_release_target_stage_forbidden", Message: err.Error()}, nil
 		case errors.Is(err, pipeline.ErrInvalidInput), errors.Is(err, pipeline.ErrSourceNotFound):
 			return api.CreateDeliveryPipeline400JSONResponse{Code: "invalid_delivery_pipeline", Message: err.Error()}, nil
 		case errors.Is(err, pipeline.ErrApplicationNotFound), errors.Is(err, pipeline.ErrTargetNotFound), errors.Is(err, projectauth.ErrNotMember):
@@ -81,6 +83,8 @@ func (s *Server) UpdateDeliveryPipeline(ctx context.Context, request api.UpdateD
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, pipeline.ErrAutoReleaseTargetStage):
+			return api.UpdateDeliveryPipeline400JSONResponse{Code: "auto_release_target_stage_forbidden", Message: err.Error()}, nil
 		case errors.Is(err, pipeline.ErrInvalidInput), errors.Is(err, pipeline.ErrSourceNotFound):
 			return api.UpdateDeliveryPipeline400JSONResponse{Code: "invalid_delivery_pipeline", Message: err.Error()}, nil
 		case errors.Is(err, pipeline.ErrNotFound), errors.Is(err, pipeline.ErrTargetNotFound), errors.Is(err, projectauth.ErrNotMember):
@@ -100,6 +104,8 @@ func (s *Server) EnableDeliveryPipeline(ctx context.Context, request api.EnableD
 	updated, err := s.pipelines.Enable(httpRequestContext(ctx), pipeline.StateCommand{PipelineID: request.DeliveryPipelineId, Caller: requestCaller(ctx), IdempotencyKey: request.Params.IdempotencyKey})
 	if err != nil {
 		switch {
+		case errors.Is(err, pipeline.ErrAutoReleaseTargetStage):
+			return api.EnableDeliveryPipeline400JSONResponse{Code: "auto_release_target_stage_forbidden", Message: err.Error()}, nil
 		case errors.Is(err, pipeline.ErrInvalidInput), errors.Is(err, pipeline.ErrSourceNotFound), errors.Is(err, pipeline.ErrSourceOwnerChanged):
 			return api.EnableDeliveryPipeline400JSONResponse{Code: "delivery_pipeline_source_invalid", Message: err.Error()}, nil
 		case errors.Is(err, pipeline.ErrNotFound), errors.Is(err, projectauth.ErrNotMember):

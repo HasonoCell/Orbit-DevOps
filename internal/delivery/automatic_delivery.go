@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
+	"github.com/HasonoCell/Orbit-DevOps/internal/catalog"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -22,6 +23,8 @@ type DeliveryRunCreateCommand struct {
 	TraceState         string
 	CreatedAt          time.Time
 }
+
+var ErrAutomaticReleaseTargetStage = errors.New("automatic release target must be development")
 
 // CreateForDeliveryRun 从已锁定 Run 的冻结 Artifact 与 Target 创建 Release，调用者不能注入镜像或目标。
 func (m *Module) CreateForDeliveryRun(ctx context.Context, tx *sqlx.Tx, command DeliveryRunCreateCommand) (Acceptance, error) {
@@ -58,6 +61,10 @@ func (m *Module) CreateForDeliveryRun(ctx context.Context, tx *sqlx.Tx, command 
 	}
 	if err := validateImageReference(evidence.ImageReference); err != nil {
 		return Acceptance{}, err
+	}
+	// 此处在最终接纳事务里再次检查权威 Target，防止历史 Revision 或异常数据绕过配置门禁。
+	if evidence.Stage != catalog.DevelopmentStage {
+		return Acceptance{}, ErrAutomaticReleaseTargetStage
 	}
 	release := Release{ID: command.ReleaseID, DeploymentTargetID: evidence.TargetID, ImageReference: evidence.ImageReference, ImageArtifactID: &evidence.ArtifactID, TargetSnapshot: TargetSnapshot{ProjectID: evidence.ProjectID, ApplicationID: evidence.ApplicationID, Stage: evidence.Stage, ClusterRef: evidence.ClusterRef, Namespace: evidence.Namespace, Replicas: evidence.Replicas, ContainerPort: evidence.ContainerPort}, CreatedBy: command.ActorID, CreatedAt: command.CreatedAt}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO releases

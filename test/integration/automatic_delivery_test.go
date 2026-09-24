@@ -139,6 +139,35 @@ func TestAutomaticDeliveryOrchestratesExistingBuildAndReleaseDomains(t *testing.
 			t.Fatalf("automatic audit %s = %s %#v", record.Action, record.ActorKind, summary)
 		}
 	}
+
+	// 同一 Artifact/Digest 可由人显式接纳到 production，不复制 Pipeline 的系统身份发布路径。
+	productionResponse := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/deployment-targets", "automatic-delivery-production-target", `{"stage":"production","replicas":1,"containerPort":8080}`)
+	if productionResponse.StatusCode != http.StatusCreated {
+		productionResponse.Body.Close()
+		t.Fatalf("create production target status = %d", productionResponse.StatusCode)
+	}
+	production := decodeDeploymentTarget(t, productionResponse)
+	productionResponse.Body.Close()
+	var artifact struct {
+		ID             uuid.UUID `db:"id"`
+		ImageReference string    `db:"image_reference"`
+	}
+	if err := database.Get(&artifact, `SELECT a.id,a.image_reference FROM delivery_runs dr
+		JOIN image_artifacts a ON a.id=dr.image_artifact_id WHERE dr.id=$1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	manualResponse := environment.postJSON(t, "/api/v1/deployment-targets/"+production.ID+"/releases", "manual-production-after-automatic-development", `{"imageReference":"`+artifact.ImageReference+`","imageArtifactId":"`+artifact.ID.String()+`"}`)
+	if manualResponse.StatusCode != http.StatusCreated {
+		manualResponse.Body.Close()
+		t.Fatalf("manual production release status = %d", manualResponse.StatusCode)
+	}
+	manual := decodeReleaseAcceptance(t, manualResponse)
+	manualResponse.Body.Close()
+	if manual.Release.DeploymentTargetID != production.ID || manual.Release.ImageArtifactID == nil ||
+		*manual.Release.ImageArtifactID != artifact.ID.String() || manual.Release.TargetSnapshot.Stage != "production" ||
+		manual.Release.ImageReference != artifact.ImageReference || manual.Release.ID == releaseID.String() {
+		t.Fatalf("manual production release = %#v", manual)
+	}
 }
 
 func loadEvent(t *testing.T, database *sqlx.DB, topic string, aggregateID uuid.UUID) internalevent.Ref {

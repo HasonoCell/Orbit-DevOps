@@ -387,6 +387,35 @@ func TestAutomaticDeliveryBlocksChangedAuthority(t *testing.T) {
 	})
 }
 
+// 即使历史 Revision 已启用，最终接纳仍拒绝把自动交付写到非开发阶段。
+func TestAutomaticDeliveryBlocksProductionTargetAtFinalAcceptance(t *testing.T) {
+	commit := strings.Repeat("8", 40)
+	inspector := &configurableSourceInspector{head: commit}
+	fixture := newAutomaticPipelineFixture(t, inspector)
+	event := fixture.acceptPush(t, "stage-changed-before-release", commit)
+	if err := fixture.pipelines.HandleEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	// 模拟绕开 API 的异常数据；正常 Target 更新已经不能改变 Stage。
+	if _, err := fixture.db.Exec(`UPDATE deployment_targets SET stage='production'
+		WHERE id=(SELECT deployment_target_id FROM delivery_pipeline_revisions
+		WHERE delivery_pipeline_id=$1 AND revision=1)`, fixture.pipelineID); err != nil {
+		t.Fatal(err)
+	}
+	runID := fixture.completeBuild(t, commit)
+	assertRunPhaseAndReason(t, fixture.db, runID, "blocked", "auto_release_target_stage_forbidden")
+	var releaseCount, operationCount int
+	if err := fixture.db.Get(&releaseCount, `SELECT count(*) FROM releases`); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.Get(&operationCount, `SELECT count(*) FROM release_operations`); err != nil {
+		t.Fatal(err)
+	}
+	if releaseCount != 0 || operationCount != 0 {
+		t.Fatalf("forbidden automatic release created %d releases and %d operations", releaseCount, operationCount)
+	}
+}
+
 func assertRunPhaseAndReason(t *testing.T, db *sqlx.DB, runID uuid.UUID, phase, reason string) {
 	t.Helper()
 	var current struct {
