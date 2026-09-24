@@ -20,6 +20,32 @@ async function catalog(page: Page, role: "owner" | "viewer" = "owner") {
   await page.route("**/api/v1/applications/a-1/deployment-targets?*", (route) => route.fulfill({ json: { items: [{ id: "t-1", applicationId: "a-1", stage: "production", clusterRef: "demo", namespace: "yuuki", replicas: 2, containerPort: 8080, createdBy: "u-1", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }] } }));
 }
 
+test("登录页在桌面与窄屏保持单列，并只展示可用登录方式", async ({ page }) => {
+  await page.route("**/api/v1/users/me", (route) => route.fulfill({ status: 401, json: { message: "未登录" } }));
+  await page.route("**/api/v1/auth/providers", (route) => route.fulfill({ json: [
+    { id: "local", type: "local", displayName: "本地账号", available: true },
+    { id: "oidc", type: "oidc", displayName: "企业登录", available: true },
+    { id: "disabled", type: "oidc", displayName: "未启用的入口", available: false },
+  ] }));
+  await page.goto("/login");
+  await expect(page.getByRole("heading", { name: "登录 Orbit DevOps" })).toBeVisible();
+  await expect(page.getByLabel("登录名")).toBeVisible();
+  await expect(page.getByLabel("密码", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "登录", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "企业登录" })).toBeVisible();
+  await expect(page.getByText("未启用的入口")).toHaveCount(0);
+  await expect(page.getByText("从代码到运行状态")).toHaveCount(0);
+
+  const desktopForm = await page.getByLabel("登录名").boundingBox();
+  expect(desktopForm).not.toBeNull();
+  expect(Math.abs(desktopForm!.x + desktopForm!.width / 2 - (page.viewportSize()?.width ?? 0) / 2)).toBeLessThan(2);
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.getByRole("heading", { name: "登录 Orbit DevOps" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "企业登录" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+});
+
 test("未登录时保留目标地址，登录后返回应用", async ({ page }) => {
   let authenticated = false;
   await page.route("**/api/v1/users/me", (route) => route.fulfill(authenticated ? { json: { kind: "user", user, mustChangePassword: false } } : { status: 401, json: { code: "unauthorized", message: "未登录" } }));
@@ -32,7 +58,7 @@ test("未登录时保留目标地址，登录后返回应用", async ({ page }) 
   await expect(page).toHaveURL(/\/login\?next=/);
   await page.getByLabel("登录名").fill("alice");
   await page.getByLabel("密码", { exact: true }).fill("secret");
-  await page.getByRole("button", { name: "使用本地账号登录" }).click();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).toHaveURL(/\/projects\/p-1\/applications\/a-1$/);
   await expect(page.getByRole("heading", { name: "Payment Service" })).toBeVisible();
 });
@@ -194,7 +220,7 @@ test("业务请求 401 会重新核验会话并返回登录", async ({ page }) =
   await page.route("**/api/v1/auth/providers", (route) => route.fulfill({ json: [{ id: "local", type: "local", displayName: "本地账号", available: true }] }));
   await page.goto("/projects");
   await expect(page).toHaveURL(/\/login\?next=/);
-  await expect(page.getByText("登录工作区")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "登录 Orbit DevOps" })).toBeVisible();
 });
 
 test("会话失效后换账号不会展示旧账号的项目缓存", async ({ page }) => {
@@ -229,7 +255,7 @@ test("会话失效后换账号不会展示旧账号的项目缓存", async ({ pa
   await expect(page).toHaveURL(/\/login\?next=/);
   await page.getByLabel("登录名").fill("bob");
   await page.getByLabel("密码", { exact: true }).fill("secret");
-  await page.getByRole("button", { name: "使用本地账号登录" }).click();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
   await page.getByRole("link", { name: /Orbit DevOps/ }).click();
   await expect(page).toHaveURL(/\/projects$/);
   await expect.poll(() => bobProjectsRequested).toBe(1);
@@ -259,7 +285,7 @@ test("OIDC 回跳没有有效会话时返回登录并保留目标地址", async 
   await page.route("**/api/v1/auth/providers", (route) => route.fulfill({ json: [{ id: "local", type: "local", displayName: "本地账号", available: true }] }));
   await page.goto("/auth/callback");
   await expect(page).toHaveURL(/\/login\?next=/);
-  await expect(page.getByText("登录工作区")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "登录 Orbit DevOps" })).toBeVisible();
   expect(new URL(page.url()).searchParams.get("next")).toBe("/projects/p-1");
 });
 
