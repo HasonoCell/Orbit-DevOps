@@ -76,6 +76,9 @@ func TestAccessManagedTLSRunsThroughAPIQueueAndKind(t *testing.T) {
 	project := createProject(t, environment, "kind-chain-project")
 	application := createApplication(t, environment, project.ID, "kind-chain-app")
 	target := createAccessTarget(t, environment, application.ID, "kind-chain-target", 80)
+	production := requestAccessDocument[deploymentTargetDocument](t, environment.server, http.MethodPost,
+		"/api/v1/applications/"+application.ID+"/deployment-targets", "kind-chain-production-target",
+		`{"stage":"production","replicas":1,"containerPort":80}`, http.StatusCreated)
 	projectID, targetID := uuid.MustParse(project.ID), uuid.MustParse(target.ID)
 	backend := kube.ResourceName(targetID)
 	labels := map[string]string{kube.ManagedByLabel: kube.ManagedByValue,
@@ -99,6 +102,29 @@ func TestAccessManagedTLSRunsThroughAPIQueueAndKind(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_ = client.CoreV1().Services(namespace).Delete(context.Background(), backend, metav1.DeleteOptions{})
+	})
+	productionBackend := kube.ResourceName(uuid.MustParse(production.ID))
+	productionLabels := map[string]string{kube.ManagedByLabel: kube.ManagedByValue,
+		kube.ProjectIDLabel: project.ID, kube.TargetIDLabel: production.ID, "app": productionBackend}
+	if _, err := client.CoreV1().Pods(namespace).Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: productionBackend, Namespace: namespace, Labels: productionLabels},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "whoami", Image: "traefik/whoami:v1.11.0",
+			ImagePullPolicy: corev1.PullIfNotPresent, Ports: []corev1.ContainerPort{{ContainerPort: 80}}}}},
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create production backend Pod: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.CoreV1().Pods(namespace).Delete(context.Background(), productionBackend, metav1.DeleteOptions{})
+	})
+	if _, err := client.CoreV1().Services(namespace).Create(ctx, &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: productionBackend, Namespace: namespace, Labels: productionLabels},
+		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": productionBackend},
+			Ports: []corev1.ServicePort{{Port: 80}}},
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create production backend Service: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.CoreV1().Services(namespace).Delete(context.Background(), productionBackend, metav1.DeleteOptions{})
 	})
 	db := openTestDatabase(t, environment.databaseURL)
 	module, err := access.New(db, projectauth.New(db, nil), access.Config{
@@ -146,7 +172,15 @@ func TestAccessManagedTLSRunsThroughAPIQueueAndKind(t *testing.T) {
 	route := requestAccessDocument[accessRouteDocument](t, environment.server, http.MethodPost,
 		hostPath+"/"+host.ID+"/routes", "kind-chain-route",
 		fmt.Sprintf(`{"pathPrefix":"/","deploymentTargetId":%q}`, target.ID), http.StatusCreated)
-	awaitAccessChain(t, db, module, gateway, projectID, uuid.MustParse(host.ID), 2, true)
+	productionHostname := "chain-prod.orbit-gateway.test"
+	productionHost := requestAccessDocument[accessHostDocument](t, environment.server, http.MethodPost, hostPath,
+		"kind-chain-production-host", fmt.Sprintf(`{"hostname":%q,"tlsMode":"managed","issuerPolicyKey":"local"}`, productionHostname),
+		http.StatusCreated)
+	productionRoute := requestAccessDocument[accessRouteDocument](t, environment.server, http.MethodPost,
+		hostPath+"/"+productionHost.ID+"/routes", "kind-chain-production-route",
+		fmt.Sprintf(`{"pathPrefix":"/","deploymentTargetId":%q}`, production.ID), http.StatusCreated)
+	awaitAccessChain(t, db, module, gateway, projectID, uuid.MustParse(host.ID), 4, true)
+	awaitAccessChain(t, db, module, gateway, projectID, uuid.MustParse(productionHost.ID), 4, true)
 	proxyService := awaitGatewayProxyService(t, client, namespace, kube.GatewayName(projectID))
 	httpPort, httpsPort := freeLocalPortForAccess(t), freeLocalPortForAccess(t)
 	forwardCtx, stopForward := context.WithCancel(ctx)
@@ -169,6 +203,8 @@ func TestAccessManagedTLSRunsThroughAPIQueueAndKind(t *testing.T) {
 		http.StatusMovedPermanently, "")
 	testsupport.AwaitHTTPResponse(t, secure, "https://"+hostname+"/", hostname,
 		http.StatusOK, "Hostname: "+backend)
+	testsupport.AwaitHTTPResponse(t, secure, "https://"+productionHostname+"/", productionHostname,
+		http.StatusOK, "Hostname: "+productionBackend)
 
 	// 同一条进程链继续切换为管理员登记的已有 Secret，再验证 HTTPS 和安全清理。
 	managed, err := client.CoreV1().Secrets(namespace).Get(ctx, kube.AccessTLSSecretName(uuid.MustParse(host.ID)), metav1.GetOptions{})
@@ -233,7 +269,7 @@ func TestAccessManagedTLSRunsThroughAPIQueueAndKind(t *testing.T) {
 	if updated.StatusCode != http.StatusOK {
 		t.Fatalf("switch Host to existing Secret status = %d", updated.StatusCode)
 	}
-	awaitAccessChain(t, db, module, gateway, projectID, uuid.MustParse(host.ID), 3, false)
+	awaitAccessChain(t, db, module, gateway, projectID, uuid.MustParse(host.ID), 5, false)
 	testsupport.AwaitHTTPResponse(t, secure, "https://"+hostname+"/", hostname,
 		http.StatusOK, "Hostname: "+backend)
 	deletedRoute := requestJSON(t, environment.server, http.MethodDelete,
@@ -248,7 +284,22 @@ func TestAccessManagedTLSRunsThroughAPIQueueAndKind(t *testing.T) {
 	if deletedHost.StatusCode != http.StatusAccepted {
 		t.Fatalf("delete Host status = %d", deletedHost.StatusCode)
 	}
-	awaitAccessChain(t, db, module, gateway, projectID, uuid.MustParse(host.ID), 5, false)
+	awaitAccessChain(t, db, module, gateway, projectID, uuid.MustParse(productionHost.ID), 7, true)
+	testsupport.AwaitHTTPResponse(t, secure, "https://"+productionHostname+"/", productionHostname,
+		http.StatusOK, "Hostname: "+productionBackend)
+	deletedProductionRoute := requestJSON(t, environment.server, http.MethodDelete,
+		hostPath+"/"+productionHost.ID+"/routes/"+productionRoute.ID, "kind-chain-delete-production-route", "")
+	defer deletedProductionRoute.Body.Close()
+	if deletedProductionRoute.StatusCode != http.StatusAccepted {
+		t.Fatalf("delete production Route status = %d", deletedProductionRoute.StatusCode)
+	}
+	deletedProductionHost := requestJSON(t, environment.server, http.MethodDelete,
+		hostPath+"/"+productionHost.ID, "kind-chain-delete-production-host", "")
+	defer deletedProductionHost.Body.Close()
+	if deletedProductionHost.StatusCode != http.StatusAccepted {
+		t.Fatalf("delete production Host status = %d", deletedProductionHost.StatusCode)
+	}
+	awaitAccessChain(t, db, module, gateway, projectID, uuid.Nil, 9, false)
 	dynamic, err := base.DynamicClient()
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +330,7 @@ func awaitAccessChain(t *testing.T, db queryRowDB, module *access.Module, gatewa
 		var state string
 		if err := db.QueryRow(`SELECT applied_revision,state FROM project_gateway_sync WHERE project_id=$1`,
 			projectID).Scan(&applied, &state); err == nil && applied == revision && state == "applied" {
-			if revision == 5 {
+			if hostID == uuid.Nil {
 				return
 			}
 			snapshot, err := module.LoadSnapshot(context.Background(), projectID)

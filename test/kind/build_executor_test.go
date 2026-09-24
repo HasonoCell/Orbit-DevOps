@@ -21,11 +21,13 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
 	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
 	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
+	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
 	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -231,6 +233,47 @@ func TestKindPushToReadyDelivery(t *testing.T) {
 	if report.RuntimeReleaseRelation != string(diagnostics.RuntimeReleaseMatches) ||
 		report.WorkloadObservation.Deployment == nil || report.WorkloadObservation.Deployment.ReadyReplicas != 1 {
 		t.Fatalf("automatic delivery diagnostics = %#v", report)
+	}
+
+	// 人工复用同一 Artifact/Digest 发布 production，两个 Target 的运行时资源不能互相覆盖。
+	productionResponse := environment.postJSON(t, "/api/v1/applications/"+applicationID+"/deployment-targets", "push-to-ready-production-target",
+		`{"stage":"production","replicas":1,"containerPort":8080}`)
+	productionID := decodeID(t, productionResponse, "production target")
+	cleanupResources(t, client, uuid.MustParse(productionID))
+	var artifactID uuid.UUID
+	if err := environment.runner.db.Get(&artifactID, `SELECT image_artifact_id FROM delivery_runs WHERE id=$1`, completed.RunID); err != nil {
+		t.Fatal(err)
+	}
+	imageReference := completed.Repository + "@" + completed.Digest
+	manualResponse := environment.postJSON(t, "/api/v1/deployment-targets/"+productionID+"/releases", "push-to-ready-manual-production",
+		fmt.Sprintf(`{"imageReference":%q,"imageArtifactId":%q}`, imageReference, artifactID.String()))
+	manual := decodeReleaseAcceptance(t, manualResponse)
+	if manual.TargetID != productionID || manual.ReleaseID == completed.ReleaseID.String() {
+		t.Fatalf("manual production acceptance = %#v", manual)
+	}
+	if processed, err := environment.runner.RunOnce(context.Background()); err != nil || !processed {
+		t.Fatalf("publish production artifact = %v, error = %v", processed, err)
+	}
+	productionOperation := environment.getReleaseOperation(t, manual.ReleaseOperationID)
+	productionReport := environment.getReleaseDiagnostics(t, manual.ReleaseID)
+	if productionOperation.Status != releaseoperation.StatusSucceeded ||
+		productionReport.RuntimeReleaseRelation != string(diagnostics.RuntimeReleaseMatches) ||
+		productionReport.WorkloadObservation.Deployment == nil ||
+		productionReport.WorkloadObservation.Deployment.ReadyReplicas != 1 {
+		t.Fatalf("production operation/report = %#v / %#v", productionOperation, productionReport)
+	}
+	for _, targetID := range []string{targetID, productionID} {
+		deployment, err := client.AppsV1().Deployments(kindNamespace).Get(context.Background(), kube.ResourceName(uuid.MustParse(targetID)), metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("read %s deployment: %v", targetID, err)
+		}
+		if deployment.Labels[kube.TargetIDLabel] != targetID || deployment.Spec.Template.Spec.Containers[0].Image != imageReference {
+			t.Fatalf("deployment %s does not preserve target/digest: %#v", targetID, deployment)
+		}
+		service, err := client.CoreV1().Services(kindNamespace).Get(context.Background(), kube.ResourceName(uuid.MustParse(targetID)), metav1.GetOptions{})
+		if err != nil || service.Labels[kube.TargetIDLabel] != targetID {
+			t.Fatalf("service %s does not preserve target: %#v error=%v", targetID, service, err)
+		}
 	}
 }
 
