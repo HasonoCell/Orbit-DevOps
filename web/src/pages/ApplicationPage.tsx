@@ -1,62 +1,299 @@
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Layers3, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { getApplication, getProject, listDeploymentTargets } from "@/api/catalog";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import {
+  getApplication,
+  getProject,
+  getProjectPermissions,
+  listDeploymentTargets,
+} from "@/api/catalog";
 import type { Application, Project } from "@/api/http";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/components/PageState";
 import { Button } from "@/components/ui/button";
 import { BuildSummary } from "@/components/overview/BuildSummary";
 import { PipelineSummary } from "@/components/overview/PipelineSummary";
-import { TargetSummary } from "@/components/overview/TargetSummary";
 import { QueryNotice } from "@/components/overview/OverviewUI";
+import { TargetRuntime } from "@/components/runtime/TargetRuntime";
+import { ReleaseCreateDialog } from "@/components/runtime/ReleaseCreateDialog";
 
 export function ApplicationPage() {
   const { projectId = "", applicationId = "" } = useParams();
-  const project = useQuery({ queryKey: ["project", projectId], queryFn: () => getProject(projectId) });
-  const application = useQuery({ queryKey: ["application", applicationId], queryFn: () => getApplication(applicationId) });
-  if (project.isPending || application.isPending) return <LoadingPage label="正在加载应用" />;
-  if (project.error) return <ErrorPanel title="无法加载项目" error={project.error} onRetry={() => void project.refetch()} />;
-  if (application.error) return <ErrorPanel title="无法加载应用" error={application.error} onRetry={() => void application.refetch()} />;
-  // 确认层级归属之后才挂载子查询，避免错误 URL 发起另一项目的概览请求。
-  if (application.data.projectId !== projectId) return <ErrorPanel title="应用不属于该项目" error={new Error("请从应用所属的项目重新进入。")} />;
-  return <ApplicationOverview key={applicationId} application={application.data} project={project.data} />;
+  const project = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: () => getProject(projectId),
+  });
+  const application = useQuery({
+    queryKey: ["application", applicationId],
+    queryFn: () => getApplication(applicationId),
+  });
+  if (project.isPending || application.isPending)
+    return <LoadingPage label="正在加载应用" />;
+  if (project.error)
+    return (
+      <ErrorPanel
+        title="无法加载项目"
+        error={project.error}
+        onRetry={() => void project.refetch()}
+      />
+    );
+  if (application.error)
+    return (
+      <ErrorPanel
+        title="无法加载应用"
+        error={application.error}
+        onRetry={() => void application.refetch()}
+      />
+    );
+  // 层级校验通过后才允许挂载权限、目标和交付子查询。
+  if (application.data.projectId !== projectId)
+    return (
+      <ErrorPanel
+        title="应用不属于该项目"
+        error={new Error("请从应用所属的项目重新进入。")}
+      />
+    );
+  return (
+    <ApplicationOverview
+      key={applicationId}
+      application={application.data}
+      project={project.data}
+    />
+  );
 }
 
-function ApplicationOverview({ application, project }: { application: Application; project: Project }) {
+function ApplicationOverview({
+  application,
+  project,
+}: {
+  application: Application;
+  project: Project;
+}) {
   const queryClient = useQueryClient();
+  const [params, setParams] = useSearchParams();
   const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
   const [paused, setPaused] = useState(false);
-  const fetching = useIsFetching({ queryKey: ["application-overview", application.id] }) > 0;
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [accepted, setAccepted] = useState("");
+  const fetching =
+    useIsFetching({ queryKey: ["application-overview", application.id] }) > 0;
   const targets = useQuery({
     queryKey: ["application-overview", application.id, "targets"],
     queryFn: () => listDeploymentTargets(application.id),
   });
+  const permissions = useQuery({
+    queryKey: ["project-permissions", project.id],
+    queryFn: () => getProjectPermissions(project.id),
+  });
+  const requestedTarget = params.get("target");
+  const target = targets.error
+    ? undefined
+    : requestedTarget
+      ? targets.data?.find((item) => item.id === requestedTarget)
+      : targets.data?.[0];
+  const view = ["overview", "workloads", "delivery", "diagnostics"].includes(
+    params.get("view") ?? "",
+  )
+    ? params.get("view")!
+    : "overview";
+  const canDevelop =
+    !permissions.error &&
+    permissions.data?.allowed.includes("develop") === true;
   useEffect(() => {
-    const timer = window.setTimeout(() => setPaused(true), Math.max(0, until - Date.now()));
+    const timer = window.setTimeout(
+      () => setPaused(true),
+      Math.max(0, until - Date.now()),
+    );
     return () => window.clearTimeout(timer);
   }, [until]);
   function refresh() {
     setPaused(false);
     setUntil(Date.now() + 5 * 60_000);
-    void queryClient.invalidateQueries({ queryKey: ["application-overview", application.id] });
+    void queryClient.invalidateQueries({
+      queryKey: ["application-overview", application.id],
+    });
   }
-  return <div className="space-y-6">
-    <nav aria-label="面包屑" className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><Link className="hover:text-foreground" to="/projects">项目</Link><ChevronRight className="size-3" /><Link className="max-w-52 truncate hover:text-foreground" to={`/projects/${project.id}`}>{project.name}</Link><ChevronRight className="size-3" /><span className="break-all text-foreground">{application.name}</span></nav>
-    <div className="flex flex-wrap items-center justify-between gap-4">
-      <div className="min-w-0"><h1 className="break-all text-[26px] font-semibold tracking-tight">{application.name}</h1><p className="mt-2 break-all font-mono text-xs text-muted-foreground">{application.slug}</p></div>
-      <Button variant="outline" onClick={refresh} disabled={fetching}><RefreshCw className={`size-4 ${fetching ? "animate-spin" : ""}`} />刷新概览</Button>
-    </div>
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b">
-      <h2 className="border-b-2 border-primary px-1 pb-3 text-sm font-medium">应用概览</h2>
-      <p className="pb-3 text-xs text-muted-foreground">{paused ? "自动刷新已暂停，点击刷新查看最新状态" : "活动记录与运行观测每 30 秒刷新 · 持续 5 分钟"}</p>
-    </div>
-    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.25fr)]">
-      <div className="min-w-0 space-y-4"><div className="flex items-center gap-2 text-sm font-semibold"><Layers3 className="size-4 text-muted-foreground" /><h2>部署环境</h2></div>
-        {targets.isPending || targets.error ? <div className="rounded-lg border"><QueryNotice error={targets.error} retry={() => void targets.refetch()} /></div> : targets.data.length === 0 ? <EmptyState title="还没有部署目标" description="部署目标将应用关联到集群、命名空间和运行环境。" /> : targets.data.map((target) => <TargetSummary key={target.id} target={target} applicationId={application.id} until={until} />)}
+  function changeTarget(value: string) {
+    setAccepted("");
+    setParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (value) next.set("target", value);
+      else next.delete("target");
+      next.delete("releaseCursor");
+      return next;
+    });
+  }
+  return (
+    <div className="workbench-page">
+      <div className="workbench-heading">
+        <div className="min-w-0">
+          <Link
+            className="text-xs text-muted-foreground hover:text-primary"
+            to={`/projects/${project.id}`}
+          >
+            {project.name} / 应用
+          </Link>
+          <h1 className="mt-2">{application.name}</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {targets.data && !targets.error && targets.data.length > 0 && (
+            <>
+              <label
+                htmlFor="runtime-target"
+                className="text-xs text-muted-foreground"
+              >
+                部署目标
+              </label>
+              <select
+                id="runtime-target"
+                className="runtime-select"
+                value={target?.id ?? ""}
+                onChange={(event) => changeTarget(event.target.value)}
+              >
+                {!target && (
+                  <option value="" disabled>
+                    目标不存在
+                  </option>
+                )}
+                {targets.data.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.stage} ·{" "}
+                    {item.stage === "production" ? "生产环境" : "开发环境"}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+          <Button variant="outline" onClick={refresh} disabled={fetching}>
+            <RefreshCw
+              aria-hidden="true"
+              className={`size-4 ${fetching ? "animate-spin" : ""}`}
+            />
+            刷新概览
+          </Button>
+          <Button
+            disabled={!target || !canDevelop}
+            title={
+              !canDevelop
+                ? "需要已确认的开发权限"
+                : !target
+                  ? "请先选择有效目标"
+                  : undefined
+            }
+            onClick={() => setReleaseOpen(true)}
+          >
+            <Plus aria-hidden="true" className="size-4" />
+            新建发布
+          </Button>
+        </div>
       </div>
-      <div className="min-w-0 space-y-4"><h2 className="text-sm font-semibold">交付活动</h2><PipelineSummary applicationId={application.id} until={until} /><BuildSummary applicationId={application.id} until={until} /></div>
+      {permissions.error && (
+        <ErrorPanel
+          title="无法确认发布权限，写操作已禁用"
+          error={permissions.error}
+          onRetry={() => void permissions.refetch()}
+        />
+      )}
+      {permissions.data && !canDevelop && (
+        <p className="mb-3 text-xs text-muted-foreground">
+          当前角色仅可查看；新建发布需要开发权限。
+        </p>
+      )}
+      {accepted && (
+        <p
+          role="status"
+          className="mb-4 rounded border border-primary/20 bg-accent p-3 text-sm"
+        >
+          发布已接纳：{accepted}。接纳不代表部署已完成。
+        </p>
+      )}
+      <nav className="workbench-tabs" aria-label="应用视图">
+        {[
+          ["overview", "运行总览"],
+          ["workloads", "工作负载"],
+          ["delivery", "交付记录"],
+          ["diagnostics", "运行诊断"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            aria-pressed={view === key}
+            onClick={() =>
+              setParams((previous) => {
+                const next = new URLSearchParams(previous);
+                next.set("view", key);
+                return next;
+              })
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+      <p className="my-4 text-xs text-muted-foreground">
+        {paused
+          ? "自动刷新已暂停，点击刷新查看最新状态"
+          : "活动记录与运行观测每 30 秒刷新 · 持续 5 分钟"}
+      </p>
+      {targets.isPending || targets.error ? (
+        <QueryNotice
+          error={targets.error}
+          retry={() => void targets.refetch()}
+        />
+      ) : requestedTarget && !target ? (
+        <EmptyState
+          title="部署目标不属于该应用或已不可用"
+          description="不会按 URL 中未校验的目标读取诊断。请选择有效目标。"
+          action={
+            <Button variant="outline" onClick={() => changeTarget("")}>
+              选择默认目标
+            </Button>
+          }
+        />
+      ) : !target ? (
+        <EmptyState
+          title="还没有部署目标"
+          description="部署目标将应用关联到集群、命名空间和运行环境。"
+        />
+      ) : (
+        <TargetRuntime
+          key={`runtime-${target.id}`}
+          target={target}
+          applicationId={application.id}
+          until={until}
+          view={view}
+        />
+      )}
+      {(view === "overview" || view === "delivery") && (
+        <section className="mt-7">
+          <h2 className="mb-4 text-sm font-semibold">交付活动</h2>
+          <div className="grid items-start gap-5 xl:grid-cols-2">
+            <PipelineSummary applicationId={application.id} until={until} />
+            <BuildSummary applicationId={application.id} until={until} />
+          </div>
+        </section>
+      )}
+      {target && canDevelop && (
+        <ReleaseCreateDialog
+          key={`release-${target.id}`}
+          target={target}
+          application={application}
+          open={releaseOpen}
+          onOpenChange={setReleaseOpen}
+          onAccepted={(id) => {
+            setAccepted(id);
+            refresh();
+            void queryClient.invalidateQueries({
+              queryKey: ["project-workbench", project.id],
+            });
+          }}
+        />
+      )}
+      <details className="mt-6 border-t pt-4 text-xs text-muted-foreground">
+        <summary className="cursor-pointer">应用标识</summary>
+        <p className="mt-2 break-all">
+          {application.slug} / {application.id}
+        </p>
+      </details>
     </div>
-    <p className="break-all border-t pt-4 text-xs text-muted-foreground">Application ID · <span className="font-mono">{application.id}</span></p>
-  </div>;
+  );
 }
