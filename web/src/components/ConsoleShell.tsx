@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
@@ -146,6 +147,9 @@ export function ConsoleShell() {
             <SheetContent side="left" className="console-mobile-nav w-72">
               <SheetHeader className="sr-only">
                 <SheetTitle>工作区导航</SheetTitle>
+                <SheetDescription>
+                  切换项目工作台、自动交付与账号设置。
+                </SheetDescription>
               </SheetHeader>
               {navigation}
             </SheetContent>

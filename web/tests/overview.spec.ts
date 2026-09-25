@@ -16,7 +16,7 @@ async function overview(page: Page) {
 const applicationURL = "/projects/p-1/applications/a-1";
 
 
-test("B 版三层导航在桌面和移动端不溢出，摘要展示真实查询内容", async ({ page }) => {
+test("工作台三层导航在桌面和移动端不溢出，摘要展示真实查询内容", async ({ page }) => {
   await overview(page);
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -26,6 +26,7 @@ test("B 版三层导航在桌面和移动端不溢出，摘要展示真实查询
     await page.getByRole("link", { name: /Payment Service/ }).click();
     await expect(page.getByText("工作负载就绪")).toBeVisible();
     await expect(page.getByText("交付成功")).toBeVisible();
+    await page.getByText("镜像引用与目标差异", { exact: true }).click();
     await page.getByText("展开详情").click();
     await expect(page.getByText(build.imageArtifact!.imageReference, { exact: true })).toHaveCount(2);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);

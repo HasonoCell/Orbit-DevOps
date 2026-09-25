@@ -165,15 +165,22 @@
   display: none;
 }
 .attention-panel {
-  background: #fffafb;
-  border: 1px solid #e8cbd1;
-  border-left: 3px solid var(--destructive);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
   border-radius: 6px;
   padding: 17px;
 }
 .attention-panel h2 {
   font-size: 14px;
   font-weight: 600;
+}
+.attention-panel[data-attention="true"] {
+  background: #fffafb;
+  border-color: #e8cbd1;
+  border-left-color: var(--destructive);
+}
+.attention-panel[data-attention="true"] h2 {
   color: var(--destructive);
 }
 .runtime-summary {

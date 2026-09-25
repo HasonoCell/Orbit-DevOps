@@ -278,7 +278,10 @@ export function ProjectWorkbench({
           </div>
         </section>
         <aside className="workbench-aside">
-          <section className="attention-panel">
+          <section
+            className="attention-panel"
+            data-attention={issues.length > 0}
+          >
             <h2 className="flex items-center gap-2">
               <AlertTriangle className="size-4" aria-hidden="true" />
               本页待处理
