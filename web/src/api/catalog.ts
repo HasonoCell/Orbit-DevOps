@@ -34,9 +34,9 @@ export async function getProjectPermissions(projectId: string): Promise<ProjectP
   }), "查询项目权限");
 }
 
-export async function listApplications(projectId: string, cursor?: string): Promise<ApplicationPage> {
+export async function listApplications(projectId: string, cursor?: string, limit = 20): Promise<ApplicationPage> {
   return requireData(await client.GET("/api/v1/projects/{projectId}/applications", {
-    params: { path: { projectId }, query: { limit: 20, cursor } },
+    params: { path: { projectId }, query: { limit, cursor } },
   }), "查询应用");
 }
 
