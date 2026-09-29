@@ -1,4 +1,10 @@
-import { client, requireData, requireSuccess, type AuthProvider, type CurrentPrincipal } from "./http";
+import {
+  client,
+  requireData,
+  requireSuccess,
+  type AuthProvider,
+  type CurrentPrincipal,
+} from "./http";
 
 export const principalQueryKey = ["principal"] as const;
 
@@ -7,11 +13,20 @@ export async function getCurrentPrincipal(): Promise<CurrentPrincipal> {
 }
 
 export async function listAuthProviders(): Promise<AuthProvider[]> {
-  return requireData(await client.GET("/api/v1/auth/providers"), "查询登录方式");
+  return requireData(
+    await client.GET("/api/v1/auth/providers"),
+    "查询登录方式",
+  );
 }
 
-export async function loginLocal(loginName: string, password: string): Promise<CurrentPrincipal> {
-  return requireData(await client.POST("/api/v1/auth/login", { body: { loginName, password } }), "登录");
+export async function loginLocal(
+  loginName: string,
+  password: string,
+): Promise<CurrentPrincipal> {
+  return requireData(
+    await client.POST("/api/v1/auth/login", { body: { loginName, password } }),
+    "登录",
+  );
 }
 
 export async function startOIDCLogin(providerId: string): Promise<string> {

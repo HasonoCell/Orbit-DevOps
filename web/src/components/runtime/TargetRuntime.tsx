@@ -190,7 +190,7 @@ export function TargetRuntime({
               <Timestamp
                 value={report.workloadObservation.metadata.observedAt}
               />
-            。Pod 就绪不等于公网访问已验证。
+              。Pod 就绪不等于公网访问已验证。
             </p>
           </>
         )
@@ -349,9 +349,7 @@ function DiagnosticEvidence({ report }: { report: DiagnosticReport }) {
         </p>
       )}
       {report.eventObservation.metadata.status !== "complete" && (
-        <p className="mt-3 text-amber-900">
-          集群事件读取不完整。
-        </p>
+        <p className="mt-3 text-amber-900">集群事件读取不完整。</p>
       )}
     </section>
   );

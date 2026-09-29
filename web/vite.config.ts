@@ -13,7 +13,8 @@ export default defineConfig({
     proxy: {
       // 开发代理独立于浏览器 API 地址，保留同源 Cookie/CSRF 行为。
       "/api": process.env.ORBIT_DEVOPS_WEB_API_PROXY ?? "http://127.0.0.1:8080",
-      "/healthz": process.env.ORBIT_DEVOPS_WEB_API_PROXY ?? "http://127.0.0.1:8080",
+      "/healthz":
+        process.env.ORBIT_DEVOPS_WEB_API_PROXY ?? "http://127.0.0.1:8080",
     },
   },
 });

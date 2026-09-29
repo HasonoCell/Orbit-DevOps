@@ -74,9 +74,7 @@ export function ProjectWorkbench({
             {query.isPending || query.error ? "—" : issues.length}
           </strong>
         </span>
-        <span className="text-xs text-muted-foreground">
-          仅当前页
-        </span>
+        <span className="text-xs text-muted-foreground">仅当前页</span>
         <Button
           className="ml-auto"
           variant="outline"
@@ -436,9 +434,10 @@ function DeliveryFeed({
       ))}
       {!records.length && (
         <p className="p-4 text-xs leading-6 text-muted-foreground">
-          {rows.some((row) =>
-            row.pipelines.error ||
-            row.pipelines.data?.some((item) => item.run.error),
+          {rows.some(
+            (row) =>
+              row.pipelines.error ||
+              row.pipelines.data?.some((item) => item.run.error),
           )
             ? "交付记录读取不完整"
             : "本页暂无交付记录"}

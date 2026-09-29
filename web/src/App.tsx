@@ -18,28 +18,46 @@ function SessionBoundary() {
   const location = useLocation();
   const queryClient = useQueryClient();
   useEffect(() => {
-    const recheck = () => { void queryClient.invalidateQueries({ queryKey: principalQueryKey }); };
+    const recheck = () => {
+      void queryClient.invalidateQueries({ queryKey: principalQueryKey });
+    };
     window.addEventListener(sessionInvalidEvent, recheck);
     return () => window.removeEventListener(sessionInvalidEvent, recheck);
   }, [queryClient]);
-  const principal = useQuery({ queryKey: principalQueryKey, queryFn: getCurrentPrincipal, retry: false });
+  const principal = useQuery({
+    queryKey: principalQueryKey,
+    queryFn: getCurrentPrincipal,
+    retry: false,
+  });
   if (principal.isPending) return <LoadingPage label="正在确认身份" />;
   if (principal.error) {
     if (principal.error instanceof ApiError && principal.error.status === 401) {
       const next = encodeURIComponent(location.pathname + location.search);
       return <Navigate to={`/login?next=${next}`} replace />;
     }
-    return <ErrorPanel title="无法确认身份" error={principal.error} onRetry={() => void principal.refetch()} />;
+    return (
+      <ErrorPanel
+        title="无法确认身份"
+        error={principal.error}
+        onRetry={() => void principal.refetch()}
+      />
+    );
   }
   if (principal.data.kind === "pending") {
-    return location.pathname === "/admission"
-      ? <Outlet context={principal.data} />
-      : <Navigate to="/admission" replace />;
+    return location.pathname === "/admission" ? (
+      <Outlet context={principal.data} />
+    ) : (
+      <Navigate to="/admission" replace />
+    );
   }
-  if (principal.data.mustChangePassword && location.pathname !== "/account/password") {
+  if (
+    principal.data.mustChangePassword &&
+    location.pathname !== "/account/password"
+  ) {
     return <Navigate to="/account/password" replace />;
   }
-  if (location.pathname === "/admission") return <Navigate to="/projects" replace />;
+  if (location.pathname === "/admission")
+    return <Navigate to="/projects" replace />;
   return <Outlet context={principal.data} />;
 }
 
@@ -54,7 +72,10 @@ export function App() {
         <Route element={<ConsoleShell />}>
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:projectId" element={<ProjectPage />} />
-          <Route path="/projects/:projectId/applications/:applicationId" element={<ApplicationPage />} />
+          <Route
+            path="/projects/:projectId/applications/:applicationId"
+            element={<ApplicationPage />}
+          />
           <Route path="/account" element={<AccountPage />} />
         </Route>
       </Route>

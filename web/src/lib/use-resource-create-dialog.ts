@@ -5,13 +5,17 @@ import { useCommandKey } from "@/lib/use-command-key";
 
 // 项目和应用创建共享同一条命令边界：失败重试保留幂等键，关闭后重新创建则清理草稿之外的命令状态。
 export function useResourceCreateDialog<T>(
-  createResource: (values: ResourceValues, idempotencyKey: string) => Promise<T>,
+  createResource: (
+    values: ResourceValues,
+    idempotencyKey: string,
+  ) => Promise<T>,
   onCreated: (resource: T) => void,
 ) {
   const [open, setOpen] = useState(false);
   const commandKey = useCommandKey();
   const mutation = useMutation({
-    mutationFn: (values: ResourceValues) => createResource(values, commandKey.forPayload(values)),
+    mutationFn: (values: ResourceValues) =>
+      createResource(values, commandKey.forPayload(values)),
     onSuccess(resource) {
       commandKey.clear();
       setOpen(false);
@@ -25,5 +29,11 @@ export function useResourceCreateDialog<T>(
     }
     setOpen(next);
   };
-  return { open, onOpenChange, onSubmit: mutation.mutate, pending: mutation.isPending, error: mutation.error };
+  return {
+    open,
+    onOpenChange,
+    onSubmit: mutation.mutate,
+    pending: mutation.isPending,
+    error: mutation.error,
+  };
 }

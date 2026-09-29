@@ -11,6 +11,8 @@ export function useCommandKey() {
       }
       return current.current.key;
     },
-    clear(): void { current.current = null; },
+    clear(): void {
+      current.current = null;
+    },
   };
 }

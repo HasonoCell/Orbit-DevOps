@@ -1,4 +1,8 @@
-import type { DiagnosticReport, DeliveryRun, OperationStatus } from "@/api/overview";
+import type {
+  DiagnosticReport,
+  DeliveryRun,
+  OperationStatus,
+} from "@/api/overview";
 
 export type Tone = "neutral" | "success" | "progress" | "warning" | "danger";
 export type Status = { label: string; tone: Tone };
@@ -29,30 +33,66 @@ export const runStatus: Record<DeliveryRun["status"], Status> = {
 };
 
 export function isActiveOperation(status: OperationStatus) {
-  return status === "pending" || status === "running" || status === "cancel_requested";
+  return (
+    status === "pending" ||
+    status === "running" ||
+    status === "cancel_requested"
+  );
 }
 export function isActiveRun(status: DeliveryRun["status"]) {
-  return status === "building" || status === "verifying_source" || status === "releasing";
+  return (
+    status === "building" ||
+    status === "verifying_source" ||
+    status === "releasing"
+  );
 }
 
 /** 运行状态只来自工作负载观测；Operation 成功和历史 Warning Event 不能代替当前健康判断。 */
 export function runtimeStatus(report: DiagnosticReport): Status {
   const { metadata, deployment, service, pods } = report.workloadObservation;
-  if (metadata.status === "unavailable") return { label: "运行观测不可用", tone: "neutral" };
-  if (metadata.status === "partial") return { label: "运行观测不完整", tone: "warning" };
-  if ((deployment && !deployment.ownershipMatches) || (service && !service.ownershipMatches)) return { label: "资源归属冲突", tone: "danger" };
-  if (report.runtimeReleaseRelation === "different") return { label: "运行其他版本", tone: "warning" };
-  if (!deployment || !service) return { label: "运行资源不完整", tone: "warning" };
-  if (report.runtimeReleaseRelation !== "matches") return { label: "运行版本未确认", tone: "neutral" };
-  if (deployment.observedGeneration < deployment.generation) return { label: "等待控制器观测", tone: "progress" };
-  if (deployment.desiredReplicas === 0) return { label: "已缩容至零", tone: "neutral" };
-  if (deployment.conditions.some((condition) => (condition.type === "Progressing" && condition.status === "False") || (condition.type === "ReplicaFailure" && condition.status === "True"))) return { label: "工作负载异常", tone: "danger" };
-  if (deployment.updatedReplicas < deployment.desiredReplicas || deployment.readyReplicas < deployment.desiredReplicas || deployment.availableReplicas < deployment.desiredReplicas) return { label: "副本尚未就绪", tone: "warning" };
-  if (pods.length === 0 || pods.some((pod) => !pod.ready)) return { label: "Pod 尚未全部就绪", tone: "warning" };
+  if (metadata.status === "unavailable")
+    return { label: "运行观测不可用", tone: "neutral" };
+  if (metadata.status === "partial")
+    return { label: "运行观测不完整", tone: "warning" };
+  if (
+    (deployment && !deployment.ownershipMatches) ||
+    (service && !service.ownershipMatches)
+  )
+    return { label: "资源归属冲突", tone: "danger" };
+  if (report.runtimeReleaseRelation === "different")
+    return { label: "运行其他版本", tone: "warning" };
+  if (!deployment || !service)
+    return { label: "运行资源不完整", tone: "warning" };
+  if (report.runtimeReleaseRelation !== "matches")
+    return { label: "运行版本未确认", tone: "neutral" };
+  if (deployment.observedGeneration < deployment.generation)
+    return { label: "等待控制器观测", tone: "progress" };
+  if (deployment.desiredReplicas === 0)
+    return { label: "已缩容至零", tone: "neutral" };
+  if (
+    deployment.conditions.some(
+      (condition) =>
+        (condition.type === "Progressing" && condition.status === "False") ||
+        (condition.type === "ReplicaFailure" && condition.status === "True"),
+    )
+  )
+    return { label: "工作负载异常", tone: "danger" };
+  if (
+    deployment.updatedReplicas < deployment.desiredReplicas ||
+    deployment.readyReplicas < deployment.desiredReplicas ||
+    deployment.availableReplicas < deployment.desiredReplicas
+  )
+    return { label: "副本尚未就绪", tone: "warning" };
+  if (pods.length === 0 || pods.some((pod) => !pod.ready))
+    return { label: "Pod 尚未全部就绪", tone: "warning" };
   return { label: "工作负载就绪", tone: "success" };
 }
 
 /** 列表只追踪当前活动记录；运行观测独立刷新。五分钟后或请求失败时暂停，手动刷新可重启。 */
-export function pollInterval(until: number, error: unknown, active = true): number | false {
+export function pollInterval(
+  until: number,
+  error: unknown,
+  active = true,
+): number | false {
   return !error && active && Date.now() < until ? 30_000 : false;
 }

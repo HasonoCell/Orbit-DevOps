@@ -71,7 +71,8 @@ export function ConsoleShell() {
             active:
               location.pathname.startsWith(`/projects/${projectId}`) &&
               (location.pathname !== `/projects/${projectId}` ||
-                new URLSearchParams(location.search).get("view") !== "delivery"),
+                new URLSearchParams(location.search).get("view") !==
+                  "delivery"),
           },
           {
             to: `/projects/${projectId}?view=delivery`,
@@ -105,7 +106,10 @@ export function ConsoleShell() {
           </div>
         </div>
       )}
-      <SlidingNavigation items={items} onNavigate={() => setMobileOpen(false)} />
+      <SlidingNavigation
+        items={items}
+        onNavigate={() => setMobileOpen(false)}
+      />
       <div className="console-nav console-account">
         <NavLink to="/account" onClick={() => setMobileOpen(false)}>
           <UserRound aria-hidden="true" className="size-4" />
@@ -205,7 +209,10 @@ function SlidingNavigation({
 }) {
   const navRef = useRef<HTMLElement>(null);
   const activeIndex = items.findIndex((item) => item.active);
-  const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null);
+  const [indicator, setIndicator] = useState<{
+    top: number;
+    height: number;
+  } | null>(null);
 
   useLayoutEffect(() => {
     const nav = navRef.current;
@@ -241,7 +248,10 @@ function SlidingNavigation({
         <span
           className="console-nav-indicator"
           aria-hidden="true"
-          style={{ height: indicator.height, transform: `translateY(${indicator.top}px)` }}
+          style={{
+            height: indicator.height,
+            transform: `translateY(${indicator.top}px)`,
+          }}
         />
       )}
       {items.map(({ to, label, icon: Icon, active }) => (

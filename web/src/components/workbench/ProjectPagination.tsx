@@ -56,7 +56,11 @@ export function ProjectPagination({
 
   if (currentIndex < 0) {
     return (
-      <Button variant="outline" size="sm" onClick={() => onChange(undefined, 1)}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onChange(undefined, 1)}
+      >
         返回第一页
       </Button>
     );
