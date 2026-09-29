@@ -17,7 +17,25 @@ export const accessKeys = {
     ["access-targets", projectId, hostId, offset] as const,
   targetRoutes: (targetId: string, offset: number) =>
     ["target-access-routes", targetId, offset] as const,
+  secretBindings: (projectId: string, hostname: string, offset: number) =>
+    ["access-secret-binding-options", projectId, hostname, offset] as const,
 };
+
+export async function listSecretBindingOptions(
+  projectId: string,
+  hostname: string,
+  offset: number,
+) {
+  return requireData(
+    await client.GET(
+      "/api/v1/projects/{projectId}/access-secret-binding-options",
+      {
+        params: { path: { projectId }, query: { hostname, limit: 21, offset } },
+      },
+    ),
+    "查询可选 TLS Secret",
+  );
+}
 
 export async function listHosts(projectId: string, offset: number) {
   return requireData(

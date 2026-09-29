@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { getProject, getProjectPermissions } from "@/api/catalog";
 import { errorText } from "@/api/http";
@@ -18,6 +18,7 @@ import {
   getHost,
   getHostOptions,
   getHostStatus,
+  listSecretBindingOptions,
   updateHost,
 } from "./api";
 
@@ -109,8 +110,10 @@ function HostCreate({
   projectName: string;
 }) {
   const [hostname, setHostname] = useState("");
-  const [tlsMode, setTlsMode] = useState<"http_only" | "managed">("http_only");
+  const [tlsMode, setTlsMode] = useState<Host["tlsMode"]>("http_only");
   const [policyKey, setPolicyKey] = useState("");
+  const [bindingId, setBindingId] = useState("");
+  const [bindingOffset, setBindingOffset] = useState(0);
   const [validation, setValidation] = useState("");
   const commandKey = useCommandKey();
   const navigate = useNavigate();
@@ -118,6 +121,16 @@ function HostCreate({
   const options = useQuery({
     queryKey: ["access-host-options", projectId],
     queryFn: () => getHostOptions(projectId),
+  });
+  const bindings = useQuery({
+    queryKey: accessKeys.secretBindings(
+      projectId,
+      hostname.trim(),
+      bindingOffset,
+    ),
+    queryFn: () =>
+      listSecretBindingOptions(projectId, hostname.trim(), bindingOffset),
+    enabled: tlsMode === "existing_secret" && hostname.trim().length >= 4,
   });
   const mutation = useMutation({
     mutationFn: (body: HostInput) =>
@@ -148,11 +161,19 @@ function HostCreate({
       setValidation("请选择当前可用的 Issuer Policy。");
       return;
     }
+    if (
+      tlsMode === "existing_secret" &&
+      !bindings.data?.some((item) => item.id === bindingId)
+    ) {
+      setValidation("请选择当前域名可用的 TLS Secret 授权。");
+      return;
+    }
     setValidation("");
     mutation.mutate({
       hostname: value,
       tlsMode,
       ...(tlsMode === "managed" ? { issuerPolicyKey: policyKey } : {}),
+      ...(tlsMode === "existing_secret" ? { secretBindingId: bindingId } : {}),
     });
   }
   return (
@@ -178,7 +199,11 @@ function HostCreate({
             <Input
               id="access-hostname"
               value={hostname}
-              onChange={(event) => setHostname(event.target.value)}
+              onChange={(event) => {
+                setHostname(event.target.value);
+                setBindingId("");
+                setBindingOffset(0);
+              }}
               placeholder="payment.example.com"
             />
           </div>
@@ -189,8 +214,10 @@ function HostCreate({
               className="runtime-select w-full"
               value={tlsMode}
               onChange={(event) => {
-                setTlsMode(event.target.value as "http_only" | "managed");
+                setTlsMode(event.target.value as Host["tlsMode"]);
                 setPolicyKey("");
+                setBindingId("");
+                setBindingOffset(0);
               }}
             >
               <option value="http_only">仅 HTTP</option>
@@ -200,6 +227,7 @@ function HostCreate({
               >
                 托管证书
               </option>
+              <option value="existing_secret">已有 TLS Secret</option>
             </select>
           </div>
           {options.isPending || options.error ? (
@@ -211,7 +239,7 @@ function HostCreate({
             <>
               {!options.data.issuerPolicies.length && (
                 <p className="text-xs text-muted-foreground">
-                  当前没有可用的托管证书 Policy；仍可创建 HTTP 入口。
+                  当前没有可用的托管证书 Policy。
                 </p>
               )}
               {tlsMode === "managed" && (
@@ -234,6 +262,70 @@ function HostCreate({
               )}
             </>
           )}
+          {tlsMode === "existing_secret" && (
+            <div className="space-y-2">
+              <Label htmlFor="access-secret-binding">TLS Secret 授权</Label>
+              {hostname.trim().length < 4 ? (
+                <p className="text-xs text-muted-foreground">
+                  请先输入完整域名。
+                </p>
+              ) : bindings.isPending || bindings.error ? (
+                <QueryNotice
+                  error={bindings.error}
+                  retry={() => void bindings.refetch()}
+                />
+              ) : (
+                <>
+                  <select
+                    id="access-secret-binding"
+                    className="runtime-select w-full"
+                    value={bindingId}
+                    onChange={(event) => setBindingId(event.target.value)}
+                  >
+                    <option value="">请选择</option>
+                    {bindings.data.slice(0, 20).map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.secretName} · {item.clusterRef}/{item.namespace}
+                      </option>
+                    ))}
+                  </select>
+                  {!bindings.data.length && (
+                    <p className="text-xs text-muted-foreground">
+                      当前域名没有已授权的 TLS Secret。
+                    </p>
+                  )}
+                  {(bindingOffset > 0 || bindings.data.length > 20) && (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={bindingOffset === 0}
+                        onClick={() => {
+                          setBindingId("");
+                          setBindingOffset(Math.max(0, bindingOffset - 20));
+                        }}
+                      >
+                        上一页
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={bindings.data.length <= 20}
+                        onClick={() => {
+                          setBindingId("");
+                          setBindingOffset(bindingOffset + 20);
+                        }}
+                      >
+                        下一页
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
           <p className="text-muted-foreground">
             创建后可配置 PathPrefix 路由。证书控制器与 DNS
             验证在详情中单独观察。
@@ -252,7 +344,9 @@ function HostCreate({
           <Button
             type="submit"
             disabled={
-              mutation.isPending || (tlsMode === "managed" && !policyKey)
+              mutation.isPending ||
+              (tlsMode === "managed" && !policyKey) ||
+              (tlsMode === "existing_secret" && !bindingId)
             }
           >
             {mutation.isPending ? "正在创建…" : "创建域名"}
@@ -337,6 +431,16 @@ function HostDetail({
           清理已接纳。请继续观察入口调和与控制器状态。
         </p>
       )}
+      {displayed.tlsMode === "existing_secret" &&
+        displayed.secretBindingState === "revoked" && (
+          <p
+            role="alert"
+            className="mb-5 rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+          >
+            当前 TLS Secret 授权已撤销，HTTPS
+            入口正在失效；请选择其他有效授权或切换 TLS 模式。
+          </p>
+        )}
       <section className="workbench-panel mb-5">
         <header className="panel-heading">
           <h2>域名配置</h2>
@@ -355,6 +459,16 @@ function HostDetail({
                 ? "托管证书"
                 : "已有 TLS Secret"}
           </Fact>
+          {displayed.secretBindingId && (
+            <Fact label="TLS Secret 授权">
+              {displayed.secretBindingState === "revoked"
+                ? "已撤销"
+                : displayed.secretBindingState === "active"
+                  ? "有效"
+                  : "待核验"}{" "}
+              · {displayed.secretBindingId}
+            </Fact>
+          )}
           <Fact label="更新于">
             <Timestamp value={displayed.updatedAt} />
           </Fact>
@@ -362,7 +476,7 @@ function HostDetail({
       </section>
       {canManageHost && displayed.lifecycle === "active" && (
         <HostTlsEditor
-          key={`${displayed.id}-${displayed.updatedAt}`}
+          key={displayed.id}
           projectId={projectId}
           host={displayed}
         />
@@ -437,6 +551,8 @@ function HostDetail({
 function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
   const [mode, setMode] = useState<Host["tlsMode"]>(host.tlsMode);
   const [policyKey, setPolicyKey] = useState(host.issuerPolicyKey ?? "");
+  const [bindingId, setBindingId] = useState(host.secretBindingId ?? "");
+  const [bindingOffset, setBindingOffset] = useState(0);
   const [validation, setValidation] = useState("");
   const commandKey = useCommandKey();
   const queryClient = useQueryClient();
@@ -444,8 +560,35 @@ function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
     queryKey: ["access-host-options", projectId],
     queryFn: () => getHostOptions(projectId),
   });
+  const bindings = useQuery({
+    queryKey: accessKeys.secretBindings(
+      projectId,
+      host.hostname,
+      bindingOffset,
+    ),
+    queryFn: () =>
+      listSecretBindingOptions(projectId, host.hostname, bindingOffset),
+    enabled: mode === "existing_secret",
+  });
+  useEffect(() => {
+    setMode(host.tlsMode);
+    setPolicyKey(host.issuerPolicyKey ?? "");
+    setBindingId(host.secretBindingId ?? "");
+    setBindingOffset(0);
+  }, [
+    host.updatedAt,
+    host.tlsMode,
+    host.issuerPolicyKey,
+    host.secretBindingId,
+  ]);
   const selectedPolicy = options.data?.issuerPolicies.find(
     (policy) => policy.key === policyKey,
+  );
+  const selectedBinding = bindings.data?.find((item) => item.id === bindingId);
+  const bindingSelectable = Boolean(
+    selectedBinding ||
+      (bindingId === host.secretBindingId &&
+        host.secretBindingState === "active"),
   );
   const mutation = useMutation({
     mutationFn: (body: HostInput) =>
@@ -459,6 +602,9 @@ function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
       commandKey.clear();
       queryClient.setQueryData(accessKeys.host(projectId, host.id), updated);
       void queryClient.invalidateQueries({
+        queryKey: accessKeys.host(projectId, host.id),
+      });
+      void queryClient.invalidateQueries({
         queryKey: accessKeys.status(projectId, host.id),
       });
       void queryClient.invalidateQueries({
@@ -469,7 +615,10 @@ function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
   });
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (mode === "existing_secret") return;
+    if (mode === "existing_secret" && !bindingSelectable) {
+      setValidation("当前 TLS Secret 授权已失效或不在可选列表中，请重新选择。");
+      return;
+    }
     if (mode === "managed" && !selectedPolicy) {
       setValidation("当前 Issuer Policy 不可用，请选择新 Policy。");
       return;
@@ -479,6 +628,7 @@ function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
       hostname: host.hostname,
       tlsMode: mode,
       ...(mode === "managed" ? { issuerPolicyKey: policyKey } : {}),
+      ...(mode === "existing_secret" ? { secretBindingId: bindingId } : {}),
     });
   }
   return (
@@ -496,6 +646,8 @@ function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
             onChange={(event) => {
               setMode(event.target.value as Host["tlsMode"]);
               setPolicyKey("");
+              setBindingId("");
+              setBindingOffset(0);
             }}
           >
             <option value="http_only">仅 HTTP</option>
@@ -505,11 +657,7 @@ function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
             >
               托管证书
             </option>
-            {host.tlsMode === "existing_secret" && (
-              <option value="existing_secret" disabled>
-                已有 TLS Secret
-              </option>
-            )}
+            <option value="existing_secret">已有 TLS Secret</option>
           </select>
         </div>
         {options.isPending || options.error ? (
@@ -549,6 +697,80 @@ function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
             )}
           </>
         )}
+        {mode === "existing_secret" && (
+          <div className="space-y-2">
+            <Label htmlFor="access-detail-secret-binding">
+              TLS Secret 授权
+            </Label>
+            {bindings.isPending || bindings.error ? (
+              <QueryNotice
+                error={bindings.error}
+                retry={() => void bindings.refetch()}
+              />
+            ) : (
+              <>
+                <select
+                  id="access-detail-secret-binding"
+                  className="runtime-select w-full"
+                  value={bindingId}
+                  onChange={(event) => setBindingId(event.target.value)}
+                >
+                  <option value="">请选择</option>
+                  {bindingId && !selectedBinding && (
+                    <option
+                      value={bindingId}
+                      disabled={host.secretBindingState !== "active"}
+                    >
+                      {bindingId}（
+                      {host.secretBindingState === "revoked"
+                        ? "已撤销"
+                        : "当前授权"}
+                      ）
+                    </option>
+                  )}
+                  {bindings.data.slice(0, 20).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.secretName} · {item.clusterRef}/{item.namespace}
+                    </option>
+                  ))}
+                </select>
+                {!bindings.data.length && (
+                  <p className="text-xs text-muted-foreground">
+                    当前域名没有有效的 TLS Secret 授权。
+                  </p>
+                )}
+                {(bindingOffset > 0 || bindings.data.length > 20) && (
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={bindingOffset === 0}
+                      onClick={() => {
+                        setBindingId("");
+                        setBindingOffset(Math.max(0, bindingOffset - 20));
+                      }}
+                    >
+                      上一页
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={bindings.data.length <= 20}
+                      onClick={() => {
+                        setBindingId("");
+                        setBindingOffset(bindingOffset + 20);
+                      }}
+                    >
+                      下一页
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
         {mode === "managed" &&
           policyKey &&
           !options.isPending &&
@@ -576,7 +798,7 @@ function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
           type="submit"
           disabled={
             mutation.isPending ||
-            mode === "existing_secret" ||
+            (mode === "existing_secret" && !bindingSelectable) ||
             (mode === "managed" && !selectedPolicy)
           }
         >
