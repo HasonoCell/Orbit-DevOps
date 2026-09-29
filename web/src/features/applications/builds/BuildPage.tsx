@@ -13,6 +13,7 @@ import {
   getBuildAttemptLog,
   getBuildOperation,
 } from "./api";
+import { BuildCommands } from "./BuildCommands";
 
 type Attempt = components["schemas"]["BuildAttempt"];
 
@@ -199,6 +200,16 @@ export function BuildPage() {
           <p className="p-5 text-sm text-muted-foreground">暂无产物</p>
         )}
       </section>
+      {current && (
+        <BuildCommands
+          operation={current}
+          buildId={buildId}
+          canDevelop={permissions.data.allowed.includes("develop")}
+          canResolveUnknown={permissions.data.allowed.includes(
+            "resolve_unknown",
+          )}
+        />
+      )}
     </div>
   );
 }
