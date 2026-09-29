@@ -219,11 +219,24 @@ func (m *Module) getRunWith(ctx context.Context, queryer sqlx.QueryerContext, id
 }
 
 func projectRun(row runRow) RunDetail {
+	status, stage := DeriveRunState(row.Phase, row.PipelineMode, row.SourceCheckAttemptCount,
+		row.BuildOperationStatus, row.ReleaseOperationStatus)
+	var activeStage *string
+	if stage != "" {
+		activeStage = &stage
+	}
+	return RunDetail{Run: row.RunRecord, Status: status, ActiveStage: activeStage, Trigger: row.RunTrigger}
+}
+
+// DeriveRunState 从持久化阶段与底层 Operation 的权威状态投影交付运行状态。
+// 工作台批量摘要与运行详情共用同一规则，避免两处状态解释逐渐分叉。
+func DeriveRunState(phase, mode string, sourceCheckAttempts int, buildStatus string,
+	releaseStatus *string) (string, string) {
 	status := "building"
 	stage := "build"
-	switch row.Phase {
+	switch phase {
 	case "build_created":
-		switch row.BuildOperationStatus {
+		switch buildStatus {
 		case "failed":
 			status = "build_failed"
 			stage = ""
@@ -236,18 +249,18 @@ func projectRun(row runRow) RunDetail {
 		}
 	case "artifact_ready":
 		status = "candidate_ready"
-		if row.PipelineMode != ModeBuildOnly && row.SourceCheckAttemptCount > 0 {
+		if mode != ModeBuildOnly && sourceCheckAttempts > 0 {
 			status = "verifying_source"
 		}
-		if row.PipelineMode != ModeBuildOnly {
+		if mode != ModeBuildOnly {
 			stage = "source_verification"
 		} else {
 			stage = ""
 		}
 	case "release_created":
 		status, stage = "releasing", "release"
-		if row.ReleaseOperationStatus != nil {
-			switch *row.ReleaseOperationStatus {
+		if releaseStatus != nil {
+			switch *releaseStatus {
 			case "failed":
 				status, stage = "release_failed", ""
 			case "canceled":
@@ -263,11 +276,7 @@ func projectRun(row runRow) RunDetail {
 	case "blocked":
 		status, stage = "blocked", ""
 	}
-	var activeStage *string
-	if stage != "" {
-		activeStage = &stage
-	}
-	return RunDetail{Run: row.RunRecord, Status: status, ActiveStage: activeStage, Trigger: row.RunTrigger}
+	return status, stage
 }
 
 type runCursor struct {

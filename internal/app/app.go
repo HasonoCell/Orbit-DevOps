@@ -26,6 +26,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 	"github.com/HasonoCell/Orbit-DevOps/internal/transport/httpapi"
 	"github.com/HasonoCell/Orbit-DevOps/internal/webhook"
+	"github.com/HasonoCell/Orbit-DevOps/internal/workbench"
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -138,6 +139,7 @@ func NewWithDependencies(
 		ClusterRef: config.LocalClusterRef,
 		Namespace:  config.LocalNamespace,
 	}, authorizer)
+	workbenchModule := workbench.New(authorizer)
 	releaseOperationModule := releaseoperation.New(db, releaseoperation.WithAuthorizer(authorizer))
 	buildOperationModule := buildoperation.New(db, buildoperation.WithAuthorizer(authorizer))
 	buildModule := build.New(db, build.Config{
@@ -177,6 +179,7 @@ func NewWithDependencies(
 		dependencies.AccessObserver,
 		projectModule,
 		catalogModule,
+		workbenchModule,
 		buildModule,
 		buildOperationModule,
 		deliveryModule,

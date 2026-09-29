@@ -519,6 +519,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/application-workbench": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 分页读取项目工作台应用摘要
+         * @description 只汇总当前页应用的最新构建、每个目标的最新发布与每个应用最多三条 Pipeline 的最新运行；不读取 Kubernetes。
+         */
+        get: operations["listApplicationWorkbench"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/applications/{applicationId}": {
         parameters: {
             query?: never;
@@ -1471,6 +1491,39 @@ export interface components {
         ApplicationPage: {
             items: components["schemas"]["Application"][];
             nextCursor?: string;
+        };
+        ApplicationWorkbenchPage: {
+            items: components["schemas"]["ApplicationWorkbenchItem"][];
+            nextCursor?: string;
+        };
+        ApplicationWorkbenchItem: {
+            application: components["schemas"]["Application"];
+            targets: components["schemas"]["WorkbenchTarget"][];
+            build?: components["schemas"]["WorkbenchBuild"];
+            pipelines: components["schemas"]["WorkbenchPipeline"][];
+        };
+        WorkbenchTarget: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            stage: "development" | "production";
+            /** @enum {string} */
+            releaseStatus?: "pending" | "running" | "cancel_requested" | "succeeded" | "failed" | "canceled" | "attention_required";
+        };
+        WorkbenchBuild: {
+            /** @enum {string} */
+            status: "pending" | "running" | "cancel_requested" | "succeeded" | "failed" | "canceled" | "attention_required";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        WorkbenchPipeline: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            runStatus?: "building" | "build_failed" | "build_canceled" | "candidate_ready" | "verifying_source" | "releasing" | "release_failed" | "release_canceled" | "succeeded" | "superseded" | "attention_required" | "blocked";
+            /** Format: date-time */
+            runCreatedAt?: string;
         };
         CreateDeploymentTargetRequest: {
             /** @enum {string} */
@@ -3808,6 +3861,58 @@ export interface operations {
             };
             /** @description 项目内应用标识已被使用或幂等键已经用于不同请求 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listApplicationWorkbench: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前应用页摘要 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationWorkbenchPage"];
+                };
+            };
+            /** @description 游标无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 项目不存在或当前用户不是成员 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

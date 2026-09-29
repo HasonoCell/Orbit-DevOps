@@ -19,6 +19,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 	"github.com/HasonoCell/Orbit-DevOps/internal/webhook"
+	"github.com/HasonoCell/Orbit-DevOps/internal/workbench"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -28,6 +29,7 @@ type Server struct {
 	accessObserver    access.ControllerObserver
 	projects          *project.Module
 	catalog           *catalog.Module
+	workbench         *workbench.Module
 	builds            *build.Module
 	buildOperations   *buildoperation.Module
 	delivery          *delivery.Module
@@ -69,6 +71,7 @@ func NewServer(
 	accessObserver access.ControllerObserver,
 	projects *project.Module,
 	catalogModule *catalog.Module,
+	workbenchModule *workbench.Module,
 	buildModule *build.Module,
 	buildOperationModule *buildoperation.Module,
 	deliveryModule *delivery.Module,
@@ -87,6 +90,7 @@ func NewServer(
 		accessObserver:    accessObserver,
 		projects:          projects,
 		catalog:           catalogModule,
+		workbench:         workbenchModule,
 		builds:            buildModule,
 		buildOperations:   buildOperationModule,
 		delivery:          deliveryModule,

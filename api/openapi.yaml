@@ -615,6 +615,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/projects/{projectId}/application-workbench:
+    get:
+      operationId: listApplicationWorkbench
+      summary: 分页读取项目工作台应用摘要
+      description: 只汇总当前页应用的最新构建、每个目标的最新发布与每个应用最多三条 Pipeline 的最新运行；不读取 Kubernetes。
+      parameters:
+        - {name: projectId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 20, default: 8}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
+      responses:
+        "200": {description: 当前应用页摘要, content: {application/json: {schema: {$ref: "#/components/schemas/ApplicationWorkbenchPage"}}}}
+        "400": {description: 游标无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 项目不存在或当前用户不是成员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/applications/{applicationId}:
     get:
       operationId: getApplication
@@ -2564,6 +2578,46 @@ components:
       properties:
         items: {type: array, items: {$ref: "#/components/schemas/Application"}}
         nextCursor: {type: string}
+    ApplicationWorkbenchPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/ApplicationWorkbenchItem"}}
+        nextCursor: {type: string}
+    ApplicationWorkbenchItem:
+      type: object
+      additionalProperties: false
+      required: [application, targets, pipelines]
+      properties:
+        application: {$ref: "#/components/schemas/Application"}
+        targets: {type: array, items: {$ref: "#/components/schemas/WorkbenchTarget"}}
+        build: {$ref: "#/components/schemas/WorkbenchBuild"}
+        pipelines: {type: array, items: {$ref: "#/components/schemas/WorkbenchPipeline"}}
+    WorkbenchTarget:
+      type: object
+      additionalProperties: false
+      required: [id, stage]
+      properties:
+        id: {type: string, format: uuid}
+        stage: {type: string, enum: [development, production]}
+        releaseStatus: {type: string, enum: [pending, running, cancel_requested, succeeded, failed, canceled, attention_required]}
+    WorkbenchBuild:
+      type: object
+      additionalProperties: false
+      required: [status, createdAt]
+      properties:
+        status: {type: string, enum: [pending, running, cancel_requested, succeeded, failed, canceled, attention_required]}
+        createdAt: {type: string, format: date-time}
+    WorkbenchPipeline:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        runStatus: {type: string, enum: [building, build_failed, build_canceled, candidate_ready, verifying_source, releasing, release_failed, release_canceled, succeeded, superseded, attention_required, blocked]}
+        runCreatedAt: {type: string, format: date-time}
     CreateDeploymentTargetRequest:
       type: object
       additionalProperties: false
