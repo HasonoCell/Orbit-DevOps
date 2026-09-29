@@ -121,7 +121,6 @@ export function ConsoleShell() {
           <UserRound aria-hidden="true" className="size-4" />
           账号设置
         </NavLink>
-        <p>应用交付与运行管理</p>
       </div>
     </>
   );

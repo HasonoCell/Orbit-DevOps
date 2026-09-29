@@ -56,11 +56,18 @@
   font-size: 12px;
   color: var(--muted-foreground);
 }
+.workbench-summary > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  line-height: 1.25;
+}
 .workbench-summary strong {
   color: var(--foreground);
   font-size: 16px;
   margin-left: 5px;
   font-weight: 600;
+  line-height: 1.25;
 }
 .workbench-columns {
   display: grid;

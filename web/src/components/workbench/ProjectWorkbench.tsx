@@ -75,7 +75,7 @@ export function ProjectWorkbench({
           </strong>
         </span>
         <span className="text-xs text-muted-foreground">
-          仅当前页，不代表项目总量或运行健康
+          仅当前页
         </span>
         <Button
           className="ml-auto"
@@ -311,7 +311,7 @@ export function ProjectWorkbench({
                   ? "正在查询执行结果。"
                   : query.error || errors.length
                     ? "摘要不完整，不能确认是否还有待处理项。"
-                    : "已读取的执行记录中没有待处理项；这不是运行健康结论。"}
+                    : "本页暂无待处理项"}
               </p>
             )}
           </section>
@@ -426,7 +426,12 @@ function DeliveryFeed({
       ))}
       {!records.length && (
         <p className="p-4 text-xs leading-6 text-muted-foreground">
-          当前已读取的样本中没有交付运行；不代表整个项目没有历史记录。
+          {rows.some((row) =>
+            row.pipelines.error ||
+            row.pipelines.data?.some((item) => item.run.error),
+          )
+            ? "交付记录读取不完整"
+            : "本页暂无交付记录"}
         </p>
       )}
     </div>

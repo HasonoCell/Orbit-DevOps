@@ -350,7 +350,7 @@ function DiagnosticEvidence({ report }: { report: DiagnosticReport }) {
       )}
       {report.eventObservation.metadata.status !== "complete" && (
         <p className="mt-3 text-amber-900">
-          事件观测不完整；不代表没有集群事件。
+          集群事件读取不完整。
         </p>
       )}
     </section>

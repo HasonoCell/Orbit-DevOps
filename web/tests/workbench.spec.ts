@@ -51,7 +51,7 @@ test("项目摘要限定当前页且不调用 Kubernetes 诊断，局部失败�
     page.getByRole("cell", { name: "读取失败", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("工作负载就绪")).toHaveCount(0);
-  await expect(page.getByText(/仅当前页，不代表项目总量/)).toBeVisible();
+  await expect(page.getByText("仅当前页", { exact: true })).toBeVisible();
   expect(diagnostics).toEqual([]);
   await page.getByRole("button", { name: "仅看待处理" }).click();
   await expect(page.getByText("当前页没有匹配的结果")).toBeVisible();

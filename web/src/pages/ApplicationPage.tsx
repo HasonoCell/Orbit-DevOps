@@ -204,7 +204,7 @@ function ApplicationOverview({
           role="status"
           className="mb-4 rounded border border-primary/20 bg-accent p-3 text-sm"
         >
-          发布已接纳：{accepted}。接纳不代表部署已完成。
+          发布已接纳：{accepted}。部署进度请查看执行状态。
         </p>
       )}
       <nav className="workbench-tabs" aria-label="应用视图">

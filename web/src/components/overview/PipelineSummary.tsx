@@ -15,7 +15,7 @@ export function PipelineSummary({ applicationId, until }: { applicationId: strin
   });
   return <Panel title="自动交付" icon={<GitBranch className="size-4" />} subtitle="Webhook → 构建 → 部署">
     {pipelines.isPending || pipelines.error ? <QueryNotice error={pipelines.error} retry={() => void pipelines.refetch()} /> : <>
-      {pipelines.data.items.length === 0 ? <QuietEmpty>尚未配置 Pipeline<br />配置后，代码变更可触发自动构建与交付。</QuietEmpty> : <div className="divide-y">{pipelines.data.items.map((pipeline) => <PipelineItem key={pipeline.pipeline.id} pipeline={pipeline} applicationId={applicationId} until={until} />)}</div>}
+      {pipelines.data.items.length === 0 ? <QuietEmpty>尚未配置 Pipeline</QuietEmpty> : <div className="divide-y">{pipelines.data.items.map((pipeline) => <PipelineItem key={pipeline.pipeline.id} pipeline={pipeline} applicationId={applicationId} until={until} />)}</div>}
       <CursorPagination className="px-5 pb-4" cursor={cursor} nextCursor={pipelines.data.nextCursor} onChange={(next) => setParams((previous) => { const updated = new URLSearchParams(previous); if (next) updated.set("pipelineCursor", next); else updated.delete("pipelineCursor"); return updated; })} />
     </>}
   </Panel>;
