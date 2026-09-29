@@ -3,11 +3,16 @@
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "scripts": {
+    "prepare": "husky",
     "web:generate": "pnpm --filter @orbit-devops/web generate",
     "web:check": "pnpm --filter @orbit-devops/web check",
     "web:build": "pnpm --filter @orbit-devops/web build",
     "web:test:e2e": "pnpm --filter @orbit-devops/web test:e2e",
     "web:format": "pnpm --filter @orbit-devops/web format",
     "web:format:check": "pnpm --filter @orbit-devops/web format:check"
+  },
+  "devDependencies": {
+    "husky": "9.1.7",
+    "lint-staged": "16.2.7"
   }
 }
