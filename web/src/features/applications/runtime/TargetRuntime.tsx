@@ -214,7 +214,7 @@ function TargetFacts({ target }: { target: DeploymentTarget }) {
   );
 }
 
-function RuntimeResources({ report }: { report: DiagnosticReport }) {
+export function RuntimeResources({ report }: { report: DiagnosticReport }) {
   const { deployment, service, metadata } = report.workloadObservation;
   return (
     <section className="workbench-panel">
@@ -281,7 +281,7 @@ function RuntimeResources({ report }: { report: DiagnosticReport }) {
   );
 }
 
-function DiagnosticEvidence({ report }: { report: DiagnosticReport }) {
+export function DiagnosticEvidence({ report }: { report: DiagnosticReport }) {
   const incomplete = report.workloadObservation.metadata.status !== "complete";
   return (
     <section
@@ -356,7 +356,7 @@ function DiagnosticEvidence({ report }: { report: DiagnosticReport }) {
   );
 }
 
-function EventEvidence({ report }: { report: DiagnosticReport }) {
+export function EventEvidence({ report }: { report: DiagnosticReport }) {
   return (
     <section className="workbench-panel">
       <header className="panel-heading">

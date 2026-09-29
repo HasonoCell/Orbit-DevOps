@@ -1,0 +1,119 @@
+import { expect, test } from "@playwright/test";
+import {
+  application,
+  diagnostic,
+  principal,
+  project,
+  release,
+  target,
+  timestamp,
+} from "./fixtures/overview";
+
+const operation = diagnostic().releaseOperation;
+const detail = {
+  release: release.release,
+  releaseOperation: operation,
+  snapshotDifferences: [
+    { field: "replicas", releaseValue: "2", currentValue: "3" },
+  ],
+  auditTimeline: [
+    {
+      id: "audit-1",
+      actorId: "u-1",
+      actorKind: "user",
+      action: "release.create",
+      targetType: "release",
+      targetId: "r-1",
+      summary: {},
+      createdAt: timestamp,
+    },
+  ],
+};
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/v1/users/me", (route) =>
+    route.fulfill({ json: principal }),
+  );
+  await page.route("**/api/v1/projects/p-1", (route) =>
+    route.fulfill({ json: project }),
+  );
+  await page.route("**/api/v1/projects/p-1/permissions", (route) =>
+    route.fulfill({
+      json: {
+        projectId: "p-1",
+        role: "owner",
+        allowed: ["read", "read_logs", "develop", "resolve_unknown"],
+      },
+    }),
+  );
+  await page.route("**/api/v1/applications/a-1", (route) =>
+    route.fulfill({ json: application }),
+  );
+  await page.route("**/api/v1/deployment-targets/t-1", (route) =>
+    route.fulfill({ json: target }),
+  );
+  await page.route("**/api/v1/releases/r-1", (route) =>
+    route.fulfill({ json: detail }),
+  );
+  await page.route("**/api/v1/release-operations/ro-1", (route) =>
+    route.fulfill({ json: operation }),
+  );
+});
+
+test("发布详情区分执行结论、部分观测与配置差异，并按 Pod 读取运行日志", async ({
+  page,
+}) => {
+  const report = diagnostic();
+  report.runtimeReleaseRelation = "different";
+  report.workloadObservation.metadata.status = "partial";
+  report.eventObservation.metadata.status = "unavailable";
+  await page.route("**/api/v1/releases/r-1/diagnostics", (route) =>
+    route.fulfill({ json: report }),
+  );
+  await page.route("**/api/v1/releases/r-1/runtime-logs?*", (route) => {
+    const url = new URL(route.request().url());
+    expect(url.searchParams.get("podName")).toBe("payment-service-1");
+    expect(url.searchParams.get("container")).toBe("app");
+    return route.fulfill({
+      json: {
+        source: "kubernetes",
+        observedAt: timestamp,
+        releaseId: "r-1",
+        podName: "payment-service-1",
+        container: "app",
+        tailLines: 200,
+        previous: false,
+        content: "payment service started",
+        truncated: true,
+      },
+    });
+  });
+  await page.goto("/projects/p-1/applications/a-1/releases/r-1");
+  await expect(page.getByText("工作负载观测不完整")).toBeVisible();
+  await expect(page.getByText("运行版本与本发布不同")).toBeVisible();
+  await expect(page.getByText("快照 2 / 当前 3")).toBeVisible();
+  await expect(page.getByText("release.create")).toBeVisible();
+  await page
+    .getByRole("button", { name: "读取 payment-service-1 / app 日志" })
+    .click();
+  await expect(page.getByText("payment service started")).toBeVisible();
+  await expect(page.getByText("已截断")).toBeVisible();
+});
+
+test("运行观测不可用且无 Pod 时不显示健康结论或可选日志", async ({ page }) => {
+  const report = diagnostic();
+  report.runtimeReleaseRelation = "unknown";
+  report.workloadObservation.metadata.status = "unavailable";
+  report.workloadObservation.deployment = undefined;
+  report.workloadObservation.service = undefined;
+  report.workloadObservation.pods = [];
+  await page.route("**/api/v1/releases/r-1/diagnostics", (route) =>
+    route.fulfill({ json: report }),
+  );
+  await page.goto("/projects/p-1/applications/a-1/releases/r-1");
+  await expect(page.getByText("运行版本尚无法判断")).toBeVisible();
+  await expect(page.getByText("未观测到 Pod，暂无可选日志。")).toBeVisible();
+  await expect(page.getByRole("button", { name: /读取 .* 日志/ })).toHaveCount(
+    0,
+  );
+});

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { DeploymentTarget } from "@/api/http";
 import {
   listReleaseHistory,
@@ -21,6 +21,7 @@ export function ReleaseHistory({
   target: DeploymentTarget;
   applicationId: string;
 }) {
+  const { projectId = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const cursor = params.get("releaseCursor") ?? undefined;
   const query = useQuery({
@@ -53,6 +54,12 @@ export function ReleaseHistory({
                     />
                   </div>
                   <Timestamp value={item.release.createdAt} />
+                  <Link
+                    className="inline-block font-medium text-primary hover:underline"
+                    to={`/projects/${projectId}/applications/${applicationId}/releases/${item.release.id}`}
+                  >
+                    查看发布详情
+                  </Link>
                   <details>
                     <summary className="cursor-pointer text-primary">
                       镜像与执行结果

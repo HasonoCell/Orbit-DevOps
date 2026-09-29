@@ -1,6 +1,13 @@
 import { client, requireData } from "@/api/http";
 
 export const releaseQueryKeys = {
+  detail: (releaseId: string) => ["release", releaseId] as const,
+  operation: (operationId: string) =>
+    ["release-operation", operationId] as const,
+  diagnostics: (releaseId: string) =>
+    ["release-diagnostics", releaseId] as const,
+  logs: (releaseId: string, podName: string, container: string) =>
+    ["release-logs", releaseId, podName, container] as const,
   artifacts: (applicationId: string, cursor?: string) =>
     ["release-artifacts", applicationId, cursor] as const,
   history: (applicationId: string, targetId: string, cursor?: string) =>
@@ -12,6 +19,40 @@ export const releaseQueryKeys = {
       cursor,
     ] as const,
 };
+
+export async function getRelease(releaseId: string) {
+  return requireData(
+    await client.GET("/api/v1/releases/{releaseId}", {
+      params: { path: { releaseId } },
+    }),
+    "查询发布详情",
+  );
+}
+
+export async function getReleaseOperation(releaseOperationId: string) {
+  return requireData(
+    await client.GET("/api/v1/release-operations/{releaseOperationId}", {
+      params: { path: { releaseOperationId } },
+    }),
+    "查询发布执行",
+  );
+}
+
+export async function getRuntimeLogs(
+  releaseId: string,
+  podName: string,
+  container: string,
+) {
+  return requireData(
+    await client.GET("/api/v1/releases/{releaseId}/runtime-logs", {
+      params: {
+        path: { releaseId },
+        query: { podName, container, tailLines: 200, previous: false },
+      },
+    }),
+    "读取运行日志摘录",
+  );
+}
 
 export async function latestRelease(deploymentTargetId: string) {
   const page = requireData(

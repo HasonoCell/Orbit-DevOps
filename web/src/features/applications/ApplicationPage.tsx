@@ -1,7 +1,12 @@
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import {
   getApplication,
   getProject,
@@ -74,6 +79,7 @@ function ApplicationOverview({
   project: Project;
 }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
   const [paused, setPaused] = useState(false);
@@ -340,6 +346,9 @@ function ApplicationOverview({
             void queryClient.invalidateQueries({
               queryKey: workbenchQueryKeys.project(project.id),
             });
+            navigate(
+              `/projects/${project.id}/applications/${application.id}/releases/${id}`,
+            );
           }}
         />
       )}
