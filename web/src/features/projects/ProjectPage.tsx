@@ -17,6 +17,7 @@ import { ProjectWorkbench } from "@/features/projects/workbench/ProjectWorkbench
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useResourceCreateDialog } from "@/features/projects/use-resource-create-dialog";
+import { AccessHostsPanel } from "@/features/projects/access/AccessHostsPanel";
 
 const roleLabel = {
   owner: "所有者",
@@ -59,6 +60,7 @@ export function ProjectPage() {
       project={project.data}
       role={roleLabel[permissions.data.role]}
       canDevelop={permissions.data.allowed.includes("develop")}
+      canManageHosts={permissions.data.allowed.includes("manage_access_hosts")}
     />
   );
 }
@@ -67,18 +69,27 @@ function ProjectContent({
   project,
   role,
   canDevelop,
+  canManageHosts,
 }: {
   project: Project;
   role: string;
   canDevelop: boolean;
+  canManageHosts: boolean;
 }) {
   const [params, setParams] = useSearchParams();
+  const view =
+    params.get("view") === "delivery"
+      ? "delivery"
+      : params.get("view") === "access"
+        ? "access"
+        : "overview";
   const cursor = params.get("cursor") ?? undefined;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const applications = useQuery({
     queryKey: workbenchQueryKeys.page(project.id, cursor),
     queryFn: ({ signal }) => listWorkbench(project.id, cursor, signal),
+    enabled: view !== "access",
   });
   const createDialog = useResourceCreateDialog(
     (values, key) =>
@@ -125,12 +136,14 @@ function ProjectContent({
         {[
           ["overview", "应用总览"],
           ["delivery", "自动交付"],
+          ["access", "访问入口"],
         ].map(([view, label]) => (
           <button
             key={view}
             aria-pressed={
-              (params.get("view") === "delivery" ? "delivery" : "overview") ===
-              view
+              params.get("view") === view ||
+              (view === "overview" &&
+                !["delivery", "access"].includes(params.get("view") ?? ""))
             }
             onClick={() =>
               setParams((previous) => {
@@ -144,7 +157,9 @@ function ProjectContent({
           </button>
         ))}
       </nav>
-      {applications.isPending ? (
+      {view === "access" ? (
+        <AccessHostsPanel projectId={project.id} canManage={canManageHosts} />
+      ) : applications.isPending ? (
         <LoadingPage label="正在加载应用" />
       ) : applications.error ? (
         <ErrorPanel

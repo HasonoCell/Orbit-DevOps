@@ -75,6 +75,11 @@ const ProjectPage = lazy(() =>
     default: ProjectPage,
   })),
 );
+const AccessHostPage = lazy(() =>
+  import("@/features/projects/access/AccessHostPage").then(
+    ({ AccessHostPage }) => ({ default: AccessHostPage }),
+  ),
+);
 const ProjectsPage = lazy(() =>
   import("@/features/projects/ProjectsPage").then(({ ProjectsPage }) => ({
     default: ProjectsPage,
@@ -140,6 +145,10 @@ export function App() {
           <Route element={<ConsoleShell />}>
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:projectId" element={<ProjectPage />} />
+            <Route
+              path="/projects/:projectId/access-hosts/:hostId"
+              element={<AccessHostPage />}
+            />
             <Route
               path="/projects/:projectId/applications/:applicationId"
               element={<ApplicationPage />}

@@ -14,6 +14,7 @@ import { overviewQueryKeys } from "@/features/applications/api";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
 import { useCommandKey } from "@/shared/use-command-key";
 import { TargetFields, useTargetForm, type TargetValues } from "./TargetForm";
+import { TargetAccessRoutes } from "./TargetAccessRoutes";
 
 export function TargetPage() {
   const { projectId = "", applicationId = "", targetId = "" } = useParams();
@@ -196,6 +197,7 @@ function TargetContent({
           </Button>
         </div>
       )}
+      <TargetAccessRoutes projectId={projectId} targetId={targetId} />
       <details className="mt-6 text-xs text-muted-foreground">
         <summary className="cursor-pointer">目标标识</summary>
         <p className="mt-2 break-all">{target.id}</p>
