@@ -12,10 +12,15 @@ import (
 )
 
 func accessHostResponse(host access.Host) api.AccessHost {
-	return api.AccessHost{Id: host.ID, ProjectId: host.ProjectID, ClusterRef: host.ClusterRef,
+	response := api.AccessHost{Id: host.ID, ProjectId: host.ProjectID, ClusterRef: host.ClusterRef,
 		Namespace: host.Namespace, Hostname: host.Hostname, TlsMode: api.AccessHostTlsMode(host.TLSMode),
 		IssuerPolicyKey: host.IssuerPolicyKey, SecretBindingId: host.SecretBindingID,
 		Lifecycle: api.AccessHostLifecycle(host.Lifecycle), CreatedAt: host.CreatedAt, UpdatedAt: host.UpdatedAt}
+	if host.SecretBindingState != nil {
+		state := api.AccessHostSecretBindingState(*host.SecretBindingState)
+		response.SecretBindingState = &state
+	}
+	return response
 }
 
 func accessRouteResponse(route access.Route) api.AccessRoute {

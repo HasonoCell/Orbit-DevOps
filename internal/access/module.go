@@ -52,17 +52,18 @@ type SecretVerifier interface {
 }
 
 type Host struct {
-	ID              uuid.UUID  `db:"id" json:"id"`
-	ProjectID       uuid.UUID  `db:"project_id" json:"projectId"`
-	ClusterRef      string     `db:"cluster_ref" json:"clusterRef"`
-	Namespace       string     `db:"namespace" json:"namespace"`
-	Hostname        string     `db:"hostname" json:"hostname"`
-	TLSMode         string     `db:"tls_mode" json:"tlsMode"`
-	IssuerPolicyKey *string    `db:"issuer_policy_key" json:"issuerPolicyKey,omitempty"`
-	SecretBindingID *uuid.UUID `db:"secret_binding_id" json:"secretBindingId,omitempty"`
-	Lifecycle       string     `db:"lifecycle" json:"lifecycle"`
-	CreatedAt       time.Time  `db:"created_at" json:"createdAt"`
-	UpdatedAt       time.Time  `db:"updated_at" json:"updatedAt"`
+	ID                 uuid.UUID  `db:"id" json:"id"`
+	ProjectID          uuid.UUID  `db:"project_id" json:"projectId"`
+	ClusterRef         string     `db:"cluster_ref" json:"clusterRef"`
+	Namespace          string     `db:"namespace" json:"namespace"`
+	Hostname           string     `db:"hostname" json:"hostname"`
+	TLSMode            string     `db:"tls_mode" json:"tlsMode"`
+	IssuerPolicyKey    *string    `db:"issuer_policy_key" json:"issuerPolicyKey,omitempty"`
+	SecretBindingID    *uuid.UUID `db:"secret_binding_id" json:"secretBindingId,omitempty"`
+	SecretBindingState *string    `db:"binding_state" json:"secretBindingState,omitempty"`
+	Lifecycle          string     `db:"lifecycle" json:"lifecycle"`
+	CreatedAt          time.Time  `db:"created_at" json:"createdAt"`
+	UpdatedAt          time.Time  `db:"updated_at" json:"updatedAt"`
 }
 
 type Route struct {
@@ -308,7 +309,9 @@ func (m *Module) GetHost(ctx context.Context, projectID, hostID uuid.UUID, calle
 		if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, projectID, caller, projectauth.PermissionRead); err != nil {
 			return err
 		}
-		err := tx.GetContext(ctx, &host, `SELECT `+hostColumns+` FROM access_hosts WHERE id=$1 AND project_id=$2`, hostID, projectID)
+		err := tx.GetContext(ctx, &host, `SELECT h.`+hostColumnsWithAlias+`,b.state AS binding_state
+ FROM access_hosts h LEFT JOIN access_secret_bindings b ON b.id=h.secret_binding_id
+ WHERE h.id=$1 AND h.project_id=$2`, hostID, projectID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrHostNotFound
 		}

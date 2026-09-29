@@ -2113,6 +2113,21 @@ paths:
         "403": {description: 需要近期认证的平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         "409": {description: 授权或幂等冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/projects/{projectId}/access-secret-binding-options:
+    get:
+      operationId: listAccessSecretBindingOptions
+      summary: 精确查询当前项目与域名可引用的 TLS Secret 授权
+      parameters:
+        - {$ref: "#/components/parameters/ProjectId"}
+        - {name: hostname, in: query, required: true, schema: {type: string, minLength: 4, maxLength: 253}}
+        - {$ref: "#/components/parameters/AccessPageLimit"}
+        - {$ref: "#/components/parameters/AccessPageOffset"}
+      responses:
+        "200": {description: 当前有效授权, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/AccessSecretBindingOption"}}}}}
+        "400": {description: 域名无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 当前项目角色不能管理入口, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 项目不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/platform/access-secret-bindings/{bindingId}:
     delete:
       operationId: revokeAccessSecretBinding
@@ -2225,6 +2240,16 @@ components:
         state: {type: string, enum: [active, revoked]}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+    AccessSecretBindingOption:
+      type: object
+      additionalProperties: false
+      required: [id, secretName, clusterRef, namespace, hostname]
+      properties:
+        id: {type: string, format: uuid}
+        secretName: {type: string}
+        clusterRef: {type: string}
+        namespace: {type: string}
+        hostname: {type: string}
     AccessHostInput:
       type: object
       additionalProperties: false
@@ -2263,6 +2288,7 @@ components:
         tlsMode: {type: string, enum: [http_only, managed, existing_secret]}
         issuerPolicyKey: {type: string}
         secretBindingId: {type: string, format: uuid}
+        secretBindingState: {type: string, enum: [active, revoked]}
         lifecycle: {type: string, enum: [active, deleting]}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}

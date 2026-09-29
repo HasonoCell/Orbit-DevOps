@@ -22,6 +22,37 @@ type HostOptions struct {
 	IssuerPolicies []IssuerOption `json:"issuerPolicies"`
 }
 
+type SecretBindingOption struct {
+	ID         uuid.UUID `db:"id" json:"id"`
+	SecretName string    `db:"secret_name" json:"secretName"`
+	ClusterRef string    `db:"cluster_ref" json:"clusterRef"`
+	Namespace  string    `db:"namespace" json:"namespace"`
+	Hostname   string    `db:"hostname" json:"hostname"`
+}
+
+// ListSecretBindingOptions 限定项目、受控集群/Namespace 与精确域名，只暴露 active 绑定的名称。
+func (m *Module) ListSecretBindingOptions(ctx context.Context, projectID uuid.UUID, caller identity.Caller, rawHostname string, page Page) ([]SecretBindingOption, error) {
+	hostname, err := NormalizeHostname(rawHostname)
+	if err != nil {
+		return nil, ErrInvalidHost
+	}
+	page, err = page.normalized()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]SecretBindingOption, 0)
+	err = m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		if err := m.authorizer.RequireAuthorizedInTransaction(ctx, tx, projectID, caller, projectauth.PermissionManageAccessHosts); err != nil {
+			return err
+		}
+		return tx.SelectContext(ctx, &result, `SELECT id,secret_name,cluster_ref,namespace,hostname
+ FROM access_secret_bindings WHERE project_id=$1 AND cluster_ref=$2 AND namespace=$3
+ AND hostname=$4 AND state='active' ORDER BY secret_name,id LIMIT $5 OFFSET $6`,
+			projectID, m.config.ClusterRef, m.config.Namespace, hostname, page.Limit, page.Offset)
+	})
+	return result, err
+}
+
 // GetHostOptions 仅为有入口管理权限的成员枚举运维预置的 Policy 标识，不暴露凭据。
 func (m *Module) GetHostOptions(ctx context.Context, projectID uuid.UUID, caller identity.Caller) (HostOptions, error) {
 	err := m.authorizer.Read(ctx, caller, func(tx *sqlx.Tx) error {

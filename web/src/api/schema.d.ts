@@ -1232,6 +1232,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/access-secret-binding-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 精确查询当前项目与域名可引用的 TLS Secret 授权 */
+        get: operations["listAccessSecretBindingOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/access-secret-bindings/{bindingId}": {
         parameters: {
             query?: never;
@@ -1275,6 +1292,14 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        AccessSecretBindingOption: {
+            /** Format: uuid */
+            id: string;
+            secretName: string;
+            clusterRef: string;
+            namespace: string;
+            hostname: string;
+        };
         AccessHostInput: {
             hostname: string;
             /** @enum {string} */
@@ -1306,6 +1331,8 @@ export interface components {
             issuerPolicyKey?: string;
             /** Format: uuid */
             secretBindingId?: string;
+            /** @enum {string} */
+            secretBindingState?: "active" | "revoked";
             /** @enum {string} */
             lifecycle: "active" | "deleting";
             /** Format: date-time */
@@ -7022,6 +7049,68 @@ export interface operations {
             };
             /** @description 授权或幂等冲突 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listAccessSecretBindingOptions: {
+        parameters: {
+            query: {
+                hostname: string;
+                limit?: components["parameters"]["AccessPageLimit"];
+                offset?: components["parameters"]["AccessPageOffset"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前有效授权 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessSecretBindingOption"][];
+                };
+            };
+            /** @description 域名无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 当前项目角色不能管理入口 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 项目不可见 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
