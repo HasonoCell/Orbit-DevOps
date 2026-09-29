@@ -62,6 +62,9 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/v1/applications/a-1/deployment-targets?*", (route) =>
     route.fulfill({ json: { items: [developmentTarget, productionTarget] } }),
   );
+  await page.route("**/api/v1/delivery-pipelines/pl-1/runs?*", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
 });
 
 test("默认仅构建，创建后只显示 Orbit 接入状态及配置前提", async ({ page }) => {

@@ -24,6 +24,7 @@ import {
   updatePipeline,
   type PipelineInput,
 } from "./pipeline-api";
+import { PipelineRuns } from "./PipelineRuns";
 
 type Detail = components["schemas"]["DeliveryPipelineDetail"];
 type Mode = components["schemas"]["DeliveryMode"];
@@ -435,6 +436,15 @@ function PipelineEditor({
           canDevelop={canDevelop}
           selected={stateAction}
           onSelected={setStateAction}
+        />
+      )}
+      {!creating && detail && (
+        <PipelineRuns
+          projectId={projectId}
+          applicationId={applicationId}
+          pipelineId={pipelineId}
+          buildOnly={detail.revision.mode === "build_only"}
+          currentRevision={detail.revision.revision}
         />
       )}
     </div>

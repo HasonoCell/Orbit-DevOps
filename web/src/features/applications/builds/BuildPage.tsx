@@ -179,7 +179,7 @@ export function BuildPage() {
           )
         )}
       </section>
-      <section className="workbench-panel">
+      <section className="workbench-panel" id="artifact">
         <header className="panel-heading">
           <h2>镜像产物</h2>
         </header>

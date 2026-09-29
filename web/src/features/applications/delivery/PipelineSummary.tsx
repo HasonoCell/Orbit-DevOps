@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, GitBranch } from "lucide-react";
+import { GitBranch } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   latestRun,
   listPipelines,
   overviewQueryKeys,
   type Pipeline,
-  type DeliveryRun,
 } from "@/features/applications/api";
 import { CursorPagination } from "@/shared/CursorPagination";
 import {
@@ -18,6 +17,7 @@ import {
   Timestamp,
 } from "@/shared/OverviewUI";
 import { isActiveRun, pollInterval, runStatus } from "@/shared/overview-status";
+import { DeliveryStages } from "./DeliveryStages";
 
 export function PipelineSummary({
   applicationId,
@@ -138,7 +138,7 @@ function PipelineItem({
             <StatusPill {...runStatus[run.data.status]} />
           </div>
           {run.data.run.pipelineRevision === revision.revision ? (
-            <RunStages
+            <DeliveryStages
               run={run.data}
               buildOnly={revision.mode === "build_only"}
             />
@@ -170,51 +170,5 @@ function PipelineItem({
         </div>
       )}
     </article>
-  );
-}
-
-/** 来源校验归入部署阶段；仅构建流水线不虚构一次成功的部署。 */
-function RunStages({
-  run,
-  buildOnly,
-}: {
-  run: DeliveryRun;
-  buildOnly: boolean;
-}) {
-  const artifactReady = !!run.run.imageArtifactId;
-  const buildLabel = artifactReady
-    ? "构建完成"
-    : run.activeStage === "build" ||
-        ["building", "build_failed", "build_canceled"].includes(run.status)
-      ? runStatus[run.status].label
-      : "构建阶段";
-  const deployLabel =
-    run.status === "succeeded"
-      ? "部署完成"
-      : run.activeStage === "source_verification"
-        ? "校验来源中"
-        : run.activeStage === "release" ||
-            [
-              "releasing",
-              "release_failed",
-              "release_canceled",
-              "superseded",
-              "blocked",
-            ].includes(run.status)
-          ? runStatus[run.status].label
-          : "等待部署";
-  return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-3 text-xs">
-      <span>{buildLabel}</span>
-      {!buildOnly && (
-        <>
-          <ArrowRight className="size-3 text-muted-foreground" />
-          <span>{deployLabel}</span>
-        </>
-      )}
-      {buildOnly && (
-        <span className="ml-auto text-muted-foreground">不自动部署</span>
-      )}
-    </div>
   );
 }

@@ -50,6 +50,11 @@ const PipelinePage = lazy(() =>
     ({ PipelinePage }) => ({ default: PipelinePage }),
   ),
 );
+const DeliveryRunPage = lazy(() =>
+  import("@/features/applications/delivery/DeliveryRunPage").then(
+    ({ DeliveryRunPage }) => ({ default: DeliveryRunPage }),
+  ),
+);
 const AuthCallbackPage = lazy(() =>
   import("@/features/auth/AuthCallbackPage").then(({ AuthCallbackPage }) => ({
     default: AuthCallbackPage,
@@ -154,6 +159,10 @@ export function App() {
             <Route
               path="/projects/:projectId/applications/:applicationId/pipelines/:pipelineId"
               element={<PipelinePage />}
+            />
+            <Route
+              path="/projects/:projectId/applications/:applicationId/pipelines/:pipelineId/runs/:runId"
+              element={<DeliveryRunPage />}
             />
             <Route path="/account" element={<AccountPage />} />
           </Route>
