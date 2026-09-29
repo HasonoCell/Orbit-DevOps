@@ -4,7 +4,7 @@ import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import { z } from "zod";
 import { changePassword, principalQueryKey } from "@/features/auth/api";
-import { errorText, type CurrentPrincipal } from "@/api/http";
+import { ApiError, errorText, type CurrentPrincipal } from "@/api/http";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RecentAuthPrompt } from "./RecentAuthPrompt";
 
 const weakPasswords = new Set([
   "passwordpassword",
@@ -225,11 +226,17 @@ export function PasswordPage() {
               register={form.register("confirmPassword")}
               error={form.formState.errors.confirmPassword?.message}
             />
-            {mutation.error && (
-              <Alert variant="destructive" role="alert">
-                <AlertDescription>{errorText(mutation.error)}</AlertDescription>
-              </Alert>
-            )}
+            {mutation.error &&
+              !(
+                mutation.error instanceof ApiError &&
+                mutation.error.code === "recent_authentication_required"
+              ) && (
+                <Alert variant="destructive" role="alert">
+                  <AlertDescription>
+                    {errorText(mutation.error)}
+                  </AlertDescription>
+                </Alert>
+              )}
             <div className="flex items-center justify-between gap-4">
               {!principal.mustChangePassword && (
                 <Link
@@ -252,6 +259,7 @@ export function PasswordPage() {
               </Button>
             </div>
           </form>
+          <RecentAuthPrompt error={mutation.error} />
         </CardContent>
       </Card>
     </main>
