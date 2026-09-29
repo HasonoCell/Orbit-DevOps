@@ -1,18 +1,56 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { getCurrentPrincipal, principalQueryKey } from "@/api/auth";
 import { ApiError, sessionInvalidEvent } from "@/api/http";
-import { ConsoleShell } from "@/components/ConsoleShell";
 import { ErrorPanel, LoadingPage } from "@/components/PageState";
-import { AccountPage } from "@/pages/AccountPage";
-import { AdmissionPage } from "@/pages/AdmissionPage";
-import { ApplicationPage } from "@/pages/ApplicationPage";
-import { AuthCallbackPage } from "@/pages/AuthCallbackPage";
-import { LoginPage } from "@/pages/LoginPage";
-import { PasswordPage } from "@/pages/PasswordPage";
-import { ProjectPage } from "@/pages/ProjectPage";
-import { ProjectsPage } from "@/pages/ProjectsPage";
+
+// 路由按需加载：登录页不下载工作台和 Kubernetes 运行观测代码。
+const ConsoleShell = lazy(() =>
+  import("@/components/ConsoleShell").then(({ ConsoleShell }) => ({
+    default: ConsoleShell,
+  })),
+);
+const AccountPage = lazy(() =>
+  import("@/pages/AccountPage").then(({ AccountPage }) => ({
+    default: AccountPage,
+  })),
+);
+const AdmissionPage = lazy(() =>
+  import("@/pages/AdmissionPage").then(({ AdmissionPage }) => ({
+    default: AdmissionPage,
+  })),
+);
+const ApplicationPage = lazy(() =>
+  import("@/pages/ApplicationPage").then(({ ApplicationPage }) => ({
+    default: ApplicationPage,
+  })),
+);
+const AuthCallbackPage = lazy(() =>
+  import("@/pages/AuthCallbackPage").then(({ AuthCallbackPage }) => ({
+    default: AuthCallbackPage,
+  })),
+);
+const LoginPage = lazy(() =>
+  import("@/pages/LoginPage").then(({ LoginPage }) => ({
+    default: LoginPage,
+  })),
+);
+const PasswordPage = lazy(() =>
+  import("@/pages/PasswordPage").then(({ PasswordPage }) => ({
+    default: PasswordPage,
+  })),
+);
+const ProjectPage = lazy(() =>
+  import("@/pages/ProjectPage").then(({ ProjectPage }) => ({
+    default: ProjectPage,
+  })),
+);
+const ProjectsPage = lazy(() =>
+  import("@/pages/ProjectsPage").then(({ ProjectsPage }) => ({
+    default: ProjectsPage,
+  })),
+);
 
 function SessionBoundary() {
   const location = useLocation();
@@ -63,24 +101,26 @@ function SessionBoundary() {
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/auth/callback" element={<AuthCallbackPage />} />
-      <Route element={<SessionBoundary />}>
-        <Route path="/admission" element={<AdmissionPage />} />
-        <Route path="/account/password" element={<PasswordPage />} />
-        <Route element={<ConsoleShell />}>
-          <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/projects/:projectId" element={<ProjectPage />} />
-          <Route
-            path="/projects/:projectId/applications/:applicationId"
-            element={<ApplicationPage />}
-          />
-          <Route path="/account" element={<AccountPage />} />
+    <Suspense fallback={<LoadingPage label="正在加载页面" />}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+        <Route element={<SessionBoundary />}>
+          <Route path="/admission" element={<AdmissionPage />} />
+          <Route path="/account/password" element={<PasswordPage />} />
+          <Route element={<ConsoleShell />}>
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/projects/:projectId" element={<ProjectPage />} />
+            <Route
+              path="/projects/:projectId/applications/:applicationId"
+              element={<ApplicationPage />}
+            />
+            <Route path="/account" element={<AccountPage />} />
+          </Route>
         </Route>
-      </Route>
-      <Route path="/" element={<Navigate to="/projects" replace />} />
-      <Route path="*" element={<Navigate to="/projects" replace />} />
-    </Routes>
+        <Route path="/" element={<Navigate to="/projects" replace />} />
+        <Route path="*" element={<Navigate to="/projects" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
