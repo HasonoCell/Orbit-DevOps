@@ -6,6 +6,7 @@ import {
   getApplication,
   getDeploymentTarget,
   getProjectPermissions,
+  listDeploymentTargets,
 } from "@/api/catalog";
 import { errorText } from "@/api/http";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,13 @@ export function ReleasePage() {
     queryKey: ["deployment-target", targetId],
     queryFn: () => getDeploymentTarget(targetId),
     enabled: !!targetId,
+  });
+  const targets = useQuery({
+    queryKey: ["deployment-targets", applicationId],
+    queryFn: () => listDeploymentTargets(applicationId),
+    enabled:
+      !!detail.data &&
+      detail.data.release.targetSnapshot.stage === "development",
   });
   const operationId = detail.data?.releaseOperation.id ?? "";
   const operation = useQuery({
@@ -132,6 +140,10 @@ export function ReleasePage() {
   }
   const { release, snapshotDifferences, auditTimeline } = detail.data;
   const current = operation.error ? undefined : operation.data;
+  const productionTarget = targets.data?.find(
+    (item) => item.stage === "production",
+  );
+  const canDevelop = permissions.data.allowed.includes("develop");
   const relation = {
     matches: "运行版本与本发布一致",
     different: "运行版本与本发布不同",
@@ -217,6 +229,47 @@ export function ReleasePage() {
           )}
         </div>
       </section>
+      {canDevelop && (
+        <section className="workbench-panel mb-5 p-5 text-sm">
+          <h2 className="font-semibold">以此镜像创建新发布</h2>
+          <p className="mt-2 text-muted-foreground">
+            新发布会读取所选 Target 的当前配置。历史 Release 保持不变。
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link
+                to={`/projects/${projectId}/applications/${applicationId}?view=delivery&target=${targetId}&releaseSource=${releaseId}&createRelease=1`}
+              >
+                发布到原目标
+              </Link>
+            </Button>
+            {release.targetSnapshot.stage === "development" &&
+              productionTarget && (
+                <Button asChild>
+                  <Link
+                    to={`/projects/${projectId}/applications/${applicationId}?view=delivery&target=${productionTarget.id}&releaseSource=${releaseId}&createRelease=1`}
+                  >
+                    晋级到生产
+                  </Link>
+                </Button>
+              )}
+          </div>
+          {release.targetSnapshot.stage === "development" &&
+            !targets.isPending &&
+            !targets.error &&
+            !productionTarget && (
+              <p className="mt-3 text-muted-foreground">
+                尚无生产 Target，请先创建生产目标。
+              </p>
+            )}
+          {targets.error && (
+            <QueryNotice
+              error={targets.error}
+              retry={() => void targets.refetch()}
+            />
+          )}
+        </section>
+      )}
       <section id="operation" className="workbench-panel mb-5">
         <header className="panel-heading">
           <h2>执行状态</h2>

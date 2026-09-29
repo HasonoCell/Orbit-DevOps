@@ -180,6 +180,22 @@ function TargetContent({
           )}
         </div>
       </section>
+      {canDevelop && (
+        <div className="mt-5 max-w-3xl rounded-lg border bg-card p-5 text-sm">
+          <h2 className="font-semibold">应用新配置</h2>
+          <p className="mt-2 text-muted-foreground">
+            保存配置不会修改集群。选择镜像并创建新的发布后，Worker
+            才会按新快照执行。
+          </p>
+          <Button className="mt-4" asChild>
+            <Link
+              to={`/projects/${projectId}/applications/${applicationId}?view=delivery&target=${targetId}&createRelease=1`}
+            >
+              选择镜像并发布
+            </Link>
+          </Button>
+        </div>
+      )}
       <details className="mt-6 text-xs text-muted-foreground">
         <summary className="cursor-pointer">目标标识</summary>
         <p className="mt-2 break-all">{target.id}</p>

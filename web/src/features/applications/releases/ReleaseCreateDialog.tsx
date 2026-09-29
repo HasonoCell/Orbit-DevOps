@@ -1,9 +1,11 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { errorText, type Application, type DeploymentTarget } from "@/api/http";
 import { listBuilds } from "@/features/applications/api";
+import { getBuild } from "@/features/applications/builds/api";
 import {
   acceptRelease,
+  getRelease,
   releaseQueryKeys,
 } from "@/features/applications/releases/api";
 import { CursorPagination } from "@/shared/CursorPagination";
@@ -27,35 +29,81 @@ import { useCommandKey } from "@/shared/use-command-key";
 export function ReleaseCreateDialog({
   target,
   application,
+  initialSource,
   open,
   onOpenChange,
   onAccepted,
 }: {
   target: DeploymentTarget;
   application: Application;
+  initialSource?: { kind: "build" | "release"; id: string };
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAccepted: (id: string) => void;
 }) {
   const commandKey = useCommandKey();
-  const [source, setSource] = useState("artifact");
+  const [source, setSource] = useState(
+    initialSource?.kind === "release" ? "reference" : "artifact",
+  );
   const [cursor, setCursor] = useState<string>();
   const [artifactId, setArtifactId] = useState("");
   const [reference, setReference] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [validation, setValidation] = useState("");
+  const [prefillDone, setPrefillDone] = useState(false);
+  const sourceBuild = useQuery({
+    queryKey: ["build", initialSource?.id],
+    queryFn: () => getBuild(initialSource!.id),
+    enabled: open && initialSource?.kind === "build",
+  });
+  const sourceRelease = useQuery({
+    queryKey: releaseQueryKeys.detail(initialSource?.id ?? ""),
+    queryFn: () => getRelease(initialSource!.id),
+    enabled: open && initialSource?.kind === "release",
+  });
+  const suggestedArtifact =
+    initialSource?.kind === "build" &&
+    sourceBuild.data?.build.projectId === application.projectId &&
+    sourceBuild.data.build.applicationId === application.id &&
+    sourceBuild.data.buildOperation.status === "succeeded" &&
+    sourceBuild.data.imageArtifact?.projectId === application.projectId &&
+    sourceBuild.data.imageArtifact.applicationId === application.id
+      ? sourceBuild.data.imageArtifact
+      : undefined;
+  const suggestedRelease =
+    initialSource?.kind === "release" &&
+    sourceRelease.data?.release.targetSnapshot.projectId ===
+      application.projectId &&
+    sourceRelease.data.release.targetSnapshot.applicationId === application.id
+      ? sourceRelease.data.release
+      : undefined;
+  useEffect(() => {
+    if (prefillDone) return;
+    if (suggestedArtifact && !artifactId) {
+      setArtifactId(suggestedArtifact.id);
+      setPrefillDone(true);
+    } else if (suggestedRelease && !reference) {
+      setReference(suggestedRelease.imageReference);
+      setPrefillDone(true);
+    }
+  }, [prefillDone, suggestedArtifact, suggestedRelease, artifactId, reference]);
   const builds = useQuery({
     queryKey: releaseQueryKeys.artifacts(application.id, cursor),
     queryFn: () => listBuilds(application.id, cursor),
     enabled: open,
   });
-  const artifacts = builds.error
-    ? []
-    : (builds.data?.items ?? []).flatMap((item) =>
-        item.buildOperation.status === "succeeded" && item.imageArtifact
-          ? [item.imageArtifact]
-          : [],
-      );
+  const artifacts = (builds.data?.items ?? [])
+    .flatMap((item) =>
+      item.build.projectId === application.projectId &&
+      item.build.applicationId === application.id &&
+      item.buildOperation.status === "succeeded" &&
+      item.imageArtifact?.projectId === application.projectId &&
+      item.imageArtifact.applicationId === application.id
+        ? [item.imageArtifact]
+        : [],
+    )
+    .filter((artifact) => artifact.id !== suggestedArtifact?.id);
+  if (suggestedArtifact) artifacts.unshift(suggestedArtifact);
   const selected = artifacts.find((artifact) => artifact.id === artifactId);
   const mutation = useMutation({
     mutationFn: (body: { imageReference: string; imageArtifactId?: string }) =>
@@ -120,7 +168,9 @@ export function ReleaseCreateDialog({
         </DialogHeader>
         <form onSubmit={submit} className="space-y-5">
           <div className="rounded border bg-muted/50 p-3 text-sm">
-            <strong>{target.stage}</strong>
+            <strong>
+              {target.stage === "production" ? "生产目标" : "开发目标"}
+            </strong>
             <p className="mt-1 break-all text-xs text-muted-foreground">
               {target.clusterRef} / {target.namespace}
             </p>
@@ -128,6 +178,48 @@ export function ReleaseCreateDialog({
               期望 {target.replicas} 个副本，容器端口 {target.containerPort}
             </p>
           </div>
+          {initialSource && (
+            <div className="rounded border p-3 text-sm">
+              <p className="font-medium">
+                来源：{initialSource.kind === "build" ? "构建" : "历史发布"}{" "}
+                {initialSource.id}
+              </p>
+              {(sourceBuild.error || sourceRelease.error) && (
+                <QueryNotice
+                  error={sourceBuild.error ?? sourceRelease.error}
+                  retry={() =>
+                    void (initialSource.kind === "build"
+                      ? sourceBuild.refetch()
+                      : sourceRelease.refetch())
+                  }
+                />
+              )}
+              {initialSource.kind === "build" &&
+                !sourceBuild.isPending &&
+                !sourceBuild.error &&
+                !suggestedArtifact && (
+                  <p role="alert" className="mt-2 text-destructive">
+                    此构建没有属于当前应用的成功产物，请重新选择。
+                  </p>
+                )}
+              {initialSource.kind === "release" &&
+                !sourceRelease.isPending &&
+                !sourceRelease.error &&
+                !suggestedRelease && (
+                  <p role="alert" className="mt-2 text-destructive">
+                    此发布不属于当前应用，请重新选择镜像。
+                  </p>
+                )}
+              {suggestedRelease &&
+                target.stage === "production" &&
+                suggestedRelease.targetSnapshot.stage === "development" && (
+                  <p className="mt-2 text-amber-800">
+                    将开发发布的镜像晋级生产。生产 Target
+                    配置会形成新的发布快照。
+                  </p>
+                )}
+            </div>
+          )}
           <fieldset disabled={mutation.isPending} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="release-source">镜像来源</Label>
@@ -137,6 +229,7 @@ export function ReleaseCreateDialog({
                 value={source}
                 onChange={(event) => {
                   setSource(event.target.value);
+                  setPrefillDone(true);
                   setConfirmed(false);
                   setValidation("");
                 }}
@@ -147,12 +240,14 @@ export function ReleaseCreateDialog({
             </div>
             {source === "artifact" ? (
               <>
-                {builds.isPending || builds.error ? (
+                {builds.isPending && !suggestedArtifact && <QueryNotice />}
+                {builds.error && (
                   <QueryNotice
                     error={builds.error}
                     retry={() => void builds.refetch()}
                   />
-                ) : (
+                )}
+                {(builds.data || suggestedArtifact) && (
                   <>
                     <Label htmlFor="release-artifact">选择产物</Label>
                     <select
@@ -161,6 +256,7 @@ export function ReleaseCreateDialog({
                       value={artifactId}
                       onChange={(event) => {
                         setArtifactId(event.target.value);
+                        setPrefillDone(true);
                         setConfirmed(false);
                       }}
                     >
@@ -177,15 +273,18 @@ export function ReleaseCreateDialog({
                         本页构建没有可选产物，可继续翻页或使用高级引用。
                       </p>
                     )}
-                    <CursorPagination
-                      cursor={cursor}
-                      nextCursor={builds.data.nextCursor}
-                      onChange={(next) => {
-                        setCursor(next);
-                        setArtifactId("");
-                        setConfirmed(false);
-                      }}
-                    />
+                    {builds.data && (
+                      <CursorPagination
+                        cursor={cursor}
+                        nextCursor={builds.data.nextCursor}
+                        onChange={(next) => {
+                          setCursor(next);
+                          setArtifactId("");
+                          setPrefillDone(true);
+                          setConfirmed(false);
+                        }}
+                      />
+                    )}
                   </>
                 )}
                 {selected && (
@@ -200,6 +299,7 @@ export function ReleaseCreateDialog({
                   value={reference}
                   onChange={(event) => {
                     setReference(event.target.value);
+                    setPrefillDone(true);
                     setConfirmed(false);
                   }}
                   placeholder="registry.example.com/app@sha256:…"
@@ -219,7 +319,8 @@ export function ReleaseCreateDialog({
                 checked={confirmed}
                 onChange={(event) => setConfirmed(event.target.checked)}
               />
-              我确认发布到 {target.stage}，这可能替换该目标当前运行的版本。
+              我确认发布到{target.stage === "production" ? "生产" : "开发"}
+              环境，这可能替换该目标当前运行的版本。
             </label>
           </fieldset>
           {validation && (
@@ -259,10 +360,12 @@ export function ReleaseCreateDialog({
               disabled={
                 mutation.isPending ||
                 !confirmed ||
-                (source === "artifact" && (!selected || builds.isFetching))
+                (source === "artifact" && !selected)
               }
             >
-              {mutation.isPending ? "正在接纳…" : `确认发布到 ${target.stage}`}
+              {mutation.isPending
+                ? "正在接纳…"
+                : `确认发布到${target.stage === "production" ? "生产" : "开发"}环境`}
             </Button>
           </DialogFooter>
         </form>

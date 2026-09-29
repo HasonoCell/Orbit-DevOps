@@ -83,7 +83,9 @@ function ApplicationOverview({
   const [params, setParams] = useSearchParams();
   const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
   const [paused, setPaused] = useState(false);
-  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState(
+    () => params.get("createRelease") === "1",
+  );
   const [createStage, setCreateStage] = useState<
     "development" | "production" | null
   >(null);
@@ -338,6 +340,13 @@ function ApplicationOverview({
           key={`release-${target.id}`}
           target={target}
           application={application}
+          initialSource={
+            params.get("buildSource")
+              ? { kind: "build", id: params.get("buildSource")! }
+              : params.get("releaseSource")
+                ? { kind: "release", id: params.get("releaseSource")! }
+                : undefined
+          }
           open={releaseOpen}
           onOpenChange={setReleaseOpen}
           onAccepted={(id) => {

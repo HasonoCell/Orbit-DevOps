@@ -195,6 +195,17 @@ export function BuildPage() {
                 {imageArtifact.imageReference}
               </span>
             </Fact>
+            {permissions.data.allowed.includes("develop") && (
+              <div>
+                <Button asChild>
+                  <Link
+                    to={`/projects/${projectId}/applications/${applicationId}?view=delivery&buildSource=${record.id}&createRelease=1`}
+                  >
+                    使用此产物发布
+                  </Link>
+                </Button>
+              </div>
+            )}
           </dl>
         ) : (
           <p className="p-5 text-sm text-muted-foreground">暂无产物</p>
