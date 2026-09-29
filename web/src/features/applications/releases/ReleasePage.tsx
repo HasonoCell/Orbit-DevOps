@@ -29,6 +29,7 @@ import {
   getRuntimeLogs,
   releaseQueryKeys,
 } from "./api";
+import { ReleaseCommands } from "./ReleaseCommands";
 import type { DiagnosticReport } from "@/features/applications/api";
 
 export function ReleasePage() {
@@ -273,6 +274,20 @@ export function ReleasePage() {
           )
         )}
       </section>
+      {current && (
+        <div className="mb-5">
+          <ReleaseCommands
+            release={release}
+            operation={current}
+            projectId={projectId}
+            applicationId={applicationId}
+            canDevelop={permissions.data.allowed.includes("develop")}
+            canResolveUnknown={permissions.data.allowed.includes(
+              "resolve_unknown",
+            )}
+          />
+        </div>
+      )}
       <section className="workbench-panel mb-5">
         <header className="panel-heading">
           <h2>审计时间线</h2>
