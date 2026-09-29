@@ -1127,6 +1127,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/access-hosts/{hostId}/eligible-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查询与域名同项目、同集群、同命名空间的部署目标 */
+        get: operations["listAccessEligibleTargets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/access-hosts/{hostId}/routes/{routeId}": {
         parameters: {
             query?: never;
@@ -1144,6 +1161,23 @@ export interface paths {
         head?: never;
         /** 修改路径路由 */
         patch: operations["updateAccessRoute"];
+        trace?: never;
+    };
+    "/api/v1/deployment-targets/{deploymentTargetId}/access-routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查询某部署目标关联的项目访问入口 */
+        get: operations["listTargetAccessRoutes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/platform/access-secret-bindings": {
@@ -1302,6 +1336,29 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        AccessEligibleTarget: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            applicationId: string;
+            applicationName: string;
+            /** @enum {string} */
+            stage: "development" | "production";
+            clusterRef: string;
+            namespace: string;
+        };
+        AccessTargetRoute: {
+            /** Format: uuid */
+            routeId: string;
+            /** Format: uuid */
+            hostId: string;
+            hostname: string;
+            pathPrefix: string;
+            /** @enum {string} */
+            routeLifecycle: "active" | "deleting";
+            /** @enum {string} */
+            hostLifecycle: "active" | "deleting";
         };
         AuthProviderSummary: {
             id: string;
@@ -6440,6 +6497,50 @@ export interface operations {
             };
         };
     };
+    listAccessEligibleTargets: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["AccessPageLimit"];
+                offset?: components["parameters"]["AccessPageOffset"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                hostId: components["parameters"]["HostId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 可路由目标 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessEligibleTarget"][];
+                };
+            };
+            /** @description 域名不可见 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getAccessRoute: {
         parameters: {
             query?: never;
@@ -6603,6 +6704,49 @@ export interface operations {
             };
             /** @description 路径或幂等键冲突 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listTargetAccessRoutes: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["AccessPageLimit"];
+                offset?: components["parameters"]["AccessPageOffset"];
+            };
+            header?: never;
+            path: {
+                deploymentTargetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 关联入口 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessTargetRoute"][];
+                };
+            };
+            /** @description 部署目标不可见 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

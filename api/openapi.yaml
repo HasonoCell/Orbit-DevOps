@@ -2017,6 +2017,15 @@ paths:
         "404": {description: 域名或目标不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         "409": {description: 路径或幂等键冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/projects/{projectId}/access-hosts/{hostId}/eligible-targets:
+    get:
+      operationId: listAccessEligibleTargets
+      summary: 分页查询与域名同项目、同集群、同命名空间的部署目标
+      parameters: [{$ref: "#/components/parameters/ProjectId"}, {$ref: "#/components/parameters/HostId"}, {$ref: "#/components/parameters/AccessPageLimit"}, {$ref: "#/components/parameters/AccessPageOffset"}]
+      responses:
+        "200": {description: 可路由目标, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/AccessEligibleTarget"}}}}}
+        "404": {description: 域名不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/projects/{projectId}/access-hosts/{hostId}/routes/{routeId}:
     get:
       operationId: getAccessRoute
@@ -2047,6 +2056,15 @@ paths:
         "403": {description: 权限不足, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         "404": {description: 路由不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         "409": {description: 幂等键冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/deployment-targets/{deploymentTargetId}/access-routes:
+    get:
+      operationId: listTargetAccessRoutes
+      summary: 分页查询某部署目标关联的项目访问入口
+      parameters: [{name: deploymentTargetId, in: path, required: true, schema: {type: string, format: uuid}}, {$ref: "#/components/parameters/AccessPageLimit"}, {$ref: "#/components/parameters/AccessPageOffset"}]
+      responses:
+        "200": {description: 关联入口, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/AccessTargetRoute"}}}}}
+        "404": {description: 部署目标不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/platform/access-secret-bindings:
     get:
@@ -2273,6 +2291,28 @@ components:
         lifecycle: {type: string, enum: [active, deleting]}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+    AccessEligibleTarget:
+      type: object
+      additionalProperties: false
+      required: [id, applicationId, applicationName, stage, clusterRef, namespace]
+      properties:
+        id: {type: string, format: uuid}
+        applicationId: {type: string, format: uuid}
+        applicationName: {type: string}
+        stage: {type: string, enum: [development, production]}
+        clusterRef: {type: string}
+        namespace: {type: string}
+    AccessTargetRoute:
+      type: object
+      additionalProperties: false
+      required: [routeId, hostId, hostname, pathPrefix, routeLifecycle, hostLifecycle]
+      properties:
+        routeId: {type: string, format: uuid}
+        hostId: {type: string, format: uuid}
+        hostname: {type: string}
+        pathPrefix: {type: string}
+        routeLifecycle: {type: string, enum: [active, deleting]}
+        hostLifecycle: {type: string, enum: [active, deleting]}
     AuthProviderSummary:
       type: object
       additionalProperties: false
