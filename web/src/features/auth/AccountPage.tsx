@@ -2,6 +2,8 @@ import { Link, useOutletContext } from "react-router-dom";
 import type { CurrentPrincipal } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AccountSessions } from "./AccountSessions";
+import { AccountIdentities } from "./AccountIdentities";
 
 export function AccountPage() {
   const principal = useOutletContext<CurrentPrincipal>();
@@ -32,6 +34,8 @@ export function AccountPage() {
           />
         </CardContent>
       </Card>
+      <AccountSessions />
+      <AccountIdentities />
       <Card>
         <CardHeader>
           <CardTitle>账号安全</CardTitle>
