@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  ShieldCheck,
   UserRound,
   type LucideIcon,
 } from "lucide-react";
@@ -111,6 +112,12 @@ export function ConsoleShell() {
         onNavigate={() => setMobileOpen(false)}
       />
       <div className="console-nav console-account">
+        {principal.user?.platformRole === "platform_admin" && (
+          <NavLink to="/platform" onClick={() => setMobileOpen(false)}>
+            <ShieldCheck aria-hidden="true" className="size-4" />
+            平台管理
+          </NavLink>
+        )}
         <NavLink to="/account" onClick={() => setMobileOpen(false)}>
           <UserRound aria-hidden="true" className="size-4" />
           账号设置

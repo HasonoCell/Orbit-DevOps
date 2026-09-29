@@ -85,6 +85,11 @@ const ProjectsPage = lazy(() =>
     default: ProjectsPage,
   })),
 );
+const PlatformPage = lazy(() =>
+  import("@/features/platform/PlatformPage").then(({ PlatformPage }) => ({
+    default: PlatformPage,
+  })),
+);
 
 function SessionBoundary() {
   const location = useLocation();
@@ -174,6 +179,7 @@ export function App() {
               element={<DeliveryRunPage />}
             />
             <Route path="/account" element={<AccountPage />} />
+            <Route path="/platform" element={<PlatformPage />} />
           </Route>
         </Route>
         <Route path="/" element={<Navigate to="/projects" replace />} />
