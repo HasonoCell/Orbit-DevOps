@@ -1073,6 +1073,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/access-host-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询项目可用的托管 TLS Issuer Policy */
+        get: operations["getAccessHostOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/access-hosts/{hostId}": {
         parameters: {
             query?: never;
@@ -1248,6 +1265,16 @@ export interface components {
             issuerPolicyKey?: string;
             /** Format: uuid */
             secretBindingId?: string;
+        };
+        AccessIssuerPolicy: {
+            key: string;
+            kind: string;
+            name: string;
+        };
+        AccessHostOptions: {
+            clusterRef: string;
+            namespace: string;
+            issuerPolicies: components["schemas"]["AccessIssuerPolicy"][];
         };
         AccessHost: {
             /** Format: uuid */
@@ -6141,6 +6168,55 @@ export interface operations {
             };
             /** @description 域名或幂等键冲突 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAccessHostOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 安全配置选项 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessHostOptions"];
+                };
+            };
+            /** @description 无入口管理权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 项目不可见 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

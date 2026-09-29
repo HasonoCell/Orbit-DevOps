@@ -1956,6 +1956,16 @@ paths:
         "404": {description: 项目不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         "409": {description: 域名或幂等键冲突, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/projects/{projectId}/access-host-options:
+    get:
+      operationId: getAccessHostOptions
+      summary: 查询项目可用的托管 TLS Issuer Policy
+      parameters: [{$ref: "#/components/parameters/ProjectId"}]
+      responses:
+        "200": {description: 安全配置选项, content: {application/json: {schema: {$ref: "#/components/schemas/AccessHostOptions"}}}}
+        "403": {description: 无入口管理权限, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 项目不可见, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/projects/{projectId}/access-hosts/{hostId}:
     get:
       operationId: getAccessHost
@@ -2207,6 +2217,22 @@ components:
         tlsMode: {type: string, enum: [http_only, managed, existing_secret]}
         issuerPolicyKey: {type: string, minLength: 1, maxLength: 63}
         secretBindingId: {type: string, format: uuid}
+    AccessIssuerPolicy:
+      type: object
+      additionalProperties: false
+      required: [key, kind, name]
+      properties:
+        key: {type: string}
+        kind: {type: string}
+        name: {type: string}
+    AccessHostOptions:
+      type: object
+      additionalProperties: false
+      required: [clusterRef, namespace, issuerPolicies]
+      properties:
+        clusterRef: {type: string}
+        namespace: {type: string}
+        issuerPolicies: {type: array, items: {$ref: "#/components/schemas/AccessIssuerPolicy"}}
     AccessHost:
       type: object
       additionalProperties: false
