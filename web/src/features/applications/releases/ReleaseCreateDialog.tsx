@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useCommandKey } from "@/features/applications/releases/use-command-key";
+import { useCommandKey } from "@/shared/use-command-key";
 
 /** 发布必须显式选择产物/不可变引用并确认目标。失败与关闭后保留草稿及幂等键，
  * 避免网络结果未知时重新打开对话框，重复接纳相同的发布；编辑载荷才形成新命令。

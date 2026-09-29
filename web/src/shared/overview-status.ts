@@ -1,8 +1,9 @@
-import type {
-  DiagnosticReport,
-  DeliveryRun,
-  OperationStatus,
-} from "@/features/applications/api";
+import type { components } from "@/api/schema";
+
+type Schema = components["schemas"];
+type DiagnosticReport = Schema["ReleaseDiagnosticReport"];
+type DeliveryRun = Schema["DeliveryRunDetail"];
+type OperationStatus = Schema["BuildOperation"]["status"];
 
 export type Tone = "neutral" | "success" | "progress" | "warning" | "danger";
 export type Status = { label: string; tone: Tone };
