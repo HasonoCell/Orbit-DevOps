@@ -147,14 +147,25 @@ paths:
   /api/v1/auth/admissions:
     get:
       operationId: listAdmissions
-      summary: 分页查询待处理外部身份
+      summary: 按状态分页查询外部身份准入记录
       parameters:
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
         - {name: cursor, in: query, schema: {type: string, minLength: 1, maxLength: 512}}
+        - {name: status, in: query, schema: {type: string, enum: [pending, rejected, linked]}}
       responses:
         "200": {description: 准入列表, content: {application/json: {schema: {$ref: "#/components/schemas/ExternalIdentityPage"}}}}
         "400": {description: 游标无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         "403": {description: 需要平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+  /api/v1/auth/admissions/{identityId}:
+    get:
+      operationId: getAdmission
+      summary: 平台管理员查看外部身份准入详情
+      parameters: [{$ref: "#/components/parameters/IdentityId"}]
+      responses:
+        "200": {description: 准入详情, content: {application/json: {schema: {$ref: "#/components/schemas/ExternalIdentity"}}}}
+        "403": {description: 需要平台管理员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 记录不存在, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
         default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/auth/admissions/{identityId}/approve:
     post:

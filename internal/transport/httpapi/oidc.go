@@ -142,7 +142,11 @@ func (s *Server) UnbindExternalIdentity(ctx context.Context, request api.UnbindE
 
 func (s *Server) ListAdmissions(ctx context.Context, request api.ListAdmissionsRequestObject) (api.ListAdmissionsResponseObject, error) {
 	limit, cursor := projectListParameters(request.Params.Limit, request.Params.Cursor)
-	page, err := s.identities.ListAdmissions(httpRequestContext(ctx), requestCaller(ctx), limit, cursor)
+	status := ""
+	if request.Params.Status != nil {
+		status = string(*request.Params.Status)
+	}
+	page, err := s.identities.ListAdmissionsByStatus(httpRequestContext(ctx), requestCaller(ctx), limit, cursor, status)
 	if err != nil {
 		if errors.Is(err, identity.ErrInvalidCursor) {
 			return api.ListAdmissions400JSONResponse{Code: "invalid_cursor", Message: "admission cursor is invalid"}, nil
@@ -157,6 +161,21 @@ func (s *Server) ListAdmissions(ctx context.Context, request api.ListAdmissionsR
 		items = append(items, externalIdentityResponse(item))
 	}
 	return api.ListAdmissions200JSONResponse{Items: items, NextCursor: page.NextCursor}, nil
+}
+
+func (s *Server) GetAdmission(ctx context.Context, request api.GetAdmissionRequestObject) (api.GetAdmissionResponseObject, error) {
+	item, err := s.identities.GetAdmission(httpRequestContext(ctx), requestCaller(ctx), request.IdentityId)
+	if err != nil {
+		switch {
+		case identityForbidden(err):
+			return api.GetAdmission403JSONResponse(identityForbiddenError(err, "platform_permission_denied", "platform administrator required")), nil
+		case errors.Is(err, identity.ErrUserNotFound):
+			return api.GetAdmission404JSONResponse{Code: "admission_not_found", Message: "admission not found"}, nil
+		default:
+			return nil, err
+		}
+	}
+	return api.GetAdmission200JSONResponse(externalIdentityResponse(item)), nil
 }
 
 func (s *Server) ApproveAdmission(ctx context.Context, request api.ApproveAdmissionRequestObject) (api.ApproveAdmissionResponseObject, error) {

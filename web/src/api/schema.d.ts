@@ -249,8 +249,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 分页查询待处理外部身份 */
+        /** 按状态分页查询外部身份准入记录 */
         get: operations["listAdmissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/admissions/{identityId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 平台管理员查看外部身份准入详情 */
+        get: operations["getAdmission"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2861,6 +2878,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
+                status?: "pending" | "rejected" | "linked";
             };
             header?: never;
             path?: never;
@@ -2888,6 +2906,55 @@ export interface operations {
             };
             /** @description 需要平台管理员 */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAdmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identityId: components["parameters"]["IdentityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 准入详情 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalIdentity"];
+                };
+            };
+            /** @description 需要平台管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 记录不存在 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

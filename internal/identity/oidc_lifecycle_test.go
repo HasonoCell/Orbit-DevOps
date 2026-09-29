@@ -180,6 +180,60 @@ func TestOIDCAdmissionStateBrowserBindingAndNoEmailMerge(t *testing.T) {
 	}
 }
 
+func TestAdmissionStatusViewsAndDetailFollowAuthoritativeState(t *testing.T) {
+	t.Parallel()
+	module, _ := newOIDCIdentity(t)
+	ctx := context.Background()
+	admin := resolveFixture(t, module, loginFixture(t, module))
+	firstStart, firstState := startOIDCFixture(t, module, identity.OIDCStartCommand{ProviderID: "fixture", Mode: "login"})
+	first, err := module.CompleteOIDC(ctx, firstState, firstStart.BrowserToken.CookieValue(), "pending")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondStart, secondState := startOIDCFixture(t, module, identity.OIDCStartCommand{ProviderID: "fixture", Mode: "login"})
+	if _, err := module.CompleteOIDC(ctx, secondState, secondStart.BrowserToken.CookieValue(), "same-email"); err != nil {
+		t.Fatal(err)
+	}
+	id := first.PendingIdentity.ID
+	pending, err := module.ListAdmissionsByStatus(ctx, admin, 1, "", "pending")
+	if err != nil || len(pending.Items) != 1 || pending.NextCursor == nil {
+		t.Fatalf("pending page: %+v, %v", pending, err)
+	}
+	if _, err := module.ListAdmissionsByStatus(ctx, admin, 1, *pending.NextCursor, "rejected"); !errors.Is(err, identity.ErrInvalidCursor) {
+		t.Fatalf("cross-status cursor accepted: %v", err)
+	}
+	item, err := module.GetAdmission(ctx, admin, id)
+	if err != nil || item.Status != "pending" {
+		t.Fatalf("pending detail: %+v, %v", item, err)
+	}
+	if _, err := module.RejectAdmission(ctx, admin, id); err != nil {
+		t.Fatal(err)
+	}
+	rejected, err := module.ListAdmissionsByStatus(ctx, admin, 20, "", "rejected")
+	if err != nil || len(rejected.Items) != 1 || rejected.Items[0].ID != id {
+		t.Fatalf("rejected view: %+v, %v", rejected, err)
+	}
+	if _, err := module.ReopenAdmission(ctx, admin, id); err != nil {
+		t.Fatal(err)
+	}
+	user, err := module.ApproveAdmission(ctx, admin, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked, err := module.ListAdmissionsByStatus(ctx, admin, 20, "", "linked")
+	if err != nil || len(linked.Items) != 1 || linked.Items[0].UserID == nil || *linked.Items[0].UserID != user.ID {
+		t.Fatalf("linked view: %+v, %v", linked, err)
+	}
+	item, err = module.GetAdmission(ctx, admin, id)
+	if err != nil || item.Status != "linked" || item.UserID == nil || *item.UserID != user.ID {
+		t.Fatalf("linked detail: %+v, %v", item, err)
+	}
+	defaultPage, err := module.ListAdmissions(ctx, admin, 20, "")
+	if err != nil || len(defaultPage.Items) != 1 || defaultPage.Items[0].ID == id {
+		t.Fatalf("default view leaked linked identity: %+v, %v", defaultPage, err)
+	}
+}
+
 func TestOIDCNonceRecentProofBindingAndFirstLocalCredential(t *testing.T) {
 	t.Parallel()
 	module, _ := newOIDCIdentity(t)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
 	"github.com/google/uuid"
@@ -17,12 +18,24 @@ type AdmissionPage struct {
 }
 
 func (m *Module) ListAdmissions(ctx context.Context, caller Caller, limit int, cursorValue string) (AdmissionPage, error) {
+	return m.ListAdmissionsByStatus(ctx, caller, limit, cursorValue, "")
+}
+
+// ListAdmissionsByStatus 的游标绑定筛选条件；默认仍保留原来的待处理/已拒绝视图。
+func (m *Module) ListAdmissionsByStatus(ctx context.Context, caller Caller, limit int, cursorValue, status string) (AdmissionPage, error) {
 	if limit < 1 || limit > 100 {
 		return AdmissionPage{}, ErrInvalidCursor
 	}
+	if status != "" && status != "pending" && status != "rejected" && status != "linked" {
+		return AdmissionPage{}, ErrInvalidCursor
+	}
+	scope := "admissions"
+	if status != "" {
+		scope += ":" + status
+	}
 	var cursor *identityCursor
 	if cursorValue != "" {
-		decoded, err := decodeIdentityCursor(cursorValue, "admissions", uuid.Nil)
+		decoded, err := decodeIdentityCursor(cursorValue, scope, uuid.Nil)
 		if err != nil {
 			return AdmissionPage{}, err
 		}
@@ -38,13 +51,17 @@ func (m *Module) ListAdmissions(ctx context.Context, caller Caller, limit int, c
 	}
 	items := make([]ExternalIdentity, 0, limit+1)
 	query := externalIdentitySelect + ` WHERE status IN ('pending','rejected')`
-	args := []any{limit + 1}
-	if cursor == nil {
-		query += ` ORDER BY created_at DESC,id DESC LIMIT $1`
-	} else {
-		query += ` AND (created_at,id)<($1,$2) ORDER BY created_at DESC,id DESC LIMIT $3`
-		args = []any{cursor.CreatedAt, cursor.ID, limit + 1}
+	args := make([]any, 0, 4)
+	if status != "" {
+		query = externalIdentitySelect + ` WHERE status=$1`
+		args = append(args, status)
 	}
+	if cursor != nil {
+		query += fmt.Sprintf(` AND (created_at,id)<($%d,$%d)`, len(args)+1, len(args)+2)
+		args = append(args, cursor.CreatedAt, cursor.ID)
+	}
+	query += fmt.Sprintf(` ORDER BY created_at DESC,id DESC LIMIT $%d`, len(args)+1)
+	args = append(args, limit+1)
 	if err := tx.SelectContext(ctx, &items, query, args...); err != nil {
 		return AdmissionPage{}, dependencyError(err)
 	}
@@ -58,10 +75,36 @@ func (m *Module) ListAdmissions(ctx context.Context, caller Caller, limit int, c
 	page := AdmissionPage{Items: items}
 	if hasMore {
 		last := items[len(items)-1]
-		value := encodeIdentityCursor(identityCursor{Scope: "admissions", CreatedAt: last.CreatedAt, ID: last.ID})
+		value := encodeIdentityCursor(identityCursor{Scope: scope, CreatedAt: last.CreatedAt, ID: last.ID})
 		page.NextCursor = &value
 	}
 	return page, nil
+}
+
+// GetAdmission 是管理员详情投影，不要求近期认证；写命令仍单独重验近期证明。
+func (m *Module) GetAdmission(ctx context.Context, caller Caller, identityID uuid.UUID) (ExternalIdentity, error) {
+	if identityID == uuid.Nil {
+		return ExternalIdentity{}, ErrInvalidCommand
+	}
+	tx, _, err := m.beginControlled(ctx, false)
+	if err != nil {
+		return ExternalIdentity{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := requireAdministrator(ctx, tx, caller, false); err != nil {
+		return ExternalIdentity{}, err
+	}
+	var item ExternalIdentity
+	if err := tx.GetContext(ctx, &item, externalIdentitySelect+` WHERE id=$1`, identityID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ExternalIdentity{}, ErrUserNotFound
+		}
+		return ExternalIdentity{}, dependencyError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return ExternalIdentity{}, dependencyError(err)
+	}
+	return item, nil
 }
 
 func (m *Module) ApproveAdmission(ctx context.Context, caller Caller, identityID uuid.UUID) (User, error) {
