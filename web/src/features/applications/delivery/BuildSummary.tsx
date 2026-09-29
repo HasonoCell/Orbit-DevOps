@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Hammer } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { listBuilds, overviewQueryKeys } from "@/features/applications/api";
 import { CursorPagination } from "@/shared/CursorPagination";
 import {
@@ -24,6 +24,7 @@ export function BuildSummary({
   applicationId: string;
   until: number;
 }) {
+  const { projectId = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const cursor = params.get("buildCursor") ?? undefined;
   const builds = useQuery({
@@ -94,6 +95,12 @@ export function BuildSummary({
                         </Fact>
                       )}
                     </dl>
+                    <Link
+                      className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
+                      to={`/projects/${projectId}/applications/${applicationId}/builds/${build.id}`}
+                    >
+                      查看构建详情
+                    </Link>
                   </details>
                 ),
               )}

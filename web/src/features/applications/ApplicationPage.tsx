@@ -17,6 +17,7 @@ import { QueryNotice } from "@/shared/OverviewUI";
 import { TargetRuntime } from "@/features/applications/runtime/TargetRuntime";
 import { ReleaseCreateDialog } from "@/features/applications/releases/ReleaseCreateDialog";
 import { TargetCreateDialog } from "@/features/applications/targets/TargetCreateDialog";
+import { BuildCreateDialog } from "@/features/applications/builds/BuildCreateDialog";
 import { overviewQueryKeys } from "@/features/applications/api";
 import { workbenchQueryKeys } from "@/features/projects/workbench/api";
 
@@ -80,6 +81,7 @@ function ApplicationOverview({
   const [createStage, setCreateStage] = useState<
     "development" | "production" | null
   >(null);
+  const [buildOpen, setBuildOpen] = useState(false);
   const [accepted, setAccepted] = useState("");
   const fetching =
     useIsFetching({ queryKey: overviewQueryKeys.root(application.id) }) > 0;
@@ -177,6 +179,12 @@ function ApplicationOverview({
             />
             刷新概览
           </Button>
+          {canDevelop && (
+            <Button variant="outline" onClick={() => setBuildOpen(true)}>
+              <Plus aria-hidden="true" className="size-4" />
+              手动构建
+            </Button>
+          )}
           <Button
             disabled={!target || !canDevelop}
             title={
@@ -345,6 +353,14 @@ function ApplicationOverview({
           onOpenChange={(open) => {
             if (!open) setCreateStage(null);
           }}
+        />
+      )}
+      {canDevelop && (
+        <BuildCreateDialog
+          projectId={project.id}
+          applicationId={application.id}
+          open={buildOpen}
+          onOpenChange={setBuildOpen}
         />
       )}
       <details className="mt-6 border-t pt-4 text-xs text-muted-foreground">
