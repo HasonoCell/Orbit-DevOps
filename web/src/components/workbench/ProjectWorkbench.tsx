@@ -14,12 +14,12 @@ import {
   summaryIssues,
   type ApplicationSummary,
 } from "@/api/workbench";
-import { CursorPagination } from "@/components/CursorPagination";
 import { ErrorPanel } from "@/components/PageState";
 import { StatusPill, Timestamp } from "@/components/overview/OverviewUI";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { operationStatus, runStatus } from "@/lib/overview-status";
+import { ProjectPagination } from "./ProjectPagination";
 
 /** 汇总仅覆盖当前应用页的有界样本；刷新失败后不继续呈现旧的成功状态。 */
 export function ProjectWorkbench({
@@ -270,10 +270,20 @@ export function ProjectWorkbench({
               本页 {page.items.length} 个应用
               {!delivery && ` · 匹配 ${visible.length} 个`}
             </p>
-            <CursorPagination
+            <ProjectPagination
+              projectId={project.id}
               cursor={cursor}
               nextCursor={page.nextCursor}
-              onChange={(next) => update("cursor", next ?? "")}
+              onChange={(next, pageNumber) =>
+                setParams((previous) => {
+                  const updated = new URLSearchParams(previous);
+                  if (next) updated.set("cursor", next);
+                  else updated.delete("cursor");
+                  if (pageNumber > 1) updated.set("page", String(pageNumber));
+                  else updated.delete("page");
+                  return updated;
+                })
+              }
             />
           </div>
         </section>

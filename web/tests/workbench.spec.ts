@@ -238,3 +238,43 @@ test("移动工作台与导航没有横向溢出", async ({ page }) => {
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(375);
 });
+
+test("项目应用按已发现的页码跳转，刷新后仍可返回前页", async ({ page }) => {
+  await mock(page);
+  const second = { ...application, id: "a-2", name: "第二页应用" };
+  const third = { ...application, id: "a-3", name: "第三页应用" };
+  await page.route("**/api/v1/projects/p-1/applications?*", (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    return route.fulfill({
+      json:
+        cursor === "page-2"
+          ? { items: [second], nextCursor: "page-3" }
+          : cursor === "page-3"
+            ? { items: [third] }
+            : { items: [application], nextCursor: "page-2" },
+    });
+  });
+  await page.route("**/api/v1/applications/a-2/*", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
+  await page.route("**/api/v1/applications/a-3/*", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
+
+  await page.goto("/projects/p-1");
+  await expect(page.getByRole("button", { name: "第 1 页" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await page.getByRole("button", { name: "第 2 页" }).click();
+  await expect(page.getByRole("link", { name: /第二页应用/ })).toBeVisible();
+  await page.getByRole("button", { name: "第 3 页" }).click();
+  await expect(page.getByRole("link", { name: /第三页应用/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "第 3 页" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await page.getByRole("button", { name: "第 2 页" }).click();
+  await expect(page.getByRole("link", { name: /第二页应用/ })).toBeVisible();
+});
