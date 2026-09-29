@@ -16,6 +16,7 @@ import { PipelineSummary } from "@/features/applications/delivery/PipelineSummar
 import { QueryNotice } from "@/shared/OverviewUI";
 import { TargetRuntime } from "@/features/applications/runtime/TargetRuntime";
 import { ReleaseCreateDialog } from "@/features/applications/releases/ReleaseCreateDialog";
+import { TargetCreateDialog } from "@/features/applications/targets/TargetCreateDialog";
 import { overviewQueryKeys } from "@/features/applications/api";
 import { workbenchQueryKeys } from "@/features/projects/workbench/api";
 
@@ -76,6 +77,9 @@ function ApplicationOverview({
   const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
   const [paused, setPaused] = useState(false);
   const [releaseOpen, setReleaseOpen] = useState(false);
+  const [createStage, setCreateStage] = useState<
+    "development" | "production" | null
+  >(null);
   const [accepted, setAccepted] = useState("");
   const fetching =
     useIsFetching({ queryKey: overviewQueryKeys.root(application.id) }) > 0;
@@ -209,6 +213,47 @@ function ApplicationOverview({
           发布已接纳：{accepted}。部署进度请查看执行状态。
         </p>
       )}
+      {targets.data && !targets.error && (
+        <section
+          className="mb-5 rounded-lg border bg-card p-4"
+          aria-label="部署目标配置"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">部署目标</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                每个环境独立配置，发布时记录配置快照。
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(["development", "production"] as const).map((stage) => {
+                const existing = targets.data.find(
+                  (item) => item.stage === stage,
+                );
+                const label = stage === "development" ? "开发" : "生产";
+                return existing ? (
+                  <Button key={stage} variant="outline" asChild>
+                    <Link
+                      to={`/projects/${project.id}/applications/${application.id}/targets/${existing.id}`}
+                    >
+                      {label}目标配置
+                    </Link>
+                  </Button>
+                ) : canDevelop ? (
+                  <Button
+                    key={stage}
+                    variant="outline"
+                    onClick={() => setCreateStage(stage)}
+                  >
+                    <Plus aria-hidden="true" className="size-4" />
+                    创建{label}目标
+                  </Button>
+                ) : null;
+              })}
+            </div>
+          </div>
+        </section>
+      )}
       <nav className="workbench-tabs" aria-label="应用视图">
         {[
           ["overview", "运行总览"],
@@ -287,6 +332,18 @@ function ApplicationOverview({
             void queryClient.invalidateQueries({
               queryKey: workbenchQueryKeys.project(project.id),
             });
+          }}
+        />
+      )}
+      {createStage && (
+        <TargetCreateDialog
+          key={createStage}
+          projectId={project.id}
+          applicationId={application.id}
+          stage={createStage}
+          open
+          onOpenChange={(open) => {
+            if (!open) setCreateStage(null);
           }}
         />
       )}

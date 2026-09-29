@@ -105,3 +105,55 @@ export async function listDeploymentTargets(
   );
   return requireData(result, "查询部署目标").items;
 }
+
+export async function getDeploymentTarget(
+  deploymentTargetId: string,
+): Promise<DeploymentTarget> {
+  return requireData(
+    await client.GET("/api/v1/deployment-targets/{deploymentTargetId}", {
+      params: { path: { deploymentTargetId } },
+    }),
+    "查询部署目标",
+  );
+}
+
+export async function createDeploymentTarget(
+  applicationId: string,
+  input: {
+    stage: "development" | "production";
+    replicas: number;
+    containerPort: number;
+  },
+  idempotencyKey: string,
+): Promise<DeploymentTarget> {
+  return requireData(
+    await client.POST(
+      "/api/v1/applications/{applicationId}/deployment-targets",
+      {
+        params: {
+          path: { applicationId },
+          header: { "Idempotency-Key": idempotencyKey },
+        },
+        body: input,
+      },
+    ),
+    "创建部署目标",
+  );
+}
+
+export async function updateDeploymentTarget(
+  deploymentTargetId: string,
+  input: { replicas: number; containerPort: number },
+  idempotencyKey: string,
+): Promise<DeploymentTarget> {
+  return requireData(
+    await client.PUT("/api/v1/deployment-targets/{deploymentTargetId}", {
+      params: {
+        path: { deploymentTargetId },
+        header: { "Idempotency-Key": idempotencyKey },
+      },
+      body: input,
+    }),
+    "保存部署目标配置",
+  );
+}

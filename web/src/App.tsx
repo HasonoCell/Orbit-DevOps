@@ -28,6 +28,13 @@ const ApplicationPage = lazy(() =>
     }),
   ),
 );
+const TargetPage = lazy(() =>
+  import("@/features/applications/targets/TargetPage").then(
+    ({ TargetPage }) => ({
+      default: TargetPage,
+    }),
+  ),
+);
 const AuthCallbackPage = lazy(() =>
   import("@/features/auth/AuthCallbackPage").then(({ AuthCallbackPage }) => ({
     default: AuthCallbackPage,
@@ -116,6 +123,10 @@ export function App() {
             <Route
               path="/projects/:projectId/applications/:applicationId"
               element={<ApplicationPage />}
+            />
+            <Route
+              path="/projects/:projectId/applications/:applicationId/targets/:targetId"
+              element={<TargetPage />}
             />
             <Route path="/account" element={<AccountPage />} />
           </Route>
