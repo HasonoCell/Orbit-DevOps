@@ -7,8 +7,9 @@ import {
   LogOut,
   Menu,
   UserRound,
+  type LucideIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   Link,
   NavLink,
@@ -69,7 +70,8 @@ export function ConsoleShell() {
             icon: LayoutDashboard,
             active:
               location.pathname.startsWith(`/projects/${projectId}`) &&
-              new URLSearchParams(location.search).get("view") !== "delivery",
+              (location.pathname !== `/projects/${projectId}` ||
+                new URLSearchParams(location.search).get("view") !== "delivery"),
           },
           {
             to: `/projects/${projectId}?view=delivery`,
@@ -103,19 +105,7 @@ export function ConsoleShell() {
           </div>
         </div>
       )}
-      <nav aria-label="主导航" className="console-nav">
-        {items.map(({ to, label, icon: Icon, active }) => (
-          <Link
-            key={to}
-            to={to}
-            aria-current={active ? "page" : undefined}
-            onClick={() => setMobileOpen(false)}
-          >
-            <Icon aria-hidden="true" className="size-4" />
-            {label}
-          </Link>
-        ))}
-      </nav>
+      <SlidingNavigation items={items} onNavigate={() => setMobileOpen(false)} />
       <div className="console-nav console-account">
         <NavLink to="/account" onClick={() => setMobileOpen(false)}>
           <UserRound aria-hidden="true" className="size-4" />
@@ -195,5 +185,76 @@ export function ConsoleShell() {
         </main>
       </div>
     </div>
+  );
+}
+
+type NavigationItem = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  active: boolean;
+};
+
+/** 选中背景跟随实际菜单项位置移动，不改变链接与键盘焦点的布局。 */
+function SlidingNavigation({
+  items,
+  onNavigate,
+}: {
+  items: NavigationItem[];
+  onNavigate: () => void;
+}) {
+  const navRef = useRef<HTMLElement>(null);
+  const activeIndex = items.findIndex((item) => item.active);
+  const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    const active = nav?.querySelector<HTMLElement>('a[aria-current="page"]');
+    if (!nav || !active) {
+      setIndicator(null);
+      return;
+    }
+    const measure = () => {
+      const navRect = nav.getBoundingClientRect();
+      const itemRect = active.getBoundingClientRect();
+      const next = { top: itemRect.top - navRect.top, height: itemRect.height };
+      setIndicator((previous) =>
+        previous?.top === next.top && previous.height === next.height
+          ? previous
+          : next,
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(nav);
+    observer.observe(active);
+    return () => observer.disconnect();
+  }, [activeIndex, items.length]);
+
+  return (
+    <nav
+      ref={navRef}
+      aria-label="主导航"
+      className={`console-nav console-primary-nav${indicator ? " has-indicator" : ""}`}
+    >
+      {indicator && (
+        <span
+          className="console-nav-indicator"
+          aria-hidden="true"
+          style={{ height: indicator.height, transform: `translateY(${indicator.top}px)` }}
+        />
+      )}
+      {items.map(({ to, label, icon: Icon, active }) => (
+        <Link
+          key={to}
+          to={to}
+          aria-current={active ? "page" : undefined}
+          onClick={onNavigate}
+        >
+          <Icon aria-hidden="true" className="size-4" />
+          {label}
+        </Link>
+      ))}
+    </nav>
   );
 }
