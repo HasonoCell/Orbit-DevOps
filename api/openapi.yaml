@@ -429,6 +429,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/projects/{projectId}/member-candidate:resolve:
+    post:
+      operationId: resolveProjectMemberCandidate
+      summary: 在项目成员管理权限下精确查找可添加用户
+      parameters:
+        - {name: projectId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ResolveProjectMemberCandidateRequest"}
+      responses:
+        "200": {description: 精确查找结果, content: {application/json: {schema: {$ref: "#/components/schemas/ProjectMemberCandidateResult"}}}}
+        "400": {description: 查找条件无效, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "403": {description: 当前项目角色不能管理成员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "404": {description: 项目不存在或当前操作者不是项目成员, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        default: {description: 请求失败, content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
   /api/v1/projects/{projectId}/members/{userId}:
     put:
       operationId: updateProjectMember
@@ -2576,6 +2593,8 @@ components:
         userId:
           type: string
           format: uuid
+        displayName:
+          type: string
         role:
           $ref: "#/components/schemas/ProjectRole"
         createdBy:
@@ -2586,6 +2605,27 @@ components:
         updatedAt:
           type: string
           format: date-time
+    ResolveProjectMemberCandidateRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, value]
+      properties:
+        kind: {type: string, enum: [login_name, verified_email, user_id]}
+        value: {type: string, minLength: 1, maxLength: 320}
+    ProjectMemberCandidate:
+      type: object
+      additionalProperties: false
+      required: [userId, displayName]
+      properties:
+        userId: {type: string, format: uuid}
+        displayName: {type: string}
+    ProjectMemberCandidateResult:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, enum: [found, not_found, ambiguous]}
+        candidate: {$ref: "#/components/schemas/ProjectMemberCandidate"}
     ProjectMemberPage:
       type: object
       additionalProperties: false

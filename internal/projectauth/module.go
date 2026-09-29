@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
@@ -63,12 +64,23 @@ func recordDenial(ctx context.Context, reason string) {
 }
 
 type Member struct {
-	ProjectID uuid.UUID `db:"project_id" json:"projectId"`
-	UserID    uuid.UUID `db:"user_id" json:"userId"`
-	Role      string    `db:"role" json:"role"`
-	CreatedBy string    `db:"created_by" json:"createdBy"`
-	CreatedAt time.Time `db:"created_at" json:"createdAt"`
-	UpdatedAt time.Time `db:"updated_at" json:"updatedAt"`
+	ProjectID   uuid.UUID `db:"project_id" json:"projectId"`
+	UserID      uuid.UUID `db:"user_id" json:"userId"`
+	DisplayName string    `db:"display_name" json:"displayName,omitempty"`
+	Role        string    `db:"role" json:"role"`
+	CreatedBy   string    `db:"created_by" json:"createdBy"`
+	CreatedAt   time.Time `db:"created_at" json:"createdAt"`
+	UpdatedAt   time.Time `db:"updated_at" json:"updatedAt"`
+}
+
+type MemberCandidate struct {
+	UserID      uuid.UUID `db:"user_id" json:"userId"`
+	DisplayName string    `db:"display_name" json:"displayName"`
+}
+
+type CandidateResult struct {
+	Status    string
+	Candidate *MemberCandidate
 }
 
 type MemberPage struct {
@@ -184,12 +196,13 @@ func (m *Module) ListMembers(ctx context.Context, projectID uuid.UUID, caller id
 		if err := require(ctx, tx, projectID, caller.UserID(), PermissionRead); err != nil {
 			return err
 		}
-		query := memberSelect + " WHERE project_id=$1"
+		query := `SELECT pm.project_id,pm.user_id,u.display_name,pm.role,pm.created_by,pm.created_at,pm.updated_at
+ FROM project_members pm JOIN users u ON u.id=pm.user_id WHERE pm.project_id=$1`
 		args := []any{projectID, limit + 1}
 		if cursor == nil {
-			query += " ORDER BY created_at DESC,user_id DESC LIMIT $2"
+			query += " ORDER BY pm.created_at DESC,pm.user_id DESC LIMIT $2"
 		} else {
-			query += " AND (created_at,user_id)<($2,$3) ORDER BY created_at DESC,user_id DESC LIMIT $4"
+			query += " AND (pm.created_at,pm.user_id)<($2,$3) ORDER BY pm.created_at DESC,pm.user_id DESC LIMIT $4"
 			args = []any{projectID, cursor.CreatedAt, cursor.UserID, limit + 1}
 		}
 		return tx.SelectContext(ctx, &members, query, args...)
@@ -209,6 +222,61 @@ func (m *Module) ListMembers(ctx context.Context, projectID uuid.UUID, caller id
 		page.NextCursor = &value
 	}
 	return page, nil
+}
+
+// ResolveMemberCandidate 只在项目成员管理授权后精确查找有效正式用户；邮箱歧义时不泄露候选列表。
+func (m *Module) ResolveMemberCandidate(ctx context.Context, projectID uuid.UUID, caller identity.Caller, kind, rawValue string) (CandidateResult, error) {
+	value := strings.TrimSpace(rawValue)
+	if projectID == uuid.Nil || value == "" || len(value) > 320 {
+		return CandidateResult{}, ErrInvalidMember
+	}
+	var query string
+	var arg any = value
+	switch kind {
+	case "login_name":
+		value = strings.ToLower(value)
+		if len(value) < 3 || len(value) > 128 {
+			return CandidateResult{}, ErrInvalidMember
+		}
+		arg = value
+		query = `SELECT u.id AS user_id,u.display_name FROM effective_identity_users e
+ JOIN users u ON u.id=e.id JOIN local_credentials lc ON lc.user_id=u.id
+ WHERE lc.login_name=$1 LIMIT 2`
+	case "verified_email":
+		if !strings.Contains(value, "@") || strings.ContainsAny(value, " \t\n\r") {
+			return CandidateResult{}, ErrInvalidMember
+		}
+		query = `SELECT DISTINCT u.id AS user_id,u.display_name FROM effective_identity_users e
+ JOIN users u ON u.id=e.id JOIN external_identities ei ON ei.user_id=u.id
+ WHERE ei.status='linked' AND ei.email_verified AND lower(ei.email)=lower($1) LIMIT 2`
+	case "user_id":
+		id, err := uuid.Parse(value)
+		if err != nil {
+			return CandidateResult{}, ErrInvalidMember
+		}
+		arg = id
+		query = `SELECT u.id AS user_id,u.display_name FROM effective_identity_users e
+ JOIN users u ON u.id=e.id WHERE u.id=$1 LIMIT 2`
+	default:
+		return CandidateResult{}, ErrInvalidMember
+	}
+	var matches []MemberCandidate
+	err := m.Read(ctx, caller, func(tx *sqlx.Tx) error {
+		if err := require(ctx, tx, projectID, caller.UserID(), PermissionManageMembers); err != nil {
+			return err
+		}
+		return tx.SelectContext(ctx, &matches, query, arg)
+	})
+	if err != nil {
+		return CandidateResult{}, err
+	}
+	if len(matches) == 0 {
+		return CandidateResult{Status: "not_found"}, nil
+	}
+	if len(matches) > 1 {
+		return CandidateResult{Status: "ambiguous"}, nil
+	}
+	return CandidateResult{Status: "found", Candidate: &matches[0]}, nil
 }
 
 func encodeMemberCursor(cursor memberCursor) string {

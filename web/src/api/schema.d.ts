@@ -466,6 +466,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/member-candidate:resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 在项目成员管理权限下精确查找可添加用户 */
+        post: operations["resolveProjectMemberCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/members/{userId}": {
         parameters: {
             query?: never;
@@ -1546,12 +1563,28 @@ export interface components {
             projectId: string;
             /** Format: uuid */
             userId: string;
+            displayName?: string;
             role: components["schemas"]["ProjectRole"];
             createdBy: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        ResolveProjectMemberCandidateRequest: {
+            /** @enum {string} */
+            kind: "login_name" | "verified_email" | "user_id";
+            value: string;
+        };
+        ProjectMemberCandidate: {
+            /** Format: uuid */
+            userId: string;
+            displayName: string;
+        };
+        ProjectMemberCandidateResult: {
+            /** @enum {string} */
+            status: "found" | "not_found" | "ambiguous";
+            candidate?: components["schemas"]["ProjectMemberCandidate"];
         };
         ProjectMemberPage: {
             items: components["schemas"]["ProjectMember"][];
@@ -3642,6 +3675,68 @@ export interface operations {
             };
             /** @description 成员已经存在或幂等键冲突 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    resolveProjectMemberCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveProjectMemberCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description 精确查找结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectMemberCandidateResult"];
+                };
+            };
+            /** @description 查找条件无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 当前项目角色不能管理成员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 项目不存在或当前操作者不是项目成员 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

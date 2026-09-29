@@ -43,6 +43,30 @@ func (s *Server) ListProjectMembers(
 	return api.ListProjectMembers200JSONResponse{Items: items, NextCursor: page.NextCursor}, nil
 }
 
+// ResolveProjectMemberCandidate 仅向能管理该项目成员的操作者返回精确、安全的用户投影。
+func (s *Server) ResolveProjectMemberCandidate(ctx context.Context, request api.ResolveProjectMemberCandidateRequestObject) (api.ResolveProjectMemberCandidateResponseObject, error) {
+	observability.SetRequestProjectID(ctx, request.ProjectId)
+	result, err := s.authorizer.ResolveMemberCandidate(httpRequestContext(ctx), request.ProjectId,
+		requestCaller(ctx), string(request.Body.Kind), request.Body.Value)
+	if err != nil {
+		switch {
+		case errors.Is(err, projectauth.ErrInvalidMember):
+			return api.ResolveProjectMemberCandidate400JSONResponse{Code: "invalid_member_lookup", Message: "member lookup input is invalid"}, nil
+		case errors.Is(err, projectauth.ErrForbidden):
+			return api.ResolveProjectMemberCandidate403JSONResponse{Code: "project_permission_denied", Message: "current project role cannot manage members"}, nil
+		case errors.Is(err, projectauth.ErrNotMember):
+			return api.ResolveProjectMemberCandidate404JSONResponse{Code: "project_not_found", Message: "project not found"}, nil
+		default:
+			return nil, err
+		}
+	}
+	response := api.ProjectMemberCandidateResult{Status: api.ProjectMemberCandidateResultStatus(result.Status)}
+	if result.Candidate != nil {
+		response.Candidate = &api.ProjectMemberCandidate{UserId: result.Candidate.UserID, DisplayName: result.Candidate.DisplayName}
+	}
+	return api.ResolveProjectMemberCandidate200JSONResponse(response), nil
+}
+
 // AddProjectMember 添加项目成员；权限、幂等和审计由项目权限模块统一处理。
 func (s *Server) AddProjectMember(
 	ctx context.Context,
@@ -193,7 +217,7 @@ func (s *Server) RemoveProjectMember(
 }
 
 func projectMemberResponse(member projectauth.Member) api.ProjectMember {
-	return api.ProjectMember{
+	response := api.ProjectMember{
 		ProjectId: member.ProjectID,
 		UserId:    member.UserID,
 		Role:      api.ProjectRole(member.Role),
@@ -201,4 +225,8 @@ func projectMemberResponse(member projectauth.Member) api.ProjectMember {
 		CreatedAt: member.CreatedAt,
 		UpdatedAt: member.UpdatedAt,
 	}
+	if member.DisplayName != "" {
+		response.DisplayName = &member.DisplayName
+	}
+	return response
 }
