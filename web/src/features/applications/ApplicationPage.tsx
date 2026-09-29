@@ -193,6 +193,16 @@ function ApplicationOverview({
               手动构建
             </Button>
           )}
+          {canDevelop && (
+            <Button variant="outline" asChild>
+              <Link
+                to={`/projects/${project.id}/applications/${application.id}/pipelines/new`}
+              >
+                <Plus aria-hidden="true" className="size-4" />
+                配置自动交付
+              </Link>
+            </Button>
+          )}
           <Button
             disabled={!target || !canDevelop}
             title={

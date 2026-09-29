@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, GitBranch } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   latestRun,
   listPipelines,
@@ -87,6 +87,7 @@ function PipelineItem({
   applicationId: string;
   until: number;
 }) {
+  const { projectId = "" } = useParams();
   const run = useQuery({
     queryKey: overviewQueryKeys.run(applicationId, pipeline.id),
     queryFn: () => latestRun(pipeline.id),
@@ -116,6 +117,12 @@ function PipelineItem({
         {revision.mode === "auto_release" ? "构建并自动部署" : "仅构建"} ·
         Revision {revision.revision}
       </p>
+      <Link
+        className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
+        to={`/projects/${projectId}/applications/${applicationId}/pipelines/${pipeline.id}`}
+      >
+        查看与管理 Pipeline
+      </Link>
       {run.isPending || run.error ? (
         <QueryNotice error={run.error} retry={() => void run.refetch()} />
       ) : !run.data ? (
