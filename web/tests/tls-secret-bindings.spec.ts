@@ -75,7 +75,7 @@ test("平台管理员登记并撤销已有 TLS Secret 授权", async ({ page }) 
       return route.fulfill({ json: { ...binding, state: "revoked" } });
     },
   );
-  await page.goto("/platform");
+  await page.goto("/platform?view=secrets");
   await page.getByLabel("Project ID").fill("p-1");
   await page.getByLabel("域名").fill(binding.hostname);
   await page.getByLabel("Secret 名称").fill(binding.secretName);
