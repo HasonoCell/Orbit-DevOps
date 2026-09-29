@@ -729,9 +729,16 @@ test("首次设置本地密码遇到登录名冲突时提示更换名称", async
   await expect(page).toHaveURL(/\/account\/password$/);
 });
 
-test("首次设置本地密码遇到近期认证过期时提示重新登录", async ({ page }) => {
+test("首次设置本地密码遇到近期认证过期时提供 OIDC 验证", async ({ page }) => {
   await page.route("**/api/v1/users/me", (route) =>
     route.fulfill({ json: { kind: "user", user, mustChangePassword: false } }),
+  );
+  await page.route("**/api/v1/auth/providers", (route) =>
+    route.fulfill({
+      json: [
+        { id: "oidc", type: "oidc", displayName: "企业登录", available: true },
+      ],
+    }),
   );
   await page.route("**/api/v1/users/me/password", (route) =>
     route.fulfill({
@@ -748,9 +755,11 @@ test("首次设置本地密码遇到近期认证过期时提示重新登录", as
   await page.getByLabel("新密码", { exact: true }).fill("long-password-123");
   await page.getByLabel("确认新密码").fill("long-password-123");
   await page.getByRole("button", { name: "确认设置" }).click();
+  await expect(page.getByRole("group", { name: "近期认证" })).toBeVisible();
   await expect(
-    page.getByText("身份验证已过期，请重新登录后再试。"),
+    page.getByRole("button", { name: /用.*企业登录.*验证/ }),
   ).toBeVisible();
+  await expect(page.getByLabel("登录名")).toHaveValue("alice-local");
 });
 
 test("已有本地密码账号提交旧密码和新密码", async ({ page }) => {

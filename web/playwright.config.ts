@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: "**/real-stack.spec.ts",
   fullyParallel: true,
   retries: 0,
   reporter: "list",

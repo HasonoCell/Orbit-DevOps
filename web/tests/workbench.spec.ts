@@ -173,14 +173,14 @@ test("发布必须有权限、不可变镜像与明确确认", async ({ page }) 
   await page.reload();
   await page.getByRole("button", { name: "新建发布" }).click();
   await expect(
-    page.getByRole("button", { name: "确认发布到 production" }),
+    page.getByRole("button", { name: "确认发布到生产环境" }),
   ).toBeDisabled();
   await page.getByLabel("镜像来源").selectOption("reference");
   await page
     .getByLabel("镜像引用", { exact: true })
     .fill("registry.example.com/app:latest");
   await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "确认发布到 production" }).click();
+  await page.getByRole("button", { name: "确认发布到生产环境" }).click();
   await expect(
     page.getByText(/请选择成功构建的产物，或输入包含/),
   ).toBeVisible();
@@ -209,26 +209,46 @@ test("发布重试与关闭重开复用命令键，成功后显示接纳而非�
           },
     );
   });
+  await page.route("**/api/v1/releases/r-1", (route) =>
+    route.fulfill({
+      json: {
+        ...release,
+        releaseOperation: { ...release.releaseOperation, status: "pending" },
+        snapshotDifferences: [],
+        auditTimeline: [],
+      },
+    }),
+  );
+  await page.route("**/api/v1/deployment-targets/t-1", (route) =>
+    route.fulfill({ json: target }),
+  );
+  await page.route("**/api/v1/release-operations/ro-1", (route) =>
+    route.fulfill({
+      json: { ...diagnostic().releaseOperation, status: "pending" },
+    }),
+  );
   await page.goto(appURL);
   await page.getByRole("button", { name: "新建发布" }).click();
   await page.getByLabel("选择产物").selectOption("i-1");
   await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "确认发布到 production" }).click();
+  await page.getByRole("button", { name: "确认发布到生产环境" }).click();
   await expect(
     page.getByText("接纳结果暂不可确认", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "确认发布到 production" }).click();
+  await page.getByRole("button", { name: "确认发布到生产环境" }).click();
   await expect.poll(() => submitted.length).toBe(2);
   await expect(
-    page.getByRole("button", { name: "确认发布到 production" }),
+    page.getByRole("button", { name: "确认发布到生产环境" }),
   ).toBeEnabled();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.getByRole("button", { name: "新建发布" }).click();
   await expect(page.getByLabel("选择产物")).toHaveValue("i-1");
   await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "确认发布到 production" }).click();
-  await expect(page.getByText(/发布已接纳：r-1/)).toBeVisible();
+  await page.getByRole("button", { name: "确认发布到生产环境" }).click();
+  await expect(page).toHaveURL(/\/releases\/r-1$/);
+  await expect(page.getByRole("heading", { name: "生产发布" })).toBeVisible();
+  await expect(page.getByText("排队中", { exact: true }).first()).toBeVisible();
   expect(new Set(submitted.map((item) => item.key)).size).toBe(1);
   expect(submitted[0].key).toBeTruthy();
   expect(submitted[0].csrf).toBe("1");
