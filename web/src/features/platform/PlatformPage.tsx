@@ -3,11 +3,17 @@ import type { CurrentPrincipal } from "@/api/http";
 import { EmptyState } from "@/shared/PageState";
 import { SecretBindingsPanel } from "./SecretBindingsPanel";
 import { UsersPanel } from "./UsersPanel";
+import { AdmissionsPanel } from "./AdmissionsPanel";
 
 export function PlatformPage() {
   const principal = useOutletContext<CurrentPrincipal>();
   const [params, setParams] = useSearchParams();
-  const view = params.get("view") === "secrets" ? "secrets" : "users";
+  const view =
+    params.get("view") === "secrets"
+      ? "secrets"
+      : params.get("view") === "admissions"
+        ? "admissions"
+        : "users";
   if (principal.user?.platformRole !== "platform_admin") {
     return (
       <EmptyState
@@ -27,6 +33,7 @@ export function PlatformPage() {
       <nav className="workbench-tabs mb-5" aria-label="平台管理视图">
         {[
           ["users", "平台用户"],
+          ["admissions", "OIDC 准入"],
           ["secrets", "TLS Secret 授权"],
         ].map(([key, label]) => (
           <button
@@ -38,7 +45,13 @@ export function PlatformPage() {
           </button>
         ))}
       </nav>
-      {view === "users" ? <UsersPanel /> : <SecretBindingsPanel />}
+      {view === "users" ? (
+        <UsersPanel />
+      ) : view === "admissions" ? (
+        <AdmissionsPanel />
+      ) : (
+        <SecretBindingsPanel />
+      )}
     </div>
   );
 }

@@ -96,3 +96,50 @@ export async function setUserEnabled(userId: string, enabled: boolean) {
     enabled ? "启用用户" : "停用用户",
   );
 }
+
+export async function listAdmissions(
+  status: "pending" | "rejected" | "linked",
+  cursor?: string,
+) {
+  return requireData(
+    await client.GET("/api/v1/auth/admissions", {
+      params: { query: { status, limit: 20, cursor } },
+    }),
+    "查询 OIDC 准入记录",
+  );
+}
+
+export async function getAdmission(identityId: string) {
+  return requireData(
+    await client.GET("/api/v1/auth/admissions/{identityId}", {
+      params: { path: { identityId } },
+    }),
+    "查询准入详情",
+  );
+}
+
+export async function decideAdmission(
+  identityId: string,
+  action: "approve" | "reject" | "reopen",
+) {
+  if (action === "approve")
+    return requireData(
+      await client.POST("/api/v1/auth/admissions/{identityId}/approve", {
+        params: { path: { identityId } },
+      }),
+      "批准准入",
+    );
+  if (action === "reject")
+    return requireData(
+      await client.POST("/api/v1/auth/admissions/{identityId}/reject", {
+        params: { path: { identityId } },
+      }),
+      "拒绝准入",
+    );
+  return requireData(
+    await client.POST("/api/v1/auth/admissions/{identityId}/reopen", {
+      params: { path: { identityId } },
+    }),
+    "重新打开准入",
+  );
+}
