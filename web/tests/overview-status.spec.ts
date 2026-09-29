@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { diagnostic } from "./fixtures/overview";
-import { runtimeStatus } from "../src/lib/overview-status";
+import { runtimeStatus } from "../src/shared/overview-status";
 
 test("运行摘要不把执行成功、不完整观测或旧版本误判为就绪", () => {
   expect(runtimeStatus(diagnostic()).tone).toBe("success");

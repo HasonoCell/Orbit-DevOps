@@ -3,24 +3,25 @@ import { Activity, Box, Globe, Server } from "lucide-react";
 import type { DeploymentTarget } from "@/api/http";
 import {
   getDiagnostics,
-  latestRelease,
+  overviewQueryKeys,
   type DiagnosticReport,
-} from "@/api/overview";
+} from "@/features/applications/api";
+import { latestRelease } from "@/features/applications/releases/api";
 import {
   Fact,
   QueryNotice,
   QuietEmpty,
   StatusPill,
   Timestamp,
-} from "@/components/overview/OverviewUI";
+} from "@/shared/OverviewUI";
 import {
   isActiveOperation,
   operationStatus,
   pollInterval,
   runtimeStatus,
-} from "@/lib/overview-status";
+} from "@/shared/overview-status";
 import { PodList } from "./PodList";
-import { ReleaseHistory } from "./ReleaseHistory";
+import { ReleaseHistory } from "@/features/applications/releases/ReleaseHistory";
 
 /** 只观察已校验的所选目标。发布查询失败时不使用缓存继续派生运行健康。 */
 export function TargetRuntime({
@@ -35,7 +36,7 @@ export function TargetRuntime({
   view: string;
 }) {
   const release = useQuery({
-    queryKey: ["application-overview", applicationId, "release", target.id],
+    queryKey: overviewQueryKeys.release(applicationId, target.id),
     queryFn: () => latestRelease(target.id),
     refetchInterval: (query) =>
       pollInterval(
@@ -48,7 +49,7 @@ export function TargetRuntime({
   });
   const releaseId = !release.error ? release.data?.release.id : undefined;
   const diagnostic = useQuery({
-    queryKey: ["application-overview", applicationId, "diagnostics", releaseId],
+    queryKey: overviewQueryKeys.diagnostics(applicationId, releaseId),
     queryFn: () => getDiagnostics(releaseId!),
     enabled: !!releaseId && view !== "delivery",
     refetchInterval: (query) => pollInterval(until, query.state.error),

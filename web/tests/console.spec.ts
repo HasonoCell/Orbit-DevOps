@@ -57,6 +57,11 @@ async function catalog(page: Page, role: "owner" | "viewer" = "owner") {
   await page.route("**/api/v1/projects/p-1/applications?*", (route) =>
     route.fulfill({ json: { items: [application] } }),
   );
+  await page.route("**/api/v1/projects/p-1/application-workbench?*", (route) =>
+    route.fulfill({
+      json: { items: [{ application, targets: [], pipelines: [] }] },
+    }),
+  );
   await page.route("**/api/v1/applications/a-1", (route) =>
     route.fulfill({ json: application }),
   );

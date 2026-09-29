@@ -2,7 +2,7 @@ import type {
   DiagnosticReport,
   DeliveryRun,
   OperationStatus,
-} from "@/api/overview";
+} from "@/features/applications/api";
 
 export type Tone = "neutral" | "success" | "progress" | "warning" | "danger";
 export type Status = { label: string; tone: Tone };

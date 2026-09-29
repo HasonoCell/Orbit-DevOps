@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Hammer } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
-import { listBuilds } from "@/api/overview";
-import { CursorPagination } from "@/components/CursorPagination";
+import { listBuilds, overviewQueryKeys } from "@/features/applications/api";
+import { CursorPagination } from "@/shared/CursorPagination";
 import {
   Fact,
   Panel,
@@ -10,12 +10,12 @@ import {
   QuietEmpty,
   StatusPill,
   Timestamp,
-} from "./OverviewUI";
+} from "@/shared/OverviewUI";
 import {
   isActiveOperation,
   operationStatus,
   pollInterval,
-} from "@/lib/overview-status";
+} from "@/shared/overview-status";
 
 export function BuildSummary({
   applicationId,
@@ -27,7 +27,7 @@ export function BuildSummary({
   const [params, setParams] = useSearchParams();
   const cursor = params.get("buildCursor") ?? undefined;
   const builds = useQuery({
-    queryKey: ["application-overview", applicationId, "builds", cursor],
+    queryKey: overviewQueryKeys.builds(applicationId, cursor),
     queryFn: () => listBuilds(applicationId, cursor),
     refetchInterval: (query) =>
       pollInterval(

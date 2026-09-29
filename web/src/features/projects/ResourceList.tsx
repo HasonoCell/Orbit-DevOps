@@ -1,6 +1,6 @@
 import { ArrowUpRight, Boxes, Search } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
-import { CursorPagination } from "@/components/CursorPagination";
+import { CursorPagination } from "@/shared/CursorPagination";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 

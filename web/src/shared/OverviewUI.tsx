@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { AlertCircle, LoaderCircle } from "lucide-react";
 import { errorText } from "@/api/http";
 import { Button } from "@/components/ui/button";
-import type { Status } from "@/lib/overview-status";
+import type { Status } from "@/shared/overview-status";
 
 const toneClass = {
   neutral: "bg-slate-100 text-slate-600",

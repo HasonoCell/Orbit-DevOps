@@ -9,13 +9,15 @@ import {
   listDeploymentTargets,
 } from "@/api/catalog";
 import type { Application, Project } from "@/api/http";
-import { EmptyState, ErrorPanel, LoadingPage } from "@/components/PageState";
+import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
 import { Button } from "@/components/ui/button";
-import { BuildSummary } from "@/components/overview/BuildSummary";
-import { PipelineSummary } from "@/components/overview/PipelineSummary";
-import { QueryNotice } from "@/components/overview/OverviewUI";
-import { TargetRuntime } from "@/components/runtime/TargetRuntime";
-import { ReleaseCreateDialog } from "@/components/runtime/ReleaseCreateDialog";
+import { BuildSummary } from "@/features/applications/delivery/BuildSummary";
+import { PipelineSummary } from "@/features/applications/delivery/PipelineSummary";
+import { QueryNotice } from "@/shared/OverviewUI";
+import { TargetRuntime } from "@/features/applications/runtime/TargetRuntime";
+import { ReleaseCreateDialog } from "@/features/applications/releases/ReleaseCreateDialog";
+import { overviewQueryKeys } from "@/features/applications/api";
+import { workbenchQueryKeys } from "@/features/projects/workbench/api";
 
 export function ApplicationPage() {
   const { projectId = "", applicationId = "" } = useParams();
@@ -76,9 +78,9 @@ function ApplicationOverview({
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [accepted, setAccepted] = useState("");
   const fetching =
-    useIsFetching({ queryKey: ["application-overview", application.id] }) > 0;
+    useIsFetching({ queryKey: overviewQueryKeys.root(application.id) }) > 0;
   const targets = useQuery({
-    queryKey: ["application-overview", application.id, "targets"],
+    queryKey: overviewQueryKeys.targets(application.id),
     queryFn: () => listDeploymentTargets(application.id),
   });
   const permissions = useQuery({
@@ -110,7 +112,7 @@ function ApplicationOverview({
     setPaused(false);
     setUntil(Date.now() + 5 * 60_000);
     void queryClient.invalidateQueries({
-      queryKey: ["application-overview", application.id],
+      queryKey: overviewQueryKeys.root(application.id),
     });
   }
   function changeTarget(value: string) {
@@ -283,7 +285,7 @@ function ApplicationOverview({
             setAccepted(id);
             refresh();
             void queryClient.invalidateQueries({
-              queryKey: ["project-workbench", project.id],
+              queryKey: workbenchQueryKeys.project(project.id),
             });
           }}
         />

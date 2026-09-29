@@ -1,14 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { client, requireData, type DeploymentTarget } from "@/api/http";
-import { CursorPagination } from "@/components/CursorPagination";
+import type { DeploymentTarget } from "@/api/http";
+import {
+  listReleaseHistory,
+  releaseQueryKeys,
+} from "@/features/applications/releases/api";
+import { CursorPagination } from "@/shared/CursorPagination";
 import {
   QueryNotice,
   QuietEmpty,
   StatusPill,
   Timestamp,
-} from "@/components/overview/OverviewUI";
-import { operationStatus } from "@/lib/overview-status";
+} from "@/shared/OverviewUI";
+import { operationStatus } from "@/shared/overview-status";
 
 export function ReleaseHistory({
   target,
@@ -20,26 +24,8 @@ export function ReleaseHistory({
   const [params, setParams] = useSearchParams();
   const cursor = params.get("releaseCursor") ?? undefined;
   const query = useQuery({
-    queryKey: [
-      "application-overview",
-      applicationId,
-      "history",
-      target.id,
-      cursor,
-    ],
-    queryFn: async () =>
-      requireData(
-        await client.GET(
-          "/api/v1/deployment-targets/{deploymentTargetId}/releases",
-          {
-            params: {
-              path: { deploymentTargetId: target.id },
-              query: { limit: 5, cursor },
-            },
-          },
-        ),
-        "查询发布历史",
-      ),
+    queryKey: releaseQueryKeys.history(applicationId, target.id, cursor),
+    queryFn: () => listReleaseHistory(target.id, cursor),
   });
   return (
     <section className="workbench-panel">

@@ -1,53 +1,55 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
-import { getCurrentPrincipal, principalQueryKey } from "@/api/auth";
+import { getCurrentPrincipal, principalQueryKey } from "@/features/auth/api";
 import { ApiError, sessionInvalidEvent } from "@/api/http";
-import { ErrorPanel, LoadingPage } from "@/components/PageState";
+import { ErrorPanel, LoadingPage } from "@/shared/PageState";
 
 // 路由按需加载：登录页不下载工作台和 Kubernetes 运行观测代码。
 const ConsoleShell = lazy(() =>
-  import("@/components/ConsoleShell").then(({ ConsoleShell }) => ({
+  import("@/app/ConsoleShell").then(({ ConsoleShell }) => ({
     default: ConsoleShell,
   })),
 );
 const AccountPage = lazy(() =>
-  import("@/pages/AccountPage").then(({ AccountPage }) => ({
+  import("@/features/auth/AccountPage").then(({ AccountPage }) => ({
     default: AccountPage,
   })),
 );
 const AdmissionPage = lazy(() =>
-  import("@/pages/AdmissionPage").then(({ AdmissionPage }) => ({
+  import("@/features/auth/AdmissionPage").then(({ AdmissionPage }) => ({
     default: AdmissionPage,
   })),
 );
 const ApplicationPage = lazy(() =>
-  import("@/pages/ApplicationPage").then(({ ApplicationPage }) => ({
-    default: ApplicationPage,
-  })),
+  import("@/features/applications/ApplicationPage").then(
+    ({ ApplicationPage }) => ({
+      default: ApplicationPage,
+    }),
+  ),
 );
 const AuthCallbackPage = lazy(() =>
-  import("@/pages/AuthCallbackPage").then(({ AuthCallbackPage }) => ({
+  import("@/features/auth/AuthCallbackPage").then(({ AuthCallbackPage }) => ({
     default: AuthCallbackPage,
   })),
 );
 const LoginPage = lazy(() =>
-  import("@/pages/LoginPage").then(({ LoginPage }) => ({
+  import("@/features/auth/LoginPage").then(({ LoginPage }) => ({
     default: LoginPage,
   })),
 );
 const PasswordPage = lazy(() =>
-  import("@/pages/PasswordPage").then(({ PasswordPage }) => ({
+  import("@/features/auth/PasswordPage").then(({ PasswordPage }) => ({
     default: PasswordPage,
   })),
 );
 const ProjectPage = lazy(() =>
-  import("@/pages/ProjectPage").then(({ ProjectPage }) => ({
+  import("@/features/projects/ProjectPage").then(({ ProjectPage }) => ({
     default: ProjectPage,
   })),
 );
 const ProjectsPage = lazy(() =>
-  import("@/pages/ProjectsPage").then(({ ProjectsPage }) => ({
+  import("@/features/projects/ProjectsPage").then(({ ProjectsPage }) => ({
     default: ProjectsPage,
   })),
 );

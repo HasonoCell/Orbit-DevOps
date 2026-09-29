@@ -1,10 +1,6 @@
 import { Server } from "lucide-react";
-import type { DiagnosticReport } from "@/api/overview";
-import {
-  QuietEmpty,
-  StatusPill,
-  Timestamp,
-} from "@/components/overview/OverviewUI";
+import type { DiagnosticReport } from "@/features/applications/api";
+import { QuietEmpty, StatusPill, Timestamp } from "@/shared/OverviewUI";
 import {
   Sheet,
   SheetContent,

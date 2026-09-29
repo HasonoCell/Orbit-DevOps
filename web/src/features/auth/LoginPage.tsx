@@ -10,14 +10,14 @@ import {
   loginLocal,
   principalQueryKey,
   startOIDCLogin,
-} from "@/api/auth";
+} from "@/features/auth/api";
 import { ApiError, errorText } from "@/api/http";
-import { ErrorPanel } from "@/components/PageState";
+import { ErrorPanel } from "@/shared/PageState";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { oidcReturnPathKey, safeNextPath } from "@/lib/return-path";
+import { oidcReturnPathKey, safeNextPath } from "@/features/auth/return-path";
 
 const loginSchema = z.object({
   loginName: z.string().trim().min(3, "登录名至少需要 3 个字符"),

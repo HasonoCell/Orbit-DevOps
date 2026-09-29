@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import { z } from "zod";
-import { changePassword, principalQueryKey } from "@/api/auth";
+import { changePassword, principalQueryKey } from "@/features/auth/api";
 import { errorText, type CurrentPrincipal } from "@/api/http";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";

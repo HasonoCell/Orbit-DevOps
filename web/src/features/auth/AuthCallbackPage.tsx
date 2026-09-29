@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { getCurrentPrincipal, principalQueryKey } from "@/api/auth";
+import { getCurrentPrincipal, principalQueryKey } from "@/features/auth/api";
 import { ApiError } from "@/api/http";
-import { ErrorPanel, LoadingPage } from "@/components/PageState";
-import { oidcReturnPathKey, safeNextPath } from "@/lib/return-path";
+import { ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { oidcReturnPathKey, safeNextPath } from "@/features/auth/return-path";
 
 // OIDC code/state 只由后端 callback 消费；前端回跳仅重新读取 Cookie 会话。
 export function AuthCallbackPage() {

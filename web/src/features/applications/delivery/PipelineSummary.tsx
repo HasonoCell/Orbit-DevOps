@@ -4,10 +4,11 @@ import { useSearchParams } from "react-router-dom";
 import {
   latestRun,
   listPipelines,
+  overviewQueryKeys,
   type Pipeline,
   type DeliveryRun,
-} from "@/api/overview";
-import { CursorPagination } from "@/components/CursorPagination";
+} from "@/features/applications/api";
+import { CursorPagination } from "@/shared/CursorPagination";
 import {
   Fact,
   Panel,
@@ -15,8 +16,8 @@ import {
   QuietEmpty,
   StatusPill,
   Timestamp,
-} from "./OverviewUI";
-import { isActiveRun, pollInterval, runStatus } from "@/lib/overview-status";
+} from "@/shared/OverviewUI";
+import { isActiveRun, pollInterval, runStatus } from "@/shared/overview-status";
 
 export function PipelineSummary({
   applicationId,
@@ -28,7 +29,7 @@ export function PipelineSummary({
   const [params, setParams] = useSearchParams();
   const cursor = params.get("pipelineCursor") ?? undefined;
   const pipelines = useQuery({
-    queryKey: ["application-overview", applicationId, "pipelines", cursor],
+    queryKey: overviewQueryKeys.pipelines(applicationId, cursor),
     queryFn: () => listPipelines(applicationId, cursor),
   });
   return (
@@ -87,7 +88,7 @@ function PipelineItem({
   until: number;
 }) {
   const run = useQuery({
-    queryKey: ["application-overview", applicationId, "run", pipeline.id],
+    queryKey: overviewQueryKeys.run(applicationId, pipeline.id),
     queryFn: () => latestRun(pipeline.id),
     refetchInterval: (query) =>
       pollInterval(

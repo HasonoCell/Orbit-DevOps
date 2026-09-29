@@ -244,3 +244,30 @@ export const run: Schema["DeliveryRunDetail"] = {
     receivedAt: timestamp,
   },
 };
+
+export const workbenchPage: Schema["ApplicationWorkbenchPage"] = {
+  items: [
+    {
+      application,
+      targets: [
+        {
+          id: target.id,
+          stage: target.stage,
+          releaseStatus: release.releaseOperation.status,
+        },
+      ],
+      build: {
+        status: build.buildOperation.status,
+        createdAt: build.build.createdAt,
+      },
+      pipelines: [
+        {
+          id: pipeline.pipeline.id,
+          name: pipeline.pipeline.name,
+          runStatus: run.status,
+          runCreatedAt: run.run.createdAt,
+        },
+      ],
+    },
+  ],
+};

@@ -19,10 +19,10 @@ import {
   useNavigate,
   useOutletContext,
 } from "react-router-dom";
-import { logout } from "@/api/auth";
+import { logout } from "@/features/auth/api";
 import { getProject } from "@/api/catalog";
 import { errorText, type CurrentPrincipal } from "@/api/http";
-import { OrbitMark } from "@/components/OrbitMark";
+import { OrbitMark } from "@/app/OrbitMark";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,

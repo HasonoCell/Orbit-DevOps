@@ -5,15 +5,18 @@ import {
   createApplication,
   getProject,
   getProjectPermissions,
-  listApplications,
 } from "@/api/catalog";
 import type { Project } from "@/api/http";
-import { EmptyState, ErrorPanel, LoadingPage } from "@/components/PageState";
-import { ResourceCreateDialog } from "@/components/ResourceCreateDialog";
-import { ProjectWorkbench } from "@/components/workbench/ProjectWorkbench";
+import {
+  listWorkbench,
+  workbenchQueryKeys,
+} from "@/features/projects/workbench/api";
+import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { ResourceCreateDialog } from "@/features/projects/ResourceCreateDialog";
+import { ProjectWorkbench } from "@/features/projects/workbench/ProjectWorkbench";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useResourceCreateDialog } from "@/lib/use-resource-create-dialog";
+import { useResourceCreateDialog } from "@/features/projects/use-resource-create-dialog";
 
 const roleLabel = {
   owner: "所有者",
@@ -74,15 +77,15 @@ function ProjectContent({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const applications = useQuery({
-    queryKey: ["applications", project.id, cursor, 8],
-    queryFn: () => listApplications(project.id, cursor, 8),
+    queryKey: workbenchQueryKeys.page(project.id, cursor),
+    queryFn: ({ signal }) => listWorkbench(project.id, cursor, signal),
   });
   const createDialog = useResourceCreateDialog(
     (values, key) =>
       createApplication(project.id, values.name, values.slug, key),
     (application) => {
       void queryClient.invalidateQueries({
-        queryKey: ["applications", project.id],
+        queryKey: workbenchQueryKeys.project(project.id),
       });
       navigate(`/projects/${project.id}/applications/${application.id}`);
     },
@@ -160,6 +163,9 @@ function ProjectContent({
           project={project}
           page={applications.data}
           cursor={cursor}
+          isFetching={applications.isFetching}
+          dataUpdatedAt={applications.dataUpdatedAt}
+          onRefresh={() => void applications.refetch()}
         />
       )}
       {canDevelop && <ResourceCreateDialog kind="应用" {...createDialog} />}

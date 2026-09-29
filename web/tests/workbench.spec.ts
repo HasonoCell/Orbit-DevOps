@@ -9,6 +9,7 @@ import {
   release,
   run,
   target,
+  workbenchPage,
 } from "./fixtures/overview";
 
 const appURL = "/projects/p-1/applications/a-1";
@@ -22,6 +23,7 @@ async function mock(page: Page, develop = true) {
       allowed: develop ? ["read", "develop"] : ["read"],
     },
     "projects/p-1/applications?*": { items: [application] },
+    "projects/p-1/application-workbench?*": workbenchPage,
     "applications/a-1": application,
     "applications/a-1/deployment-targets?*": { items: [target] },
     "applications/a-1/builds?*": { items: [build] },
@@ -34,38 +36,55 @@ async function mock(page: Page, develop = true) {
     await page.route("**/api/v1/" + path, (route) => route.fulfill({ json }));
 }
 
-test("项目摘要限定当前页且不调用 Kubernetes 诊断，局部失败不会伪装成空数据", async ({
-  page,
-}) => {
+test("项目摘要仅请求当前页，刷新失败后不显示旧摘要", async ({ page }) => {
   await mock(page);
-  const diagnostics: string[] = [];
+  const summaryRequests: string[] = [];
+  const detailRequests: string[] = [];
   page.on("request", (request) => {
-    if (request.url().includes("/diagnostics")) diagnostics.push(request.url());
+    if (request.url().includes("/application-workbench?"))
+      summaryRequests.push(request.url());
+    if (
+      /\/applications\/a-1\/(builds|delivery-pipelines|deployment-targets)|\/diagnostics/.test(
+        request.url(),
+      )
+    )
+      detailRequests.push(request.url());
   });
-  await page.route("**/api/v1/applications/a-1/builds?*", (route) =>
-    route.fulfill({ status: 503, json: { message: "构建服务不可用" } }),
-  );
   await page.goto("/projects/p-1");
-  await expect(page.getByText(/1 个应用的摘要读取不完整/)).toBeVisible();
   await expect(
-    page.getByRole("cell", { name: "读取失败", exact: true }),
+    page.getByRole("link", { name: /Payment Service/ }),
   ).toBeVisible();
-  await expect(page.getByText("工作负载就绪")).toHaveCount(0);
   await expect(page.getByText("仅当前页", { exact: true })).toBeVisible();
-  expect(diagnostics).toEqual([]);
-  await page.getByRole("button", { name: "仅看待处理" }).click();
-  await expect(page.getByText("当前页没有匹配的结果")).toBeVisible();
-  await expect(page.getByText(/摘要不完整，不能确认/)).toBeVisible();
-  await expect(page.locator(".attention-panel")).toHaveAttribute(
-    "data-attention",
-    "false",
+  expect(summaryRequests).toHaveLength(1);
+  expect(detailRequests).toEqual([]);
+  await page.route("**/api/v1/projects/p-1/application-workbench?*", (route) =>
+    route.fulfill({ status: 503, json: { message: "摘要服务不可用" } }),
+  );
+  await page.getByRole("button", { name: "刷新摘要" }).click();
+  await expect(page.getByText("摘要服务不可用")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Payment Service/ })).toHaveCount(
+    0,
   );
 });
 
 test("工作台筛选可刷新，失败运行链接保留应用上下文", async ({ page }) => {
   await mock(page);
-  await page.route("**/api/v1/delivery-pipelines/pl-1/runs?*", (route) =>
-    route.fulfill({ json: { items: [{ ...run, status: "build_failed" }] } }),
+  await page.route("**/api/v1/projects/p-1/application-workbench?*", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            ...workbenchPage.items[0],
+            pipelines: [
+              {
+                ...workbenchPage.items[0].pipelines[0],
+                runStatus: "build_failed",
+              },
+            ],
+          },
+        ],
+      },
+    }),
   );
   await page.goto("/projects/p-1");
   await expect(
@@ -200,7 +219,11 @@ test("发布重试与关闭重开复用命令键，成功后显示接纳而非�
   ).toBeVisible();
   await page.getByRole("button", { name: "确认发布到 production" }).click();
   await expect.poll(() => submitted.length).toBe(2);
+  await expect(
+    page.getByRole("button", { name: "确认发布到 production" }),
+  ).toBeEnabled();
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.getByRole("button", { name: "新建发布" }).click();
   await expect(page.getByLabel("选择产物")).toHaveValue("i-1");
   await page.getByRole("checkbox").check();
@@ -243,22 +266,22 @@ test("项目应用按已发现的页码跳转，刷新后仍可返回前页", as
   await mock(page);
   const second = { ...application, id: "a-2", name: "第二页应用" };
   const third = { ...application, id: "a-3", name: "第三页应用" };
-  await page.route("**/api/v1/projects/p-1/applications?*", (route) => {
-    const cursor = new URL(route.request().url()).searchParams.get("cursor");
-    return route.fulfill({
-      json:
-        cursor === "page-2"
-          ? { items: [second], nextCursor: "page-3" }
-          : cursor === "page-3"
-            ? { items: [third] }
-            : { items: [application], nextCursor: "page-2" },
-    });
-  });
-  await page.route("**/api/v1/applications/a-2/*", (route) =>
-    route.fulfill({ json: { items: [] } }),
-  );
-  await page.route("**/api/v1/applications/a-3/*", (route) =>
-    route.fulfill({ json: { items: [] } }),
+  await page.route(
+    "**/api/v1/projects/p-1/application-workbench?*",
+    (route) => {
+      const cursor = new URL(route.request().url()).searchParams.get("cursor");
+      return route.fulfill({
+        json:
+          cursor === "page-2"
+            ? {
+                items: [{ ...workbenchPage.items[0], application: second }],
+                nextCursor: "page-3",
+              }
+            : cursor === "page-3"
+              ? { items: [{ ...workbenchPage.items[0], application: third }] }
+              : { ...workbenchPage, nextCursor: "page-2" },
+      });
+    },
   );
 
   await page.goto("/projects/p-1");

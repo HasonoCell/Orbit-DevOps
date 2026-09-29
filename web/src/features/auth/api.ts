@@ -4,7 +4,7 @@ import {
   requireSuccess,
   type AuthProvider,
   type CurrentPrincipal,
-} from "./http";
+} from "@/api/http";
 
 export const principalQueryKey = ["principal"] as const;
 

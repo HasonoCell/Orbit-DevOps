@@ -9,6 +9,7 @@ import {
   release,
   run,
   target,
+  workbenchPage,
 } from "./fixtures/overview";
 
 async function overview(page: Page) {
@@ -22,6 +23,7 @@ async function overview(page: Page) {
       allowed: ["read", "develop"],
     },
     "projects/p-1/applications?*": { items: [application] },
+    "projects/p-1/application-workbench?*": workbenchPage,
     "applications/a-1": application,
     "applications/a-1/deployment-targets?*": { items: [target] },
     "applications/a-1/builds?*": { items: [build] },

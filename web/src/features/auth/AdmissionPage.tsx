@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Clock3 } from "lucide-react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { logout, principalQueryKey } from "@/api/auth";
+import { logout, principalQueryKey } from "@/features/auth/api";
 import { errorText, type CurrentPrincipal } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";

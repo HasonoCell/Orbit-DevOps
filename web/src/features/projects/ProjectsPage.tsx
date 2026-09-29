@@ -2,11 +2,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { createProject, listProjects } from "@/api/catalog";
-import { EmptyState, ErrorPanel, LoadingPage } from "@/components/PageState";
-import { ResourceCreateDialog } from "@/components/ResourceCreateDialog";
-import { ResourceList } from "@/components/ResourceList";
+import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { ResourceCreateDialog } from "@/features/projects/ResourceCreateDialog";
+import { ResourceList } from "@/features/projects/ResourceList";
 import { Button } from "@/components/ui/button";
-import { useResourceCreateDialog } from "@/lib/use-resource-create-dialog";
+import { useResourceCreateDialog } from "@/features/projects/use-resource-create-dialog";
 
 export function ProjectsPage() {
   const [params] = useSearchParams();
