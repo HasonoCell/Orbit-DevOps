@@ -72,11 +72,11 @@ func TestKindAccessGatewayAcceptance(t *testing.T) {
 		TLSMode: "managed", IssuerPolicyKey: &issuerKey, Lifecycle: "active"},
 		Issuer: access.IssuerPolicy{Kind: "Issuer", Name: "orbit-acceptance-selfsigned"}}
 	httpRoute := access.RouteSpec{Route: access.Route{ID: uuid.New(), HostID: httpHost.Host.ID,
-		DeploymentTargetID: targetID, PathPrefix: "/", Lifecycle: "active"}, ContainerPort: 80}
+		DeploymentTargetID: targetID, PathPrefix: "/", Lifecycle: "active"}, ServicePort: 80}
 	apiRoute := access.RouteSpec{Route: access.Route{ID: uuid.New(), HostID: httpHost.Host.ID,
-		DeploymentTargetID: apiTargetID, PathPrefix: "/api", Lifecycle: "active"}, ContainerPort: 80}
+		DeploymentTargetID: apiTargetID, PathPrefix: "/api", Lifecycle: "active"}, ServicePort: 80}
 	tlsRoute := access.RouteSpec{Route: access.Route{ID: uuid.New(), HostID: tlsHost.Host.ID,
-		DeploymentTargetID: targetID, PathPrefix: "/", Lifecycle: "active"}, ContainerPort: 80}
+		DeploymentTargetID: targetID, PathPrefix: "/", Lifecycle: "active"}, ServicePort: 80}
 	snapshot := access.Snapshot{ProjectID: projectID, ClusterRef: cluster, Namespace: namespace,
 		GatewayClassName: "orbit-gateway-acceptance", Revision: 1,
 		Hosts: []access.HostSpec{httpHost, tlsHost}, Routes: []access.RouteSpec{httpRoute, apiRoute, tlsRoute}}
@@ -200,7 +200,7 @@ func TestKindAccessGatewayAcceptance(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = routeResource.Delete(context.Background(), conflictName, metav1.DeleteOptions{}) })
 	conflictRoute := access.RouteSpec{Route: access.Route{ID: conflictID, HostID: httpHost.Host.ID,
-		DeploymentTargetID: targetID, PathPrefix: "/conflict", Lifecycle: "active"}, ContainerPort: 80}
+		DeploymentTargetID: targetID, PathPrefix: "/conflict", Lifecycle: "active"}, ServicePort: 80}
 	snapshot.Routes = append(snapshot.Routes, conflictRoute)
 	snapshot.Revision++
 	if err := adapter.Reconcile(ctx, snapshot, func(context.Context) error { return nil }); !errors.Is(err, kube.ErrAccessOwnership) {

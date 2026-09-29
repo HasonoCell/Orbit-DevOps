@@ -28,6 +28,8 @@ const (
 	TargetIDLabel      = "orbit-devops.dev/target-id"
 	ReleaseIDLabel     = "orbit-devops.dev/release-id"
 	ManagedByValue     = "orbit-devops"
+	// Service 对外端口固定；容器端口由名为 http 的 Pod 端口解析。
+	ServiceHTTPPort int32 = 80
 )
 
 type Config struct {
@@ -77,7 +79,8 @@ func (a *Adapter) Publish(ctx context.Context, request releaseworker.PublishRequ
 
 	name := ResourceName(request.DeploymentTargetID)
 	ownerLabels := ownershipLabels(request)
-	if err := a.checkOwnership(ctx, name, ownerLabels); err != nil {
+	existingService, err := a.checkOwnership(ctx, name, ownerLabels)
+	if err != nil {
 		return err
 	}
 
@@ -111,17 +114,20 @@ func (a *Adapter) Publish(ctx context.Context, request releaseworker.PublishRequ
 		return applyFailure("Deployment", err)
 	}
 
-	servicePort := corev1ac.ServicePort().
-		WithName("http").
-		WithProtocol(corev1.ProtocolTCP).
-		WithPort(int32(request.ContainerPort)).
-		WithTargetPort(intstr.FromString("http"))
+	portConfigs := make([]*corev1ac.ServicePortApplyConfiguration, 0)
+	for _, port := range servicePorts(existingService) {
+		portConfigs = append(portConfigs, corev1ac.ServicePort().
+			WithName(port.Name).
+			WithProtocol(port.Protocol).
+			WithPort(port.Port).
+			WithTargetPort(port.TargetPort))
+	}
 	service := corev1ac.Service(name, request.Namespace).
 		WithLabels(ownerLabels).
 		WithSpec(corev1ac.ServiceSpec().
 			WithType(corev1.ServiceTypeClusterIP).
 			WithSelector(selector).
-			WithPorts(servicePort),
+			WithPorts(portConfigs...),
 		)
 	if _, err := a.client.CoreV1().Services(request.Namespace).Apply(
 		ctx,
@@ -240,17 +246,17 @@ func (a *Adapter) checkOwnership(
 	ctx context.Context,
 	name string,
 	wantLabels map[string]string,
-) error {
+) (*corev1.Service, error) {
 	deployment, err := a.client.AppsV1().Deployments(a.config.Namespace).Get(
 		ctx,
 		name,
 		metav1.GetOptions{},
 	)
 	if err == nil && !hasOwnership(deployment.Labels, wantLabels) {
-		return ownershipFailure("Deployment", name)
+		return nil, ownershipFailure("Deployment", name)
 	}
 	if err != nil && !apierrors.IsNotFound(err) {
-		return a.preflightFailure("inspect Deployment ownership", err)
+		return nil, a.preflightFailure("inspect Deployment ownership", err)
 	}
 
 	service, err := a.client.CoreV1().Services(a.config.Namespace).Get(
@@ -259,12 +265,37 @@ func (a *Adapter) checkOwnership(
 		metav1.GetOptions{},
 	)
 	if err == nil && !hasOwnership(service.Labels, wantLabels) {
-		return ownershipFailure("Service", name)
+		return nil, ownershipFailure("Service", name)
 	}
 	if err != nil && !apierrors.IsNotFound(err) {
-		return a.preflightFailure("inspect Service ownership", err)
+		return nil, a.preflightFailure("inspect Service ownership", err)
 	}
-	return nil
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	return service, nil
+}
+
+// servicePorts 保留旧 Service 端口，确保旧 HTTPRoute 在入口切到稳定端口前仍可用。
+// 新旧端口都解析到 Pod 的命名端口，因而 Target 的容器端口变化不再影响 BackendRef。
+func servicePorts(existing *corev1.Service) []corev1.ServicePort {
+	ports := []corev1.ServicePort{{Name: "http", Port: ServiceHTTPPort,
+		Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromString("http")}}
+	if existing == nil {
+		return ports
+	}
+	seen := map[int32]bool{ServiceHTTPPort: true}
+	for _, old := range existing.Spec.Ports {
+		if old.Port < 1 || old.Protocol != corev1.ProtocolTCP || seen[old.Port] {
+			continue
+		}
+		seen[old.Port] = true
+		ports = append(ports, corev1.ServicePort{
+			Name: fmt.Sprintf("legacy-%d", old.Port), Port: old.Port,
+			Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromString("http"),
+		})
+	}
+	return ports
 }
 
 func (a *Adapter) waitForRollout(

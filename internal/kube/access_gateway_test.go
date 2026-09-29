@@ -17,7 +17,7 @@ func TestGatewayRendersDistinctTLSListenersAndRoutes(t *testing.T) {
 	projectID, hostID, targetID, routeID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	host := access.HostSpec{Host: access.Host{ID: hostID, ProjectID: projectID, Hostname: "shop.example.com", TLSMode: "managed", Lifecycle: "active"},
 		Issuer: access.IssuerPolicy{Kind: "ClusterIssuer", Name: "local-ca"}}
-	route := access.RouteSpec{Route: access.Route{ID: routeID, HostID: hostID, DeploymentTargetID: targetID, PathPrefix: "/api", Lifecycle: "active"}, ContainerPort: 8080}
+	route := access.RouteSpec{Route: access.Route{ID: routeID, HostID: hostID, DeploymentTargetID: targetID, PathPrefix: "/api", Lifecycle: "active"}, ServicePort: 8080}
 	snapshot := access.Snapshot{ProjectID: projectID, Namespace: "orbit-test", Revision: 4}
 	gateway := gatewayObject(snapshot, "local-gateway", []access.HostSpec{host})
 	listeners, found, err := unstructured.NestedSlice(gateway.Object, "spec", "listeners")
@@ -99,7 +99,8 @@ func TestGatewayRejectsForeignTargetService(t *testing.T) {
 		t.Fatal(err)
 	}
 	gateway := &GatewayAdapter{base: base}
-	if !errors.Is(gateway.checkBackendOwnership(context.Background(), projectID, targetID), ErrAccessOwnership) {
+	_, err = gateway.checkBackendOwnership(context.Background(), projectID, targetID)
+	if !errors.Is(err, ErrAccessOwnership) {
 		t.Fatal("foreign Service with the stable name must not receive traffic")
 	}
 }

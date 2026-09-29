@@ -8,7 +8,6 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"time"
 
-	"github.com/HasonoCell/Orbit-DevOps/internal/access"
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/pgerrors"
@@ -516,11 +515,6 @@ func (m *Module) UpdateDeploymentTarget(
 		updated.ID,
 	); err != nil {
 		return DeploymentTarget{}, fmt.Errorf("update deployment target: %w", err)
-	}
-	if current.ContainerPort != updated.ContainerPort {
-		if err := access.SignalTargetPortChange(ctx, tx, updated.ID, updatedAt); err != nil {
-			return DeploymentTarget{}, fmt.Errorf("queue access routing update: %w", err)
-		}
 	}
 	if err := idempotency.StoreResponse(ctx, tx, scope, updated); err != nil {
 		return DeploymentTarget{}, err

@@ -19,8 +19,8 @@ type HostSpec struct {
 }
 
 type RouteSpec struct {
-	Route         Route
-	ContainerPort int
+	Route       Route
+	ServicePort int32
 }
 
 type Snapshot struct {
@@ -56,7 +56,6 @@ type hostSpecRow struct {
 
 type routeSpecRow struct {
 	Route
-	ContainerPort int `db:"container_port"`
 }
 
 // AcquireReconcileLease 串行化一个 Project Gateway；到期租约可被其他 Worker 接管。
@@ -127,7 +126,7 @@ func (m *Module) LoadSnapshot(ctx context.Context, projectID uuid.UUID) (Snapsho
 	}
 	var routes []routeSpecRow
 	if err := tx.SelectContext(ctx, &routes, `SELECT r.id,r.host_id,r.deployment_target_id,r.path_prefix,r.lifecycle,
-		r.created_at,r.updated_at,t.container_port FROM access_routes r
+		r.created_at,r.updated_at FROM access_routes r
 		JOIN access_hosts h ON h.id=r.host_id JOIN deployment_targets t ON t.id=r.deployment_target_id
 		JOIN applications a ON a.id=t.application_id
 		WHERE h.project_id=$1 AND h.cluster_ref=$2 AND h.namespace=$3
@@ -136,7 +135,7 @@ func (m *Module) LoadSnapshot(ctx context.Context, projectID uuid.UUID) (Snapsho
 		return Snapshot{}, err
 	}
 	for _, row := range routes {
-		snapshot.Routes = append(snapshot.Routes, RouteSpec{Route: row.Route, ContainerPort: row.ContainerPort})
+		snapshot.Routes = append(snapshot.Routes, RouteSpec{Route: row.Route})
 	}
 	if err := tx.Commit(); err != nil {
 		return Snapshot{}, err

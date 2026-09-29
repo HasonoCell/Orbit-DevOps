@@ -140,7 +140,7 @@ func routeObject(snapshot access.Snapshot, host access.HostSpec, route access.Ro
 		"spec": map[string]any{"parentRefs": []any{map[string]any{"name": GatewayName(snapshot.ProjectID), "sectionName": section}},
 			"hostnames": []any{host.Host.Hostname}, "rules": []any{map[string]any{
 				"matches":     []any{map[string]any{"path": map[string]any{"type": "PathPrefix", "value": route.Route.PathPrefix}}},
-				"backendRefs": []any{map[string]any{"name": ResourceName(route.Route.DeploymentTargetID), "port": int64(route.ContainerPort)}}}}}}}
+				"backendRefs": []any{map[string]any{"name": ResourceName(route.Route.DeploymentTargetID), "port": int64(route.ServicePort)}}}}}}}
 }
 
 func redirectObject(snapshot access.Snapshot, host access.HostSpec) *unstructured.Unstructured {
@@ -196,9 +196,11 @@ func (a *GatewayAdapter) Reconcile(ctx context.Context, snapshot access.Snapshot
 		if !ok {
 			continue
 		}
-		if err := a.checkBackendOwnership(ctx, snapshot.ProjectID, route.Route.DeploymentTargetID); err != nil {
+		service, err := a.checkBackendOwnership(ctx, snapshot.ProjectID, route.Route.DeploymentTargetID)
+		if err != nil {
 			return err
 		}
+		route.ServicePort = routeBackendPort(service)
 		routes[AccessRouteName(route.Route.ID)] = routeObject(snapshot, host, route)
 	}
 	// 旧 Route 先退出匹配；之后才修改 listener 或证书引用。
@@ -259,19 +261,37 @@ func (a *GatewayAdapter) checkManagedSecretOwnership(ctx context.Context, projec
 }
 
 // Service 可以尚未由 Release 创建；若稳定名称已存在，则必须确属该 Target。
-func (a *GatewayAdapter) checkBackendOwnership(ctx context.Context, projectID, targetID uuid.UUID) error {
+func (a *GatewayAdapter) checkBackendOwnership(ctx context.Context, projectID, targetID uuid.UUID) (*corev1.Service, error) {
 	service, err := a.base.client.CoreV1().Services(a.base.config.Namespace).Get(ctx, ResourceName(targetID), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	labels := service.GetLabels()
 	if labels[ManagedByLabel] != ManagedByValue || labels[ProjectIDLabel] != projectID.String() || labels[TargetIDLabel] != targetID.String() {
-		return ErrAccessOwnership
+		return nil, ErrAccessOwnership
 	}
-	return nil
+	return service, nil
+}
+
+// routeBackendPort 只根据已存在的 Service 选端口；Target 期望配置不驱动入口提前切换。
+func routeBackendPort(service *corev1.Service) int32 {
+	if service == nil {
+		return ServiceHTTPPort
+	}
+	for _, port := range service.Spec.Ports {
+		if port.Port == ServiceHTTPPort && port.Protocol == corev1.ProtocolTCP {
+			return ServiceHTTPPort
+		}
+	}
+	for _, port := range service.Spec.Ports {
+		if port.Port > 0 && port.Protocol == corev1.ProtocolTCP {
+			return port.Port
+		}
+	}
+	return ServiceHTTPPort
 }
 
 // 删除托管证书前确认新 Gateway 已被控制器观察，防止切换 TLS 时过早撤掉仍被使用的 Secret。
