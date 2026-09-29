@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useResourceCreateDialog } from "@/features/projects/use-resource-create-dialog";
 import { AccessHostsPanel } from "@/features/projects/access/AccessHostsPanel";
+import { ProjectMembersPanel } from "@/features/projects/members/ProjectMembersPanel";
 
 const roleLabel = {
   owner: "所有者",
@@ -61,6 +62,8 @@ export function ProjectPage() {
       role={roleLabel[permissions.data.role]}
       canDevelop={permissions.data.allowed.includes("develop")}
       canManageHosts={permissions.data.allowed.includes("manage_access_hosts")}
+      canManageMembers={permissions.data.allowed.includes("manage_members")}
+      canManageOwners={permissions.data.allowed.includes("manage_owners")}
     />
   );
 }
@@ -70,11 +73,15 @@ function ProjectContent({
   role,
   canDevelop,
   canManageHosts,
+  canManageMembers,
+  canManageOwners,
 }: {
   project: Project;
   role: string;
   canDevelop: boolean;
   canManageHosts: boolean;
+  canManageMembers: boolean;
+  canManageOwners: boolean;
 }) {
   const [params, setParams] = useSearchParams();
   const view =
@@ -82,14 +89,16 @@ function ProjectContent({
       ? "delivery"
       : params.get("view") === "access"
         ? "access"
-        : "overview";
+        : params.get("view") === "members"
+          ? "members"
+          : "overview";
   const cursor = params.get("cursor") ?? undefined;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const applications = useQuery({
     queryKey: workbenchQueryKeys.page(project.id, cursor),
     queryFn: ({ signal }) => listWorkbench(project.id, cursor, signal),
-    enabled: view !== "access",
+    enabled: view !== "access" && view !== "members",
   });
   const createDialog = useResourceCreateDialog(
     (values, key) =>
@@ -137,13 +146,16 @@ function ProjectContent({
           ["overview", "应用总览"],
           ["delivery", "自动交付"],
           ["access", "访问入口"],
+          ["members", "项目成员"],
         ].map(([view, label]) => (
           <button
             key={view}
             aria-pressed={
               params.get("view") === view ||
               (view === "overview" &&
-                !["delivery", "access"].includes(params.get("view") ?? ""))
+                !["delivery", "access", "members"].includes(
+                  params.get("view") ?? "",
+                ))
             }
             onClick={() =>
               setParams((previous) => {
@@ -159,6 +171,12 @@ function ProjectContent({
       </nav>
       {view === "access" ? (
         <AccessHostsPanel projectId={project.id} canManage={canManageHosts} />
+      ) : view === "members" ? (
+        <ProjectMembersPanel
+          projectId={project.id}
+          canManage={canManageMembers}
+          canManageOwners={canManageOwners}
+        />
       ) : applications.isPending ? (
         <LoadingPage label="正在加载应用" />
       ) : applications.error ? (
