@@ -6,6 +6,8 @@
     "web:generate": "pnpm --filter @orbit-devops/web generate",
     "web:check": "pnpm --filter @orbit-devops/web check",
     "web:build": "pnpm --filter @orbit-devops/web build",
-    "web:test:e2e": "pnpm --filter @orbit-devops/web test:e2e"
+    "web:test:e2e": "pnpm --filter @orbit-devops/web test:e2e",
+    "web:format": "pnpm --filter @orbit-devops/web format",
+    "web:format:check": "pnpm --filter @orbit-devops/web format:check"
   }
 }
