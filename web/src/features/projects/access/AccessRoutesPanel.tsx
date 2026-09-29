@@ -48,6 +48,7 @@ export function AccessRoutesPanel({
     queryFn: () => listEligibleTargets(projectId, host.id, targetOffset),
     enabled: canManage && host.lifecycle === "active",
   });
+  const visibleTargets = targets.data?.slice(0, 20) ?? [];
   const write = useMutation({
     mutationFn: (body: { pathPrefix: string; deploymentTargetId: string }) => {
       const key = commandKey.forPayload({
@@ -253,12 +254,11 @@ export function AccessRoutesPanel({
                 onChange={(event) => setTargetId(event.target.value)}
               >
                 <option value="">请选择 Target</option>
-                {editing &&
-                  targetId &&
-                  !targets.data?.some((item) => item.id === targetId) && (
-                    <option value={targetId}>当前 Target {targetId}</option>
+                {targetId &&
+                  !visibleTargets.some((item) => item.id === targetId) && (
+                    <option value={targetId}>已选 Target {targetId}</option>
                   )}
-                {targets.data?.slice(0, 20).map((item) => (
+                {visibleTargets.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.applicationName} · {item.stage} ·{" "}
                     {item.id.slice(0, 8)}

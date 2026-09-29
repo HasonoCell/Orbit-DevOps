@@ -187,6 +187,52 @@ test("Host 列表按 offset 分页，不扫描项目资源", async ({ page }) =>
   await expect(page.getByRole("link", { name: host.hostname })).toBeVisible();
 });
 
+test("路由目标翻页后保留已选 Target", async ({ page }) => {
+  await page.route("**/api/v1/projects/p-1/access-hosts/h-1", (route) =>
+    route.fulfill({ json: host }),
+  );
+  await page.route("**/api/v1/projects/p-1/access-hosts/h-1/status", (route) =>
+    route.fulfill({ json: status }),
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/routes?*",
+    (route) => route.fulfill({ json: [] }),
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/eligible-targets?*",
+    (route) => {
+      const offset = new URL(route.request().url()).searchParams.get("offset");
+      const item = (index: number) => ({
+        id: `t-${index}`,
+        applicationId: "a-1",
+        applicationName: "Payment Service",
+        stage: "development",
+        clusterRef: host.clusterRef,
+        namespace: host.namespace,
+      });
+      return route.fulfill({
+        json:
+          offset === "20"
+            ? [item(21)]
+            : Array.from({ length: 21 }, (_, n) => item(n + 1)),
+      });
+    },
+  );
+  await page.goto("/projects/p-1/access-hosts/h-1");
+  await page.getByLabel("部署目标").selectOption("t-1");
+  await page.getByRole("button", { name: "下一组 Target" }).click();
+  await expect(page.getByLabel("部署目标")).toHaveValue("t-1");
+  await expect(
+    page.getByRole("option", { name: "已选 Target t-1" }),
+  ).toBeAttached();
+  await page.getByLabel("部署目标").selectOption("t-21");
+  await page.getByRole("button", { name: "上一组 Target" }).click();
+  await expect(page.getByLabel("部署目标")).toHaveValue("t-21");
+  await expect(
+    page.getByRole("option", { name: "已选 Target t-21" }),
+  ).toBeAttached();
+});
+
 test("Target 只读取受限关联投影并可跳转到 Host", async ({ page }) => {
   await page.route(
     "**/api/v1/deployment-targets/t-1/access-routes?*",
