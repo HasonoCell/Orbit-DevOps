@@ -35,6 +35,14 @@ export async function getHost(projectId: string, hostId: string) {
     "查询访问域名",
   );
 }
+export async function getHostOptions(projectId: string) {
+  return requireData(
+    await client.GET("/api/v1/projects/{projectId}/access-host-options", {
+      params: { path: { projectId } },
+    }),
+    "查询 TLS 可选项",
+  );
+}
 export async function getHostStatus(projectId: string, hostId: string) {
   return requireData(
     await client.GET(

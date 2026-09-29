@@ -16,11 +16,14 @@ import {
   createHost,
   deleteHost,
   getHost,
+  getHostOptions,
   getHostStatus,
+  updateHost,
 } from "./api";
 
 type Host = components["schemas"]["AccessHost"];
 type HostStatus = components["schemas"]["AccessHostStatus"];
+type HostInput = components["schemas"]["AccessHostInput"];
 
 export function AccessHostPage() {
   const { projectId = "", hostId = "" } = useParams();
@@ -106,20 +109,22 @@ function HostCreate({
   projectName: string;
 }) {
   const [hostname, setHostname] = useState("");
+  const [tlsMode, setTlsMode] = useState<"http_only" | "managed">("http_only");
+  const [policyKey, setPolicyKey] = useState("");
   const [validation, setValidation] = useState("");
   const commandKey = useCommandKey();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const options = useQuery({
+    queryKey: ["access-host-options", projectId],
+    queryFn: () => getHostOptions(projectId),
+  });
   const mutation = useMutation({
-    mutationFn: (value: string) =>
+    mutationFn: (body: HostInput) =>
       createHost(
         projectId,
-        { hostname: value, tlsMode: "http_only" },
-        commandKey.forPayload({
-          projectId,
-          hostname: value,
-          tlsMode: "http_only",
-        }),
+        body,
+        commandKey.forPayload({ projectId, ...body }),
       ),
     onSuccess(created) {
       commandKey.clear();
@@ -136,8 +141,19 @@ function HostCreate({
       setValidation("请输入完整域名，例如 payment.example.com。");
       return;
     }
+    if (
+      tlsMode === "managed" &&
+      !options.data?.issuerPolicies.some((policy) => policy.key === policyKey)
+    ) {
+      setValidation("请选择当前可用的 Issuer Policy。");
+      return;
+    }
     setValidation("");
-    mutation.mutate(value);
+    mutation.mutate({
+      hostname: value,
+      tlsMode,
+      ...(tlsMode === "managed" ? { issuerPolicyKey: policyKey } : {}),
+    });
   }
   return (
     <div className="workbench-page">
@@ -154,7 +170,7 @@ function HostCreate({
       </div>
       <section className="workbench-panel max-w-3xl">
         <header className="panel-heading">
-          <h2>HTTP 入口</h2>
+          <h2>入口配置</h2>
         </header>
         <form onSubmit={submit} className="space-y-5 p-5 text-sm">
           <div className="space-y-2">
@@ -166,8 +182,61 @@ function HostCreate({
               placeholder="payment.example.com"
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="access-tls-mode">TLS 模式</Label>
+            <select
+              id="access-tls-mode"
+              className="runtime-select w-full"
+              value={tlsMode}
+              onChange={(event) => {
+                setTlsMode(event.target.value as "http_only" | "managed");
+                setPolicyKey("");
+              }}
+            >
+              <option value="http_only">仅 HTTP</option>
+              <option
+                value="managed"
+                disabled={!options.data?.issuerPolicies.length}
+              >
+                托管证书
+              </option>
+            </select>
+          </div>
+          {options.isPending || options.error ? (
+            <QueryNotice
+              error={options.error}
+              retry={() => void options.refetch()}
+            />
+          ) : (
+            <>
+              {!options.data.issuerPolicies.length && (
+                <p className="text-xs text-muted-foreground">
+                  当前没有可用的托管证书 Policy；仍可创建 HTTP 入口。
+                </p>
+              )}
+              {tlsMode === "managed" && (
+                <div className="space-y-2">
+                  <Label htmlFor="access-issuer">Issuer Policy</Label>
+                  <select
+                    id="access-issuer"
+                    className="runtime-select w-full"
+                    value={policyKey}
+                    onChange={(event) => setPolicyKey(event.target.value)}
+                  >
+                    <option value="">请选择</option>
+                    {options.data.issuerPolicies.map((policy) => (
+                      <option key={policy.key} value={policy.key}>
+                        {policy.key} · {policy.kind}/{policy.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </>
+          )}
           <p className="text-muted-foreground">
-            创建后可配置 PathPrefix 路由。TLS 和 DNS 状态在域名详情中单独观察。
+            创建后可配置 PathPrefix 路由。证书控制器与 DNS
+            验证在详情中单独观察。
           </p>
           {validation && (
             <p role="alert" className="text-destructive">
@@ -180,7 +249,12 @@ function HostCreate({
               。结果未知时，相同输入重试会复用幂等键。
             </p>
           )}
-          <Button type="submit" disabled={mutation.isPending}>
+          <Button
+            type="submit"
+            disabled={
+              mutation.isPending || (tlsMode === "managed" && !policyKey)
+            }
+          >
             {mutation.isPending ? "正在创建…" : "创建域名"}
           </Button>
         </form>
@@ -286,6 +360,13 @@ function HostDetail({
           </Fact>
         </dl>
       </section>
+      {canManageHost && displayed.lifecycle === "active" && (
+        <HostTlsEditor
+          key={`${displayed.id}-${displayed.updatedAt}`}
+          projectId={projectId}
+          host={displayed}
+        />
+      )}
       <section className="workbench-panel mb-5">
         <header className="panel-heading">
           <h2>入口观测</h2>
@@ -350,6 +431,159 @@ function HostDetail({
         </section>
       )}
     </div>
+  );
+}
+
+function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
+  const [mode, setMode] = useState<Host["tlsMode"]>(host.tlsMode);
+  const [policyKey, setPolicyKey] = useState(host.issuerPolicyKey ?? "");
+  const [validation, setValidation] = useState("");
+  const commandKey = useCommandKey();
+  const queryClient = useQueryClient();
+  const options = useQuery({
+    queryKey: ["access-host-options", projectId],
+    queryFn: () => getHostOptions(projectId),
+  });
+  const selectedPolicy = options.data?.issuerPolicies.find(
+    (policy) => policy.key === policyKey,
+  );
+  const mutation = useMutation({
+    mutationFn: (body: HostInput) =>
+      updateHost(
+        projectId,
+        host.id,
+        body,
+        commandKey.forPayload({ hostId: host.id, ...body }),
+      ),
+    onSuccess(updated) {
+      commandKey.clear();
+      queryClient.setQueryData(accessKeys.host(projectId, host.id), updated);
+      void queryClient.invalidateQueries({
+        queryKey: accessKeys.status(projectId, host.id),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["access-hosts", projectId],
+      });
+      setValidation("");
+    },
+  });
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (mode === "existing_secret") return;
+    if (mode === "managed" && !selectedPolicy) {
+      setValidation("当前 Issuer Policy 不可用，请选择新 Policy。");
+      return;
+    }
+    setValidation("");
+    mutation.mutate({
+      hostname: host.hostname,
+      tlsMode: mode,
+      ...(mode === "managed" ? { issuerPolicyKey: policyKey } : {}),
+    });
+  }
+  return (
+    <section className="workbench-panel mb-5 max-w-3xl">
+      <header className="panel-heading">
+        <h2>TLS 配置</h2>
+      </header>
+      <form onSubmit={submit} className="space-y-4 p-5 text-sm">
+        <div className="space-y-2">
+          <Label htmlFor="access-detail-tls-mode">模式</Label>
+          <select
+            id="access-detail-tls-mode"
+            className="runtime-select w-full"
+            value={mode}
+            onChange={(event) => {
+              setMode(event.target.value as Host["tlsMode"]);
+              setPolicyKey("");
+            }}
+          >
+            <option value="http_only">仅 HTTP</option>
+            <option
+              value="managed"
+              disabled={!options.data?.issuerPolicies.length}
+            >
+              托管证书
+            </option>
+            {host.tlsMode === "existing_secret" && (
+              <option value="existing_secret" disabled>
+                已有 TLS Secret
+              </option>
+            )}
+          </select>
+        </div>
+        {options.isPending || options.error ? (
+          <QueryNotice
+            error={options.error}
+            retry={() => void options.refetch()}
+          />
+        ) : (
+          <>
+            {!options.data.issuerPolicies.length && (
+              <p className="text-xs text-muted-foreground">
+                当前没有可用的托管证书 Policy。
+              </p>
+            )}
+            {mode === "managed" && (
+              <div className="space-y-2">
+                <Label htmlFor="access-detail-issuer">Issuer Policy</Label>
+                <select
+                  id="access-detail-issuer"
+                  className="runtime-select w-full"
+                  value={policyKey}
+                  onChange={(event) => setPolicyKey(event.target.value)}
+                >
+                  <option value="">请选择</option>
+                  {policyKey && !selectedPolicy && (
+                    <option value={policyKey} disabled>
+                      {policyKey}（已不可用）
+                    </option>
+                  )}
+                  {options.data.issuerPolicies.map((policy) => (
+                    <option key={policy.key} value={policy.key}>
+                      {policy.key} · {policy.kind}/{policy.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </>
+        )}
+        {mode === "managed" &&
+          policyKey &&
+          !options.isPending &&
+          !selectedPolicy && (
+            <p role="alert" className="text-amber-800">
+              当前引用的 Issuer Policy 已不可用；请选择新 Policy。
+            </p>
+          )}
+        {validation && (
+          <p role="alert" className="text-destructive">
+            {validation}
+          </p>
+        )}
+        {mutation.error && (
+          <p role="alert" className="text-destructive">
+            {errorText(mutation.error)}。结果未知时，相同输入重试会复用幂等键。
+          </p>
+        )}
+        {mutation.isSuccess && (
+          <p role="status" className="text-emerald-700">
+            配置已保存，等待入口与证书控制器调和。
+          </p>
+        )}
+        <Button
+          type="submit"
+          disabled={
+            mutation.isPending ||
+            mode === "existing_secret" ||
+            (mode === "managed" && !selectedPolicy)
+          }
+        >
+          {mutation.isPending ? "正在保存…" : "保存 TLS 配置"}
+        </Button>
+      </form>
+    </section>
   );
 }
 

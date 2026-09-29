@@ -69,6 +69,17 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/v1/deployment-targets/t-1", (route) =>
     route.fulfill({ json: target }),
   );
+  await page.route("**/api/v1/projects/p-1/access-host-options", (route) =>
+    route.fulfill({
+      json: {
+        clusterRef: host.clusterRef,
+        namespace: host.namespace,
+        issuerPolicies: [
+          { key: "demo-issuer", kind: "ClusterIssuer", name: "demo" },
+        ],
+      },
+    }),
+  );
 });
 
 test("项目创建 Host、选择同边界 Target 建 Route，并分开呈现入口和 DNS 状态", async ({
@@ -197,4 +208,104 @@ test("Target 只读取受限关联投影并可跳转到 Host", async ({ page }) 
   await expect(
     page.getByRole("link", { name: "payment.example.com/pay" }),
   ).toHaveAttribute("href", "/projects/p-1/access-hosts/h-1");
+});
+
+test("创建托管 TLS Host 时只能选服务端返回的 Policy", async ({ page }) => {
+  let submitted = false;
+  const managed = {
+    ...host,
+    tlsMode: "managed",
+    issuerPolicyKey: "demo-issuer",
+  };
+  await page.route("**/api/v1/projects/p-1/access-hosts", (route) => {
+    submitted = true;
+    expect(route.request().postDataJSON()).toEqual({
+      hostname: host.hostname,
+      tlsMode: "managed",
+      issuerPolicyKey: "demo-issuer",
+    });
+    return route.fulfill({ status: 201, json: managed });
+  });
+  await page.route("**/api/v1/projects/p-1/access-hosts/h-1", (route) =>
+    route.fulfill({ json: managed }),
+  );
+  await page.route("**/api/v1/projects/p-1/access-hosts/h-1/status", (route) =>
+    route.fulfill({
+      json: {
+        ...status,
+        host: managed,
+        controller: {
+          ...status.controller,
+          certificateState: "not_ready",
+          secretState: "unknown",
+        },
+      },
+    }),
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/routes?*",
+    (route) => route.fulfill({ json: [] }),
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/eligible-targets?*",
+    (route) => route.fulfill({ json: [] }),
+  );
+  await page.goto("/projects/p-1/access-hosts/new");
+  await page.getByLabel("域名").fill(host.hostname);
+  await page.getByLabel("TLS 模式").selectOption("managed");
+  await expect(page.getByRole("button", { name: "创建域名" })).toBeDisabled();
+  await page.getByLabel("Issuer Policy").selectOption("demo-issuer");
+  await page.getByRole("button", { name: "创建域名" }).click();
+  await expect(page).toHaveURL(/\/access-hosts\/h-1$/);
+  await expect(
+    page.getByRole("definition").filter({ hasText: "托管证书" }),
+  ).toBeVisible();
+  await expect(page.getByText("不匹配")).toBeVisible();
+  expect(submitted).toBe(true);
+});
+
+test("无 Policy 时禁用托管模式，已有 Policy 失效时拒绝继续提交", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/projects/p-1/access-host-options", (route) =>
+    route.fulfill({
+      json: {
+        clusterRef: host.clusterRef,
+        namespace: host.namespace,
+        issuerPolicies: [],
+      },
+    }),
+  );
+  await page.goto("/projects/p-1/access-hosts/new");
+  await expect(
+    page.locator("#access-tls-mode option[value='managed']"),
+  ).toBeDisabled();
+  await expect(page.getByText(/当前没有可用的托管证书 Policy/)).toBeVisible();
+
+  const managed = {
+    ...host,
+    tlsMode: "managed",
+    issuerPolicyKey: "removed-issuer",
+  };
+  await page.route("**/api/v1/projects/p-1/access-hosts/h-1", (route) =>
+    route.fulfill({ json: managed }),
+  );
+  await page.route("**/api/v1/projects/p-1/access-hosts/h-1/status", (route) =>
+    route.fulfill({ json: { ...status, host: managed } }),
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/routes?*",
+    (route) => route.fulfill({ json: [] }),
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/eligible-targets?*",
+    (route) => route.fulfill({ json: [] }),
+  );
+  await page.goto("/projects/p-1/access-hosts/h-1");
+  await expect(
+    page.getByText(/当前引用的 Issuer Policy 已不可用/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "保存 TLS 配置" }),
+  ).toBeDisabled();
 });
