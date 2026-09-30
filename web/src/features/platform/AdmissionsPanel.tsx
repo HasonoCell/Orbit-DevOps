@@ -21,10 +21,15 @@ const decisionNames: Record<Decision, string> = {
 };
 
 export function AdmissionsPanel() {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const rawStatus = params.get("admissionStatus");
   const status: Status =
     rawStatus === "rejected" || rawStatus === "linked" ? rawStatus : "pending";
+  return <AdmissionsContent key={status} status={status} />;
+}
+
+function AdmissionsContent({ status }: { status: Status }) {
+  const [params, setParams] = useSearchParams();
   const identityId = params.get("identityId") ?? "";
   const [cursors, setCursors] = useState([""]);
   const [pageIndex, setPageIndex] = useState(0);
@@ -73,10 +78,6 @@ export function AdmissionsPanel() {
     },
   });
   function selectStatus(next: Status) {
-    setCursors([""]);
-    setPageIndex(0);
-    setConfirming(null);
-    setNotice("");
     setParams((previous) => {
       const updated = new URLSearchParams(previous);
       updated.set("view", "admissions");

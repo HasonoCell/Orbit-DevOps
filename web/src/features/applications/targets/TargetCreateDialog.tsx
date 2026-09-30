@@ -42,6 +42,7 @@ export function TargetCreateDialog({
       ),
     onSuccess(created) {
       commandKey.clear();
+      form.reset();
       void queryClient.invalidateQueries({
         queryKey: overviewQueryKeys.targets(applicationId),
       });
@@ -55,8 +56,6 @@ export function TargetCreateDialog({
     if (mutation.isPending) return;
     if (!next) {
       mutation.reset();
-      commandKey.clear();
-      form.reset();
     }
     onOpenChange(next);
   }

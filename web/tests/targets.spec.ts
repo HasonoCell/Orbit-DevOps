@@ -151,3 +151,48 @@ test("已有开发目标时只允许创建生产目标", async ({ page }) => {
     page.getByRole("button", { name: "创建生产目标" }),
   ).toBeVisible();
 });
+
+test("创建目标结果未知后关闭再打开，保留草稿并复用同一幂等键", async ({
+  page,
+}) => {
+  const keys: string[] = [];
+  await page.route("**/api/v1/applications/a-1/deployment-targets?*", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
+  await page.route("**/api/v1/applications/a-1/deployment-targets", (route) => {
+    keys.push(route.request().headers()["idempotency-key"]);
+    expect(route.request().postDataJSON()).toEqual({
+      stage: "development",
+      replicas: 3,
+      containerPort: 9090,
+    });
+    if (keys.length === 1)
+      return route.fulfill({
+        status: 503,
+        json: { message: "结果暂时无法确认" },
+      });
+    return route.fulfill({ status: 201, json: target });
+  });
+  await page.route("**/api/v1/deployment-targets/t-1", (route) =>
+    route.fulfill({ json: target }),
+  );
+  await page.route(
+    "**/api/v1/deployment-targets/t-1/access-routes?*",
+    (route) => route.fulfill({ json: [] }),
+  );
+  await page.goto("/projects/p-1/applications/a-1");
+  await page.getByRole("button", { name: "创建开发目标" }).click();
+  await page.getByLabel("期望副本").fill("3");
+  await page.getByLabel("容器端口").fill("9090");
+  await page.getByRole("button", { name: "创建部署目标" }).click();
+  await expect(page.getByText("结果暂时无法确认")).toBeVisible();
+  await page.getByRole("button", { name: "取消" }).click();
+  await page.getByRole("button", { name: "创建开发目标" }).click();
+  await expect(page.getByLabel("期望副本")).toHaveValue("3");
+  await expect(page.getByLabel("容器端口")).toHaveValue("9090");
+  await page.getByRole("button", { name: "创建部署目标" }).click();
+  await expect(page).toHaveURL(/\/targets\/t-1$/);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBeTruthy();
+  expect(keys[1]).toBe(keys[0]);
+});

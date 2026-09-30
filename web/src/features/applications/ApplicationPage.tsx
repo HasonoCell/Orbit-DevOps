@@ -371,18 +371,19 @@ function ApplicationOverview({
           }}
         />
       )}
-      {createStage && (
-        <TargetCreateDialog
-          key={createStage}
-          projectId={project.id}
-          applicationId={application.id}
-          stage={createStage}
-          open
-          onOpenChange={(open) => {
-            if (!open) setCreateStage(null);
-          }}
-        />
-      )}
+      {canDevelop &&
+        (["development", "production"] as const).map((stage) => (
+          <TargetCreateDialog
+            key={stage}
+            projectId={project.id}
+            applicationId={application.id}
+            stage={stage}
+            open={createStage === stage}
+            onOpenChange={(open) => {
+              if (!open) setCreateStage(null);
+            }}
+          />
+        ))}
       {canDevelop && (
         <BuildCreateDialog
           projectId={project.id}

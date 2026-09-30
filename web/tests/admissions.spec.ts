@@ -143,6 +143,47 @@ test("近期认证后批准不会自动重放", async ({ page }) => {
   expect(approvals).toBe(1);
 });
 
+test("浏览器返回状态列表时不沿用另一状态的分页游标", async ({ page }) => {
+  const requests: string[] = [];
+  await page.route("**/api/v1/users/me", (route) =>
+    route.fulfill({ json: admin }),
+  );
+  await page.route("**/api/v1/auth/admissions?*", (route) => {
+    const url = new URL(route.request().url());
+    const status = url.searchParams.get("status");
+    const cursor = url.searchParams.get("cursor");
+    requests.push(`${status}:${cursor ?? "first"}`);
+    if (status === "pending" && cursor === "pending-next") {
+      return route.fulfill({
+        json: {
+          items: [{ ...initial, id: "identity-2", displayName: "第二页申请" }],
+        },
+      });
+    }
+    if (status === "pending" && !cursor) {
+      return route.fulfill({
+        json: { items: [initial], nextCursor: "pending-next" },
+      });
+    }
+    if (status === "rejected" && !cursor)
+      return route.fulfill({ json: { items: [] } });
+    return route.fulfill({
+      status: 400,
+      json: { code: "invalid_cursor", message: "游标与状态不匹配" },
+    });
+  });
+  await page.goto("/platform?view=admissions&admissionStatus=pending");
+  await page.getByRole("button", { name: "下一页" }).click();
+  await expect(page.getByText("第二页申请")).toBeVisible();
+  await page.getByRole("button", { name: "已拒绝" }).click();
+  await expect(page.getByText("此状态下暂无记录")).toBeVisible();
+  await page.goBack();
+  await expect(page.getByText("申请人").first()).toBeVisible();
+  await expect(page.getByText("第 1 页")).toBeVisible();
+  expect(requests).not.toContain("rejected:pending-next");
+  expect(requests.at(-1)).toBe("pending:first");
+});
+
 test("申请人的旧待准入会话失效后提示重新登录核验结果", async ({ page }) => {
   let reads = 0;
   await page.route("**/api/v1/users/me", (route) => {
