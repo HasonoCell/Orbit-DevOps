@@ -149,8 +149,16 @@ func TestAccessManagedTLSRunsThroughAPIQueueAndKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	stopEvents := startInternalEvents(t, service)
+	// 真实 Gateway Worker 同时运行维护扫描；并发唤醒被租约合并时，由扫描保证最新修订最终收敛。
+	maintenanceContext, stopMaintenance := context.WithCancel(ctx)
+	maintenanceDone := make(chan error, 1)
+	go func() { maintenanceDone <- worker.Maintain(maintenanceContext, 500*time.Millisecond) }()
 	t.Cleanup(func() {
 		stopEvents()
+		stopMaintenance()
+		if err := <-maintenanceDone; err != nil {
+			t.Errorf("stop gateway maintenance: %v", err)
+		}
 		// 断言失败时仍只清理本测试 Project 的入口资源，不触碰别的 Kind 对象。
 		empty := access.Snapshot{ProjectID: projectID, ClusterRef: cluster, Namespace: namespace,
 			GatewayClassName: className, Revision: 100}
@@ -357,7 +365,12 @@ func awaitAccessChain(t *testing.T, db queryRowDB, module *access.Module, gatewa
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatalf("gateway chain did not reach revision %d with ready controller", revision)
+	var state, code string
+	var applied, desired int64
+	_ = db.QueryRow(`SELECT state, COALESCE(last_error_code,''), applied_revision, desired_revision
+		FROM project_gateway_sync WHERE project_id=$1`, projectID).Scan(&state, &code, &applied, &desired)
+	t.Fatalf("gateway chain did not reach revision %d with ready controller: state=%s code=%s applied=%d desired=%d",
+		revision, state, code, applied, desired)
 }
 
 type queryRowDB interface {
