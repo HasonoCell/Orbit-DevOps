@@ -35,6 +35,25 @@ import type { DiagnosticReport } from "@/features/applications/api";
 
 export function ReleasePage() {
   const { projectId = "", applicationId = "", releaseId = "" } = useParams();
+  return (
+    <ReleaseContent
+      key={releaseId}
+      projectId={projectId}
+      applicationId={applicationId}
+      releaseId={releaseId}
+    />
+  );
+}
+
+function ReleaseContent({
+  projectId,
+  applicationId,
+  releaseId,
+}: {
+  projectId: string;
+  applicationId: string;
+  releaseId: string;
+}) {
   const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
   const application = useQuery({
     queryKey: ["application", applicationId],

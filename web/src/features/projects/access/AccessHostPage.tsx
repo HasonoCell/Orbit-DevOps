@@ -371,6 +371,9 @@ function HostDetail({
   const queryClient = useQueryClient();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteAccepted, setDeleteAccepted] = useState(false);
+  const [observeUntil, setObserveUntil] = useState(
+    () => Date.now() + 5 * 60_000,
+  );
   const commandKey = useCommandKey();
   const current = useQuery({
     queryKey: accessKeys.host(projectId, host.id),
@@ -380,8 +383,10 @@ function HostDetail({
   const status = useQuery({
     queryKey: accessKeys.status(projectId, host.id),
     queryFn: () => getHostStatus(projectId, host.id),
+    // 数据库调和完成后，Gateway、证书和 DNS 仍可能继续变化。
     refetchInterval: (query) =>
-      query.state.data?.sync.state !== "applied" ? 15_000 : false,
+      !query.state.error && Date.now() < observeUntil ? 15_000 : false,
+    refetchIntervalInBackground: false,
   });
   const remove = useMutation({
     mutationFn: () =>
@@ -419,6 +424,7 @@ function HostDetail({
         <Button
           variant="outline"
           onClick={() => {
+            setObserveUntil(Date.now() + 5 * 60_000);
             void current.refetch();
             void status.refetch();
           }}

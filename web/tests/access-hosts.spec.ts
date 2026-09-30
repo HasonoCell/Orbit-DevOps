@@ -187,6 +187,52 @@ test("Host 列表按 offset 分页，不扫描项目资源", async ({ page }) =>
   await expect(page.getByRole("link", { name: host.hostname })).toBeVisible();
 });
 
+test("调和已应用后仍轮询 Gateway 与 DNS 观测，五分钟后暂停", async ({
+  page,
+}) => {
+  await page.clock.install();
+  let reads = 0;
+  await page.route("**/api/v1/projects/p-1/access-hosts/h-1", (route) =>
+    route.fulfill({ json: host }),
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/status",
+    (route) => {
+      reads++;
+      return route.fulfill({
+        json:
+          reads === 1
+            ? {
+                ...status,
+                sync: { ...status.sync, appliedRevision: 1, state: "applied" },
+                controller: { ...status.controller, gatewayState: "not_ready" },
+              }
+            : {
+                ...status,
+                sync: { ...status.sync, appliedRevision: 1, state: "applied" },
+                dns: { ...status.dns, state: "verified" },
+              },
+      });
+    },
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/routes?*",
+    (route) => route.fulfill({ json: [] }),
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/eligible-targets?*",
+    (route) => route.fulfill({ json: [] }),
+  );
+  await page.goto("/projects/p-1/access-hosts/h-1");
+  await expect(page.getByText("未就绪 / 就绪")).toBeVisible();
+  await page.clock.fastForward(16_000);
+  await expect(page.getByText("已验证")).toBeVisible();
+  await page.clock.fastForward(5 * 60_000);
+  const stoppedAt = reads;
+  await page.clock.fastForward(16_000);
+  expect(reads).toBe(stoppedAt);
+});
+
 test("路由目标翻页后保留已选 Target", async ({ page }) => {
   await page.route("**/api/v1/projects/p-1/access-hosts/h-1", (route) =>
     route.fulfill({ json: host }),

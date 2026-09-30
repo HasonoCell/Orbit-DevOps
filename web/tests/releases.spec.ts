@@ -117,3 +117,40 @@ test("运行观测不可用且无 Pod 时不显示健康结论或可选日志", 
     0,
   );
 });
+
+test("切换 Release 后重新开启五分钟轮询窗口", async ({ page }) => {
+  await page.clock.install();
+  const active = { ...operation, status: "pending" };
+  let firstOperationReads = 0;
+  await page.route("**/api/v1/releases/r-2", (route) =>
+    route.fulfill({
+      json: {
+        ...detail,
+        release: { ...detail.release, id: "r-2", rollbackOfReleaseId: "r-1" },
+        releaseOperation: { ...active, id: "ro-2", releaseId: "r-2" },
+      },
+    }),
+  );
+  await page.route("**/api/v1/releases/r-1", (route) =>
+    route.fulfill({ json: { ...detail, releaseOperation: active } }),
+  );
+  await page.route("**/api/v1/release-operations/ro-2", (route) =>
+    route.fulfill({ json: { ...active, id: "ro-2", releaseId: "r-2" } }),
+  );
+  await page.route("**/api/v1/release-operations/ro-1", (route) => {
+    firstOperationReads++;
+    return route.fulfill({ json: active });
+  });
+  await page.route("**/api/v1/releases/*/diagnostics", (route) =>
+    route.fulfill({ json: diagnostic() }),
+  );
+  await page.goto("/projects/p-1/applications/a-1/releases/r-2");
+  await expect(page.getByText("Release r-2")).toBeVisible();
+  await page.clock.fastForward(5 * 60_000 + 1_000);
+  await page.getByRole("link", { name: "r-1" }).click();
+  await expect(page.getByText("Release r-1")).toBeVisible();
+  await expect.poll(() => firstOperationReads).toBeGreaterThan(0);
+  const initial = firstOperationReads;
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => firstOperationReads).toBeGreaterThan(initial);
+});
