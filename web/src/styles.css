@@ -197,10 +197,10 @@
   background: var(--sidebar-accent);
   box-shadow: inset 3px 0 #8ecab4;
 }
-.console-primary-nav {
+.console-sliding-nav {
   position: relative;
 }
-.console-primary-nav a {
+.console-sliding-nav a {
   position: relative;
   z-index: 1;
 }
@@ -215,8 +215,8 @@
   pointer-events: none;
   transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.console-primary-nav.has-indicator a[aria-current="page"],
-.console-primary-nav.has-indicator a[aria-current="page"]:hover {
+.console-sliding-nav.has-indicator a[aria-current="page"],
+.console-sliding-nav.has-indicator a[aria-current="page"]:hover {
   background: transparent;
   box-shadow: none;
 }

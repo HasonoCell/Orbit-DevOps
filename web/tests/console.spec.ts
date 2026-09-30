@@ -447,6 +447,61 @@ test("项目 owner 可以创建应用，移动端可打开导航", async ({ page
   await expect(page).toHaveURL(/\/applications\/a-2$/);
 });
 
+test("账户导航在平台管理与账号设置之间滑动，并尊重减少动画偏好", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.route("**/api/v1/users/me", (route) =>
+    route.fulfill({
+      json: {
+        kind: "user",
+        user: { ...user, platformRole: "platform_admin" },
+        mustChangePassword: false,
+      },
+    }),
+  );
+  await page.route("**/api/v1/users?*", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
+  await page.route("**/api/v1/users/me/sessions?*", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
+  await page.route("**/api/v1/users/me/external-identities?*", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
+  await page.route("**/api/v1/auth/providers", (route) =>
+    route.fulfill({ json: [] }),
+  );
+
+  await page.goto("/platform");
+  const navigation = page.getByRole("navigation", { name: "账户导航" });
+  const indicator = navigation.locator(".console-nav-indicator");
+  await expect(indicator).toBeVisible();
+  await expect(indicator).toHaveCSS("transition-duration", "0.24s");
+  const platformPosition = await indicator.evaluate(
+    (element) => (element as HTMLElement).style.transform,
+  );
+
+  await navigation.getByRole("link", { name: "账号设置" }).click();
+  await expect(
+    navigation.getByRole("link", { name: "账号设置" }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect
+    .poll(() =>
+      indicator.evaluate((element) => (element as HTMLElement).style.transform),
+    )
+    .not.toBe(platformPosition);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(indicator).toHaveCSS("transition-duration", "0s");
+  await navigation.getByRole("link", { name: "平台管理" }).click();
+  await expect
+    .poll(() =>
+      indicator.evaluate((element) => (element as HTMLElement).style.transform),
+    )
+    .toBe(platformPosition);
+});
+
 test("业务请求 401 会重新核验会话并返回登录", async ({ page }) => {
   let sessionValid = true;
   await page.route("**/api/v1/users/me", (route) =>

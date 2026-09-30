@@ -13,7 +13,6 @@ import {
 import { useLayoutEffect, useRef, useState } from "react";
 import {
   Link,
-  NavLink,
   Outlet,
   useLocation,
   useMatch,
@@ -86,6 +85,24 @@ export function ConsoleShell() {
         ]
       : []),
   ];
+  const accountItems = [
+    ...(principal.user?.platformRole === "platform_admin"
+      ? [
+          {
+            to: "/platform",
+            label: "平台管理",
+            icon: ShieldCheck,
+            active: location.pathname === "/platform",
+          },
+        ]
+      : []),
+    {
+      to: "/account",
+      label: "账号设置",
+      icon: UserRound,
+      active: location.pathname === "/account",
+    },
+  ];
   const navigation = (
     <>
       <Link
@@ -109,20 +126,15 @@ export function ConsoleShell() {
       )}
       <SlidingNavigation
         items={items}
+        label="主导航"
         onNavigate={() => setMobileOpen(false)}
       />
-      <div className="console-nav console-account">
-        {principal.user?.platformRole === "platform_admin" && (
-          <NavLink to="/platform" onClick={() => setMobileOpen(false)}>
-            <ShieldCheck aria-hidden="true" className="size-4" />
-            平台管理
-          </NavLink>
-        )}
-        <NavLink to="/account" onClick={() => setMobileOpen(false)}>
-          <UserRound aria-hidden="true" className="size-4" />
-          账号设置
-        </NavLink>
-      </div>
+      <SlidingNavigation
+        items={accountItems}
+        label="账户导航"
+        className="console-account"
+        onNavigate={() => setMobileOpen(false)}
+      />
     </>
   );
   return (
@@ -209,9 +221,13 @@ type NavigationItem = {
 /** 选中背景跟随实际菜单项位置移动，不改变链接与键盘焦点的布局。 */
 function SlidingNavigation({
   items,
+  label,
+  className,
   onNavigate,
 }: {
   items: NavigationItem[];
+  label: string;
+  className?: string;
   onNavigate: () => void;
 }) {
   const navRef = useRef<HTMLElement>(null);
@@ -248,8 +264,8 @@ function SlidingNavigation({
   return (
     <nav
       ref={navRef}
-      aria-label="主导航"
-      className={`console-nav console-primary-nav${indicator ? " has-indicator" : ""}`}
+      aria-label={label}
+      className={`console-nav console-sliding-nav${className ? ` ${className}` : ""}${indicator ? " has-indicator" : ""}`}
     >
       {indicator && (
         <span
