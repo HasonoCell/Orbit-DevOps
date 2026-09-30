@@ -70,9 +70,17 @@ export function ProjectMembersPanel({
     mutationFn: () => resolveMember(projectId, { kind, value: value.trim() }),
   });
   function refreshMembers() {
-    void queryClient.invalidateQueries({
-      queryKey: ["project-members", projectId],
-    });
+    // 操作者也可能修改自己的角色或退出项目；命令完成前回读权限与项目可见性。
+    return Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["project-members", projectId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["project-permissions", projectId],
+      }),
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["projects"] }),
+    ]);
   }
   const add = useMutation({
     mutationFn: () =>
@@ -93,7 +101,7 @@ export function ProjectMembersPanel({
       setNotice("成员已添加。");
       setPageIndex(0);
       setCursors([""]);
-      refreshMembers();
+      return refreshMembers();
     },
   });
   const update = useMutation({
@@ -112,7 +120,7 @@ export function ProjectMembersPanel({
       updateKey.clear();
       setEditing(null);
       setNotice("成员角色已更新。");
-      refreshMembers();
+      return refreshMembers();
     },
   });
   const remove = useMutation({
@@ -126,11 +134,13 @@ export function ProjectMembersPanel({
       removeKey.clear();
       setRemoving(null);
       setNotice("成员已移除。");
-      refreshMembers();
+      return refreshMembers();
     },
   });
+  const pending = add.isPending || update.isPending || remove.isPending;
   function search(event: FormEvent) {
     event.preventDefault();
+    if (!canManage || pending) return;
     setNotice("");
     add.reset();
     if (value.trim()) lookup.mutate();
@@ -171,6 +181,7 @@ export function ProjectMembersPanel({
               id="member-kind"
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={kind}
+              disabled={pending}
               onChange={(event) => {
                 setKind(event.target.value as LookupKind);
                 lookup.reset();
@@ -187,6 +198,7 @@ export function ProjectMembersPanel({
               id="member-value"
               value={value}
               maxLength={320}
+              disabled={pending}
               onChange={(event) => {
                 setValue(event.target.value);
                 lookup.reset();
@@ -203,7 +215,7 @@ export function ProjectMembersPanel({
           <Button
             type="submit"
             variant="outline"
-            disabled={!value.trim() || lookup.isPending}
+            disabled={!value.trim() || lookup.isPending || pending}
           >
             查找
           </Button>
@@ -224,7 +236,7 @@ export function ProjectMembersPanel({
           该邮箱对应多个用户，请使用登录名或 User ID 查找。
         </p>
       )}
-      {lookup.data?.candidate && (
+      {canManage && lookup.data?.candidate && (
         <div className="flex flex-wrap items-end justify-between gap-4 border-b bg-muted/30 p-5 text-sm">
           <div>
             <p className="font-medium">{lookup.data.candidate.displayName}</p>
@@ -240,9 +252,10 @@ export function ProjectMembersPanel({
                 value={addRole}
                 onChange={setAddRole}
                 canManageOwners={canManageOwners}
+                disabled={pending}
               />
             </div>
-            <Button disabled={add.isPending} onClick={() => add.mutate()}>
+            <Button disabled={pending} onClick={() => add.mutate()}>
               添加成员
             </Button>
           </div>
@@ -281,6 +294,7 @@ export function ProjectMembersPanel({
                         <Button
                           size="sm"
                           variant="outline"
+                          disabled={pending}
                           onClick={() => {
                             setEditing(member);
                             setEditRole(member.role);
@@ -293,6 +307,7 @@ export function ProjectMembersPanel({
                         <Button
                           size="sm"
                           variant="outline"
+                          disabled={pending}
                           onClick={() => {
                             setRemoving(member);
                             remove.reset();
@@ -334,58 +349,71 @@ export function ProjectMembersPanel({
           )}
         </>
       )}
-      {editing && (
-        <div className="flex flex-wrap items-end gap-3 border-t bg-muted/30 p-5 text-sm">
-          <div className="space-y-2">
-            <Label htmlFor="member-edit-role">
-              修改 {editing.displayName || editing.userId} 的角色
-            </Label>
-            <RoleSelect
-              id="member-edit-role"
-              value={editRole}
-              onChange={setEditRole}
-              canManageOwners={canManageOwners}
-            />
+      {canManage &&
+        editing &&
+        (editing.role !== "owner" || canManageOwners) && (
+          <div className="flex flex-wrap items-end gap-3 border-t bg-muted/30 p-5 text-sm">
+            <div className="space-y-2">
+              <Label htmlFor="member-edit-role">
+                修改 {editing.displayName || editing.userId} 的角色
+              </Label>
+              <RoleSelect
+                id="member-edit-role"
+                value={editRole}
+                onChange={setEditRole}
+                canManageOwners={canManageOwners}
+                disabled={pending}
+              />
+            </div>
+            <Button
+              disabled={pending || editRole === editing.role}
+              onClick={() => update.mutate()}
+            >
+              保存角色
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={pending}
+              onClick={() => setEditing(null)}
+            >
+              取消
+            </Button>
+            {update.error && (
+              <p role="alert" className="w-full text-destructive">
+                {memberError(update.error)}
+              </p>
+            )}
           </div>
-          <Button
-            disabled={update.isPending || editRole === editing.role}
-            onClick={() => update.mutate()}
-          >
-            保存角色
-          </Button>
-          <Button variant="ghost" onClick={() => setEditing(null)}>
-            取消
-          </Button>
-          {update.error && (
-            <p role="alert" className="w-full text-destructive">
-              {memberError(update.error)}
+        )}
+      {canManage &&
+        removing &&
+        (removing.role !== "owner" || canManageOwners) && (
+          <div className="flex flex-wrap items-center gap-3 border-t bg-muted/30 p-5 text-sm">
+            <p className="grow">
+              确认移除 {removing.displayName || removing.userId}
+              ？该用户将失去此项目的访问权限。
             </p>
-          )}
-        </div>
-      )}
-      {removing && (
-        <div className="flex flex-wrap items-center gap-3 border-t bg-muted/30 p-5 text-sm">
-          <p className="grow">
-            确认移除 {removing.displayName || removing.userId}
-            ？该用户将失去此项目的访问权限。
-          </p>
-          <Button
-            variant="destructive"
-            disabled={remove.isPending}
-            onClick={() => remove.mutate()}
-          >
-            确认移除
-          </Button>
-          <Button variant="ghost" onClick={() => setRemoving(null)}>
-            取消
-          </Button>
-          {remove.error && (
-            <p role="alert" className="w-full text-destructive">
-              {memberError(remove.error)}
-            </p>
-          )}
-        </div>
-      )}
+            <Button
+              variant="destructive"
+              disabled={pending}
+              onClick={() => remove.mutate()}
+            >
+              确认移除
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={pending}
+              onClick={() => setRemoving(null)}
+            >
+              取消
+            </Button>
+            {remove.error && (
+              <p role="alert" className="w-full text-destructive">
+                {memberError(remove.error)}
+              </p>
+            )}
+          </div>
+        )}
     </section>
   );
 }
@@ -395,17 +423,20 @@ function RoleSelect({
   value,
   onChange,
   canManageOwners,
+  disabled,
 }: {
   id: string;
   value: Role;
   onChange: (role: Role) => void;
   canManageOwners: boolean;
+  disabled: boolean;
 }) {
   return (
     <select
       id={id}
       className="h-10 min-w-32 rounded-md border border-input bg-background px-3 text-sm"
       value={value}
+      disabled={disabled}
       onChange={(event) => onChange(event.target.value as Role)}
     >
       {canManageOwners && <option value="owner">所有者</option>}

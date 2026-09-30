@@ -130,3 +130,114 @@ test("观察者仅能读取成员，不出现用户查找或管理操作", async
   await expect(page.getByLabel("精确查找用户")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "修改角色" })).toHaveCount(0);
 });
+
+test("降低自己的项目角色后回读权限并清除已查找的候选人", async ({ page }) => {
+  let role = "owner";
+  await page.route("**/api/v1/projects/p-1/permissions", (route) =>
+    route.fulfill({
+      json: {
+        projectId: "p-1",
+        role,
+        allowed:
+          role === "owner"
+            ? ["read", "develop", "manage_members", "manage_owners"]
+            : ["read", "develop"],
+      },
+    }),
+  );
+  await page.route("**/api/v1/projects/p-1/members?*", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          { ...owner, role },
+          { ...owner, userId: "u-3", displayName: "另一位所有者" },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/v1/projects/p-1/member-candidate:resolve", (route) =>
+    route.fulfill({ json: { status: "found", candidate } }),
+  );
+  await page.route("**/api/v1/projects/p-1/members/u-1", (route) => {
+    expect(route.request().postDataJSON()).toEqual({ role: "developer" });
+    role = "developer";
+    return route.fulfill({ json: { ...owner, role } });
+  });
+  await page.goto("/projects/p-1?view=members");
+  await page.getByLabel("精确查找用户").fill("candidate");
+  await page.getByRole("button", { name: "查找", exact: true }).click();
+  await expect(page.getByText("新同事", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "修改角色" }).first().click();
+  await page.getByLabel(/修改 项目所有者 的角色/).selectOption("developer");
+  await page.getByRole("button", { name: "保存角色" }).click();
+  await expect(
+    page.locator(".workbench-heading").getByText("开发者", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("精确查找用户")).toHaveCount(0);
+  await expect(page.getByText("新同事", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "添加成员" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "修改角色" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "移除", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("移除自己后停止展示项目管理入口并刷新可见项目列表", async ({ page }) => {
+  let removed = false;
+  const invisible = {
+    status: 404,
+    json: { code: "project_not_found", message: "project not found" },
+  };
+  await page.route("**/api/v1/projects?*", (route) =>
+    route.fulfill({ json: { items: removed ? [] : [project] } }),
+  );
+  await page.route("**/api/v1/projects/p-1", (route) =>
+    removed ? route.fulfill(invisible) : route.fulfill({ json: project }),
+  );
+  await page.route("**/api/v1/projects/p-1/permissions", (route) =>
+    removed
+      ? route.fulfill(invisible)
+      : route.fulfill({
+          json: {
+            projectId: "p-1",
+            role: "owner",
+            allowed: ["read", "manage_members", "manage_owners"],
+          },
+        }),
+  );
+  await page.route("**/api/v1/projects/p-1/members?*", (route) =>
+    removed
+      ? route.fulfill(invisible)
+      : route.fulfill({
+          json: {
+            items: [
+              owner,
+              { ...owner, userId: "u-3", displayName: "另一位所有者" },
+            ],
+          },
+        }),
+  );
+  await page.route("**/api/v1/projects/p-1/application-workbench?*", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
+  await page.route("**/api/v1/projects/p-1/members/u-1", (route) => {
+    expect(route.request().method()).toBe("DELETE");
+    removed = true;
+    return route.fulfill({ json: owner });
+  });
+  // 先缓存项目列表，再验证退出项目后不会继续使用旧可见性。
+  await page.goto("/projects");
+  await page.getByRole("link", { name: /^Yuuki / }).click();
+  await page.getByRole("button", { name: "项目成员", exact: true }).click();
+  await page.getByRole("button", { name: "移除", exact: true }).first().click();
+  await page.getByRole("button", { name: "确认移除" }).click();
+  await expect(
+    page.getByRole("heading", { name: "无法加载项目" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "修改角色" })).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "项目工作台", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("link", { name: "所有项目", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "还没有项目" })).toBeVisible();
+});

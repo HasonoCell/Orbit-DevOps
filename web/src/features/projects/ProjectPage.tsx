@@ -172,7 +172,9 @@ function ProjectContent({
       {view === "access" ? (
         <AccessHostsPanel projectId={project.id} canManage={canManageHosts} />
       ) : view === "members" ? (
+        // 管理权限变化时丢弃候选人和操作草稿，避免降权后残留旧表单。
         <ProjectMembersPanel
+          key={`${project.id}:${canManageMembers}:${canManageOwners}`}
           projectId={project.id}
           canManage={canManageMembers}
           canManageOwners={canManageOwners}
