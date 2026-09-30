@@ -76,6 +76,9 @@ test("管理员创建本地用户、任命角色、停用并重置临时密码",
     return route.fulfill({ status: 204 });
   });
   await page.goto("/platform?view=users");
+  await expect(page.getByText("新用户默认没有平台或项目管理权限")).toHaveCount(
+    0,
+  );
   await page.getByLabel("登录名").fill("colleague");
   await page.getByLabel("显示名称").fill("新同事");
   await page.getByLabel("临时密码", { exact: true }).fill(fixturePassword);

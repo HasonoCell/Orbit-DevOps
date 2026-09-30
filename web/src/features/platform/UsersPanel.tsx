@@ -66,12 +66,7 @@ export function UsersPanel() {
     <div className="space-y-5">
       <section className="workbench-panel max-w-3xl">
         <header className="panel-heading">
-          <div>
-            <h2>创建本地用户</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              新用户默认没有平台或项目管理权限
-            </p>
-          </div>
+          <h2>创建本地用户</h2>
         </header>
         <form
           onSubmit={submit}
