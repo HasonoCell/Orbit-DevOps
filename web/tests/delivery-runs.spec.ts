@@ -54,6 +54,7 @@ const run = {
     createdAt: timestamp,
     updatedAt: timestamp,
   },
+  mode: "auto_release",
   status: "releasing",
   activeStage: "release",
   trigger: {
@@ -117,6 +118,47 @@ test("从 Pipeline 历史进入可分享的 Run，分别查看三步及关联资
   await expect(
     page.getByRole("link", { name: /查看 Release/ }),
   ).toHaveAttribute("href", /\/releases\/r-1$/);
+});
+
+test("历史仅构建 Run 按当时的模式展示，不套用当前 Revision", async ({
+  page,
+}) => {
+  const oldRun = {
+    ...run,
+    run: {
+      ...run.run,
+      pipelineRevision: 1,
+      phase: "artifact_ready",
+      releaseId: undefined,
+    },
+    mode: "build_only",
+    status: "candidate_ready",
+    activeStage: undefined,
+  };
+  await page.route("**/api/v1/delivery-pipelines/pl-1/runs?*", (route) =>
+    route.fulfill({ json: { items: [oldRun] } }),
+  );
+  await page.route("**/api/v1/delivery-runs/dr-1", (route) =>
+    route.fulfill({ json: oldRun }),
+  );
+  await page.goto("/projects/p-1/applications/a-1/pipelines/pl-1");
+  await expect(page.getByText("来源校验：不适用")).toBeVisible();
+  await expect(page.getByText("部署：不自动部署")).toBeVisible();
+  await page.getByRole("link", { name: /查看运行/ }).click();
+  await expect(page.getByText("来源校验：不适用")).toBeVisible();
+  await expect(page.getByText("部署：不自动部署")).toBeVisible();
+});
+
+test("Pipeline 运行历史可刷新并发现新 Webhook Run", async ({ page }) => {
+  let visible = false;
+  await page.route("**/api/v1/delivery-pipelines/pl-1/runs?*", (route) =>
+    route.fulfill({ json: { items: visible ? [run] : [] } }),
+  );
+  await page.goto("/projects/p-1/applications/a-1/pipelines/pl-1");
+  await expect(page.getByText("暂无交付运行")).toBeVisible();
+  visible = true;
+  await page.getByRole("button", { name: "刷新运行" }).click();
+  await expect(page.getByRole("link", { name: /查看运行/ })).toBeVisible();
 });
 
 test("阻塞 Run 的重新对账只是接纳后台推进请求", async ({ page }) => {

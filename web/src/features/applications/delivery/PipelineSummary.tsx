@@ -137,17 +137,10 @@ function PipelineItem({
             </span>
             <StatusPill {...runStatus[run.data.status]} />
           </div>
-          {run.data.run.pipelineRevision === revision.revision ? (
-            <DeliveryStages
-              run={run.data}
-              buildOnly={revision.mode === "build_only"}
-            />
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              该运行使用历史配置 Revision {run.data.run.pipelineRevision}
-              ；不套用当前配置的阶段。
-            </p>
-          )}
+          <DeliveryStages
+            run={run.data}
+            buildOnly={run.data.mode === "build_only"}
+          />
           <details className="text-xs">
             <summary className="cursor-pointer font-medium text-primary">
               运行摘要

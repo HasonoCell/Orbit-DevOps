@@ -235,6 +235,7 @@ export const run: Schema["DeliveryRunDetail"] = {
     updatedAt: timestamp,
     finishedAt: timestamp,
   },
+  mode: "auto_release",
   status: "succeeded",
   trigger: {
     eventType: "push",

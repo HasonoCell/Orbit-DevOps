@@ -132,7 +132,11 @@ test("不同运行版本与发布成功分别显示，仅构建 Pipeline 不显�
     }),
   );
   await page.route("**/api/v1/delivery-pipelines/pl-1/runs?*", (route) =>
-    route.fulfill({ json: { items: [{ ...run, status: "candidate_ready" }] } }),
+    route.fulfill({
+      json: {
+        items: [{ ...run, mode: "build_only", status: "candidate_ready" }],
+      },
+    }),
   );
   await page.goto(applicationURL);
   await expect(page.getByText("运行其他版本", { exact: true })).toBeVisible();

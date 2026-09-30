@@ -116,9 +116,7 @@ export function DeliveryRunPage() {
   const canReconcile =
     permissions.data.allowed.includes("develop") &&
     (detail.status === "attention_required" || detail.status === "blocked");
-  const buildOnly =
-    detail.run.pipelineRevision === pipeline.data.revision.revision &&
-    pipeline.data.revision.mode === "build_only";
+  const buildOnly = detail.mode === "build_only";
   return (
     <div className="workbench-page">
       <div className="workbench-heading">
@@ -184,7 +182,7 @@ export function DeliveryRunPage() {
           )}
           {detail.run.pipelineRevision !== pipeline.data.revision.revision && (
             <p className="text-xs text-muted-foreground">
-              此运行使用历史 Revision，当前配置不用于推断当时的交付模式。
+              此运行使用历史 Revision {detail.run.pipelineRevision}。
             </p>
           )}
         </div>

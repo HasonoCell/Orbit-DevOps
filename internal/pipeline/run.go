@@ -44,6 +44,7 @@ type RunRecord struct {
 
 type RunDetail struct {
 	Run         RunRecord  `json:"run"`
+	Mode        string     `json:"mode"`
 	Status      string     `json:"status"`
 	ActiveStage *string    `json:"activeStage,omitempty"`
 	Trigger     RunTrigger `json:"trigger"`
@@ -225,7 +226,7 @@ func projectRun(row runRow) RunDetail {
 	if stage != "" {
 		activeStage = &stage
 	}
-	return RunDetail{Run: row.RunRecord, Status: status, ActiveStage: activeStage, Trigger: row.RunTrigger}
+	return RunDetail{Run: row.RunRecord, Mode: row.PipelineMode, Status: status, ActiveStage: activeStage, Trigger: row.RunTrigger}
 }
 
 // DeriveRunState 从持久化阶段与底层 Operation 的权威状态投影交付运行状态。

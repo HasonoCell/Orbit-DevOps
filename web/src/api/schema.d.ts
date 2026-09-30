@@ -2238,6 +2238,7 @@ export interface components {
         };
         DeliveryRunDetail: {
             run: components["schemas"]["DeliveryRun"];
+            mode: components["schemas"]["DeliveryMode"];
             /** @enum {string} */
             status: "building" | "build_failed" | "build_canceled" | "candidate_ready" | "verifying_source" | "releasing" | "release_failed" | "release_canceled" | "succeeded" | "superseded" | "attention_required" | "blocked";
             /** @enum {string} */

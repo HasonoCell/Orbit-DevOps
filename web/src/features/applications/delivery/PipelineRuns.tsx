@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 import { CursorPagination } from "@/shared/CursorPagination";
 import { QueryNotice, StatusPill, Timestamp } from "@/shared/OverviewUI";
-import { runStatus } from "@/shared/overview-status";
+import { pollInterval, runStatus } from "@/shared/overview-status";
 import { DeliveryStages } from "./DeliveryStages";
 import { listRuns, pipelineKeys } from "./pipeline-api";
 
@@ -10,26 +12,34 @@ export function PipelineRuns({
   projectId,
   applicationId,
   pipelineId,
-  buildOnly,
-  currentRevision,
 }: {
   projectId: string;
   applicationId: string;
   pipelineId: string;
-  buildOnly: boolean;
-  currentRevision: number;
 }) {
   const [params, setParams] = useSearchParams();
+  const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
   const cursor = params.get("runCursor") ?? undefined;
   const runs = useQuery({
     queryKey: pipelineKeys.runs(pipelineId, cursor),
     queryFn: () => listRuns(pipelineId, cursor),
+    refetchInterval: (query) => pollInterval(until, query.state.error),
+    refetchIntervalInBackground: false,
   });
   return (
     <section className="workbench-panel mt-5">
       <header className="panel-heading">
         <h2>运行历史</h2>
-        <span className="text-xs text-muted-foreground">每条记录独立追踪</span>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setUntil(Date.now() + 5 * 60_000);
+            void runs.refetch();
+          }}
+        >
+          刷新运行
+        </Button>
       </header>
       {runs.isPending || runs.error ? (
         <QueryNotice error={runs.error} retry={() => void runs.refetch()} />
@@ -54,9 +64,7 @@ export function PipelineRuns({
                   </p>
                   <DeliveryStages
                     run={item}
-                    buildOnly={
-                      buildOnly && item.run.pipelineRevision === currentRevision
-                    }
+                    buildOnly={item.mode === "build_only"}
                   />
                 </article>
               ))}

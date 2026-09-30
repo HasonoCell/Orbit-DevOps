@@ -443,8 +443,6 @@ function PipelineEditor({
           projectId={projectId}
           applicationId={applicationId}
           pipelineId={pipelineId}
-          buildOnly={detail.revision.mode === "build_only"}
-          currentRevision={detail.revision.revision}
         />
       )}
     </div>

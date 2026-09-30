@@ -43,6 +43,9 @@ func TestProjectRunKeepsOperationFailureAtItsOwningStage(t *testing.T) {
 			if projected.Status != test.status {
 				t.Fatalf("status = %q, want %q", projected.Status, test.status)
 			}
+			if projected.Mode != test.row.PipelineMode {
+				t.Fatalf("mode = %q, want historical mode %q", projected.Mode, test.row.PipelineMode)
+			}
 			if test.stage == "" && projected.ActiveStage != nil {
 				t.Fatalf("active stage = %q, want nil", *projected.ActiveStage)
 			}
