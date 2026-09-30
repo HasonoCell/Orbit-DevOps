@@ -136,13 +136,16 @@ for (const scenario of [
   },
 ] as const) {
   test(`${scenario.status} 状态可确认${scenario.label}`, async ({ page }) => {
+    await page.clock.install();
+    let operationReads = 0;
     let current: typeof operation = { ...operation, status: scenario.status };
     await page.route("**/api/v1/builds/b-1", (route) =>
       route.fulfill({ json: { build, buildOperation: current } }),
     );
-    await page.route("**/api/v1/build-operations/bo-1", (route) =>
-      route.fulfill({ json: current }),
-    );
+    await page.route("**/api/v1/build-operations/bo-1", (route) => {
+      operationReads++;
+      return route.fulfill({ json: current });
+    });
     let called = false;
     await page.route(
       `**/api/v1/build-operations/bo-1/${scenario.command}`,
@@ -153,6 +156,10 @@ for (const scenario of [
       },
     );
     await page.goto("/projects/p-1/applications/a-1/builds/b-1");
+    await expect(
+      page.getByText("Operation bo-1", { exact: true }),
+    ).toBeVisible();
+    await page.clock.fastForward(5 * 60_000 + 1_000);
     await page
       .getByRole("button", { name: scenario.label, exact: true })
       .click();
@@ -161,6 +168,14 @@ for (const scenario of [
     ).toBeVisible();
     await page.getByRole("button", { name: `确认${scenario.label}` }).click();
     expect(called).toBe(true);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const acceptedAt = operationReads;
+    await page.clock.fastForward(31_000);
+    if (scenario.next === "pending") {
+      await expect.poll(() => operationReads).toBeGreaterThan(acceptedAt);
+    } else {
+      expect(operationReads).toBe(acceptedAt);
+    }
   });
 }
 

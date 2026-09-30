@@ -197,3 +197,76 @@ test("失败构建保留错误与 Attempt，不显示镜像产物", async ({ pag
   await expect(page.getByText("暂无产物")).toBeVisible();
   await expect(page.getByText(artifact.digest)).toHaveCount(0);
 });
+
+test("构建详情五分钟后暂停，手动刷新重启，终态停止轮询", async ({ page }) => {
+  await page.clock.install();
+  let current = { ...operation, status: "running" };
+  let buildReads = 0;
+  let operationReads = 0;
+  await page.route("**/api/v1/builds/b-1", (route) => {
+    buildReads++;
+    return route.fulfill({ json: { build, buildOperation: current } });
+  });
+  await page.route("**/api/v1/build-operations/bo-1", (route) => {
+    operationReads++;
+    return route.fulfill({ json: current });
+  });
+  await page.goto("/projects/p-1/applications/a-1/builds/b-1");
+  await expect(page.getByText("执行中", { exact: true })).toBeVisible();
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => buildReads).toBeGreaterThan(1);
+  await expect.poll(() => operationReads).toBeGreaterThan(1);
+  await page.clock.fastForward(5 * 60_000);
+  const stoppedAt = [buildReads, operationReads];
+  await page.clock.fastForward(60_000);
+  expect([buildReads, operationReads]).toEqual(stoppedAt);
+
+  await page.getByRole("button", { name: "刷新状态" }).click();
+  await expect.poll(() => buildReads).toBeGreaterThan(stoppedAt[0]);
+  await expect.poll(() => operationReads).toBeGreaterThan(stoppedAt[1]);
+  await expect(page.getByRole("button", { name: "刷新状态" })).toBeEnabled();
+  const refreshedAt = [buildReads, operationReads];
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => buildReads).toBeGreaterThan(refreshedAt[0]);
+  await expect.poll(() => operationReads).toBeGreaterThan(refreshedAt[1]);
+
+  current = { ...operation, status: "succeeded" };
+  await page.clock.fastForward(31_000);
+  await expect(page.getByText("执行成功", { exact: true })).toBeVisible();
+  const finishedAt = [buildReads, operationReads];
+  await page.clock.fastForward(60_000);
+  expect([buildReads, operationReads]).toEqual(finishedAt);
+});
+
+test("构建执行查询失败后暂停自动请求，重试后恢复观察", async ({ page }) => {
+  await page.clock.install();
+  const active = { ...operation, status: "running" };
+  let unavailable = false;
+  let reads = 0;
+  await page.route("**/api/v1/builds/b-1", (route) =>
+    route.fulfill({ json: { build, buildOperation: active } }),
+  );
+  await page.route("**/api/v1/build-operations/bo-1", (route) => {
+    reads++;
+    return unavailable
+      ? route.fulfill({
+          status: 503,
+          json: { code: "unavailable", message: "执行读取失败" },
+        })
+      : route.fulfill({ json: active });
+  });
+  await page.goto("/projects/p-1/applications/a-1/builds/b-1");
+  await expect(page.getByText("执行中", { exact: true })).toBeVisible();
+  unavailable = true;
+  await page.clock.fastForward(31_000);
+  await expect(page.getByText("执行读取失败")).toBeVisible();
+  const stoppedAt = reads;
+  await page.clock.fastForward(60_000);
+  expect(reads).toBe(stoppedAt);
+  unavailable = false;
+  await page.getByRole("button", { name: "重试", exact: true }).click();
+  await expect(page.getByText("执行中", { exact: true })).toBeVisible();
+  const resumedAt = reads;
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => reads).toBeGreaterThan(resumedAt);
+});

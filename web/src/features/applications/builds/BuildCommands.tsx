@@ -32,11 +32,13 @@ export function BuildCommands({
   buildId,
   canDevelop,
   canResolveUnknown,
+  onAccepted,
 }: {
   operation: Operation;
   buildId: string;
   canDevelop: boolean;
   canResolveUnknown: boolean;
+  onAccepted: () => void;
 }) {
   const [selected, setSelected] = useState<BuildCommand | null>(null);
   const [reason, setReason] = useState("");
@@ -66,6 +68,7 @@ export function BuildCommands({
       setSelected(null);
       setReason("");
       setValidation("");
+      onAccepted();
     },
   });
   const available: BuildCommand[] = [];

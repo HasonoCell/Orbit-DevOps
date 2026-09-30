@@ -7,7 +7,7 @@ import { errorText } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
 import { Fact, StatusPill, Timestamp } from "@/shared/OverviewUI";
-import { isActiveRun, runStatus } from "@/shared/overview-status";
+import { isActiveRun, pollInterval, runStatus } from "@/shared/overview-status";
 import { useCommandKey } from "@/shared/use-command-key";
 import { DeliveryStages } from "./DeliveryStages";
 import {
@@ -30,6 +30,31 @@ export function DeliveryRunPage() {
     pipelineId = "",
     runId = "",
   } = useParams();
+  return (
+    <DeliveryRunContent
+      key={runId}
+      projectId={projectId}
+      applicationId={applicationId}
+      pipelineId={pipelineId}
+      runId={runId}
+    />
+  );
+}
+
+function DeliveryRunContent({
+  projectId,
+  applicationId,
+  pipelineId,
+  runId,
+}: {
+  projectId: string;
+  applicationId: string;
+  pipelineId: string;
+  runId: string;
+}) {
+  const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
+  const [confirm, setConfirm] = useState(false);
+  const [accepted, setAccepted] = useState(false);
   const application = useQuery({
     queryKey: ["application", applicationId],
     queryFn: () => getApplication(applicationId),
@@ -45,11 +70,19 @@ export function DeliveryRunPage() {
   const run = useQuery({
     queryKey: ["delivery-run", runId],
     queryFn: () => getRun(runId),
-    refetchInterval: (query) =>
-      query.state.data && isActiveRun(query.state.data.status) ? 10_000 : false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      // 重新对账的 202 可能仍是阻塞状态，需要短期观察后台推进，终态仍停止。
+      return pollInterval(
+        until,
+        query.state.error,
+        !!status &&
+          (isActiveRun(status) ||
+            (accepted &&
+              (status === "blocked" || status === "attention_required"))),
+      );
+    },
   });
-  const [confirm, setConfirm] = useState(false);
-  const [accepted, setAccepted] = useState(false);
   const commandKey = useCommandKey();
   const queryClient = useQueryClient();
   const reconcile = useMutation({
@@ -59,8 +92,14 @@ export function DeliveryRunPage() {
       queryClient.setQueryData(["delivery-run", runId], result);
       setConfirm(false);
       setAccepted(true);
+      setUntil(Date.now() + 5 * 60_000);
     },
   });
+  function refresh() {
+    setAccepted(false);
+    setUntil(Date.now() + 5 * 60_000);
+    void run.refetch();
+  }
   if (
     application.isPending ||
     permissions.isPending ||
@@ -97,7 +136,7 @@ export function DeliveryRunPage() {
       <ErrorPanel
         title="无法加载交付运行"
         error={run.error}
-        onRetry={() => void run.refetch()}
+        onRetry={refresh}
       />
     );
   if (
@@ -134,13 +173,7 @@ export function DeliveryRunPage() {
             Run {detail.run.id}
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setAccepted(false);
-            void run.refetch();
-          }}
-        >
+        <Button variant="outline" onClick={refresh} disabled={run.isFetching}>
           <RefreshCw className="size-4" aria-hidden="true" />
           刷新运行
         </Button>

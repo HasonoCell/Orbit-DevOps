@@ -162,6 +162,7 @@ test("Pipeline 运行历史可刷新并发现新 Webhook Run", async ({ page }) 
 });
 
 test("阻塞 Run 的重新对账只是接纳后台推进请求", async ({ page }) => {
+  await page.clock.install();
   const blocked = {
     ...run,
     run: {
@@ -174,9 +175,12 @@ test("阻塞 Run 的重新对账只是接纳后台推进请求", async ({ page }
     activeStage: "source_verification",
   };
   let submitted = false;
-  await page.route("**/api/v1/delivery-runs/dr-1", (route) =>
-    route.fulfill({ json: blocked }),
-  );
+  let current = blocked;
+  let reads = 0;
+  await page.route("**/api/v1/delivery-runs/dr-1", (route) => {
+    reads++;
+    return route.fulfill({ json: current });
+  });
   await page.route("**/api/v1/delivery-runs/dr-1/reconcile", (route) => {
     expect(route.request().headers()["idempotency-key"]).toBeTruthy();
     submitted = true;
@@ -184,6 +188,7 @@ test("阻塞 Run 的重新对账只是接纳后台推进请求", async ({ page }
   });
   await page.goto("/projects/p-1/applications/a-1/pipelines/pl-1/runs/dr-1");
   await expect(page.getByText("原因：source_changed")).toBeVisible();
+  await page.clock.fastForward(5 * 60_000 + 1_000);
   await page.getByRole("button", { name: "重新对账", exact: true }).click();
   expect(submitted).toBe(false);
   await page.getByRole("button", { name: "确认重新对账" }).click();
@@ -192,6 +197,87 @@ test("阻塞 Run 的重新对账只是接纳后台推进请求", async ({ page }
   ).toBeVisible();
   await expect(page.getByText("已阻塞", { exact: true })).toBeVisible();
   expect(submitted).toBe(true);
+  const acceptedAt = reads;
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => reads).toBeGreaterThan(acceptedAt);
+  current = { ...blocked, status: "succeeded" };
+  await page.clock.fastForward(31_000);
+  await expect(page.getByText("交付成功", { exact: true })).toBeVisible();
+  const finishedAt = reads;
+  await page.clock.fastForward(60_000);
+  expect(reads).toBe(finishedAt);
+});
+
+test("Run 详情轮询有界，刷新及切换资源重新开启窗口", async ({ page }) => {
+  await page.clock.install();
+  let firstReads = 0;
+  let secondReads = 0;
+  await page.route("**/api/v1/delivery-runs/dr-1", (route) => {
+    firstReads++;
+    return route.fulfill({ json: run });
+  });
+  await page.route("**/api/v1/delivery-runs/dr-2", (route) => {
+    secondReads++;
+    return route.fulfill({ json: { ...run, run: { ...run.run, id: "dr-2" } } });
+  });
+  await page.goto("/projects/p-1/applications/a-1/pipelines/pl-1/runs/dr-1");
+  await expect(page.getByText("Run dr-1", { exact: true })).toBeVisible();
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => firstReads).toBeGreaterThan(1);
+  await page.clock.fastForward(5 * 60_000);
+  const stoppedAt = firstReads;
+  await page.clock.fastForward(60_000);
+  expect(firstReads).toBe(stoppedAt);
+  await page.getByRole("button", { name: "刷新运行" }).click();
+  await expect.poll(() => firstReads).toBeGreaterThan(stoppedAt);
+  await expect(page.getByRole("button", { name: "刷新运行" })).toBeEnabled();
+  const refreshedAt = firstReads;
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => firstReads).toBeGreaterThan(refreshedAt);
+
+  await page.clock.fastForward(5 * 60_000);
+  // 保持同一个 Router，验证详情间导航不会沿用前一个资源已到期的本地状态。
+  await page.evaluate(() => {
+    history.pushState(
+      {},
+      "",
+      "/projects/p-1/applications/a-1/pipelines/pl-1/runs/dr-2",
+    );
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page.getByText("Run dr-2", { exact: true })).toBeVisible();
+  const switchedAt = secondReads;
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => secondReads).toBeGreaterThan(switchedAt);
+});
+
+test("Run 查询失败后暂停，手动重试恢复观察", async ({ page }) => {
+  await page.clock.install();
+  let unavailable = false;
+  let reads = 0;
+  await page.route("**/api/v1/delivery-runs/dr-1", (route) => {
+    reads++;
+    return unavailable
+      ? route.fulfill({
+          status: 503,
+          json: { code: "unavailable", message: "运行读取失败" },
+        })
+      : route.fulfill({ json: run });
+  });
+  await page.goto("/projects/p-1/applications/a-1/pipelines/pl-1/runs/dr-1");
+  await expect(page.getByText("Run dr-1", { exact: true })).toBeVisible();
+  unavailable = true;
+  await page.clock.fastForward(31_000);
+  await expect(page.getByText("运行读取失败")).toBeVisible();
+  const stoppedAt = reads;
+  await page.clock.fastForward(60_000);
+  expect(reads).toBe(stoppedAt);
+  unavailable = false;
+  await page.getByRole("button", { name: "重试", exact: true }).click();
+  await expect(page.getByText("Run dr-1", { exact: true })).toBeVisible();
+  const resumedAt = reads;
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => reads).toBeGreaterThan(resumedAt);
 });
 
 for (const status of [

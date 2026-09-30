@@ -1,12 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getApplication, getProjectPermissions } from "@/api/catalog";
 import type { components } from "@/api/schema";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
 import { Fact, QueryNotice, StatusPill, Timestamp } from "@/shared/OverviewUI";
-import { isActiveOperation, operationStatus } from "@/shared/overview-status";
+import {
+  isActiveOperation,
+  operationStatus,
+  pollInterval,
+} from "@/shared/overview-status";
 import {
   buildQueryKeys,
   getBuild,
@@ -19,6 +24,27 @@ type Attempt = components["schemas"]["BuildAttempt"];
 
 export function BuildPage() {
   const { projectId = "", applicationId = "", buildId = "" } = useParams();
+  return (
+    <BuildContent
+      key={buildId}
+      projectId={projectId}
+      applicationId={applicationId}
+      buildId={buildId}
+    />
+  );
+}
+
+// 资源切换时重建观察窗口；只在用户刷新或命令接纳后重新开始自动读取。
+function BuildContent({
+  projectId,
+  applicationId,
+  buildId,
+}: {
+  projectId: string;
+  applicationId: string;
+  buildId: string;
+}) {
+  const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
   const application = useQuery({
     queryKey: ["application", applicationId],
     queryFn: () => getApplication(applicationId),
@@ -31,10 +57,12 @@ export function BuildPage() {
     queryKey: buildQueryKeys.detail(buildId),
     queryFn: () => getBuild(buildId),
     refetchInterval: (query) =>
-      query.state.data &&
-      isActiveOperation(query.state.data.buildOperation.status)
-        ? 5_000
-        : false,
+      pollInterval(
+        until,
+        query.state.error,
+        !!query.state.data &&
+          isActiveOperation(query.state.data.buildOperation.status),
+      ),
   });
   const operationId = build.data?.buildOperation.id ?? "";
   const operation = useQuery({
@@ -42,10 +70,17 @@ export function BuildPage() {
     queryFn: () => getBuildOperation(operationId),
     enabled: !!operationId,
     refetchInterval: (query) =>
-      query.state.data && isActiveOperation(query.state.data.status)
-        ? 5_000
-        : false,
+      pollInterval(
+        until,
+        query.state.error,
+        !!query.state.data && isActiveOperation(query.state.data.status),
+      ),
   });
+  function refresh() {
+    setUntil(Date.now() + 5 * 60_000);
+    void build.refetch();
+    if (operationId) void operation.refetch();
+  }
   if (application.isPending || build.isPending || permissions.isPending)
     return <LoadingPage label="正在加载构建" />;
   if (application.error)
@@ -58,11 +93,7 @@ export function BuildPage() {
     );
   if (build.error)
     return (
-      <ErrorPanel
-        title="无法加载构建"
-        error={build.error}
-        onRetry={() => void build.refetch()}
-      />
+      <ErrorPanel title="无法加载构建" error={build.error} onRetry={refresh} />
     );
   if (permissions.error)
     return (
@@ -103,10 +134,8 @@ export function BuildPage() {
         </div>
         <Button
           variant="outline"
-          onClick={() => {
-            void build.refetch();
-            void operation.refetch();
-          }}
+          onClick={refresh}
+          disabled={build.isFetching || operation.isFetching}
         >
           <RefreshCw aria-hidden="true" className="size-4" />
           刷新状态
@@ -136,10 +165,7 @@ export function BuildPage() {
         </header>
         {operation.isPending || operation.error ? (
           <div className="p-5">
-            <QueryNotice
-              error={operation.error}
-              retry={() => void operation.refetch()}
-            />
+            <QueryNotice error={operation.error} retry={refresh} />
           </div>
         ) : (
           current && (
@@ -219,6 +245,7 @@ export function BuildPage() {
           canResolveUnknown={permissions.data.allowed.includes(
             "resolve_unknown",
           )}
+          onAccepted={() => setUntil(Date.now() + 5 * 60_000)}
         />
       )}
     </div>
