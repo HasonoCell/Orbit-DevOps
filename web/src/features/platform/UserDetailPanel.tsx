@@ -182,11 +182,11 @@ export function UserDetailPanel({
         <div className="space-y-3 border-t pt-5">
           <h3 className="font-semibold">平台角色与账号状态</h3>
           <div className="flex flex-wrap items-end gap-2">
-            <div className="space-y-2">
+            <div className="flex min-w-0 flex-col gap-2">
               <Label htmlFor="platform-role">平台角色</Label>
               <Select
                 id="platform-role"
-                className="h-10 rounded-md border border-input bg-background px-3"
+                className="h-10 text-sm"
                 value={role}
                 onValueChange={(value) => {
                   setRole(value as Role);
@@ -199,6 +199,7 @@ export function UserDetailPanel({
             </div>
             <Button
               variant="outline"
+              className="h-10 max-md:min-h-11"
               disabled={!!changed || role === detail.data?.platformRole}
               onClick={() => {
                 setConfirming({ kind: "role", role });
@@ -210,6 +211,7 @@ export function UserDetailPanel({
             </Button>
             <Button
               variant="outline"
+              className="h-10 max-md:min-h-11"
               disabled={!!changed || !detail.data}
               onClick={() => {
                 setConfirming({
@@ -221,7 +223,12 @@ export function UserDetailPanel({
             >
               {detail.data?.status === "active" ? "停用账号" : "启用账号"}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => void refresh()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-10 max-md:min-h-11"
+              onClick={() => void refresh()}
+            >
               刷新详情
             </Button>
           </div>

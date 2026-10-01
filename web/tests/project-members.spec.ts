@@ -41,6 +41,37 @@ for (const width of [1440, 375]) {
     );
     await page.goto("/projects/p-1?view=members");
     const select = page.getByRole("combobox", { name: "查找方式" });
+    const input = page.getByRole("textbox", { name: "精确查找用户" });
+    const search = page.getByRole("button", { name: "查找", exact: true });
+    await expect(input).toBeVisible();
+    const controls = await Promise.all(
+      [select, input, search].map((control) => control.boundingBox()),
+    );
+    for (const box of controls) expect(box).not.toBeNull();
+    const boxes = controls.filter((box) => box !== null);
+    expect(
+      Math.max(...boxes.map((box) => box.height)) -
+        Math.min(...boxes.map((box) => box.height)),
+    ).toBeLessThanOrEqual(1);
+    if (width >= 768) {
+      expect(
+        Math.max(...boxes.map((box) => box.y)) -
+          Math.min(...boxes.map((box) => box.y)),
+      ).toBeLessThanOrEqual(1);
+      const kindLabel = await page
+        .locator('label[for="member-kind"]')
+        .boundingBox();
+      const valueLabel = await page
+        .locator('label[for="member-value"]')
+        .boundingBox();
+      expect(kindLabel).not.toBeNull();
+      expect(valueLabel).not.toBeNull();
+      expect(
+        Math.abs((kindLabel?.y ?? 0) - (valueLabel?.y ?? 0)),
+      ).toBeLessThanOrEqual(1);
+    } else {
+      for (const box of boxes) expect(box.height).toBeGreaterThanOrEqual(44);
+    }
     const trigger = await select.boundingBox();
     expect(trigger).not.toBeNull();
     await select.click();

@@ -176,11 +176,11 @@ export function ProjectMembersPanel({
           onSubmit={search}
           className="grid gap-3 border-b p-5 md:grid-cols-[11rem_1fr_auto] md:items-end"
         >
-          <div className="space-y-2">
+          <div className="flex min-w-0 flex-col gap-2">
             <Label htmlFor="member-kind">查找方式</Label>
             <Select
               id="member-kind"
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              className="h-10 w-full text-sm"
               value={kind}
               disabled={pending}
               onValueChange={(value) => {
@@ -193,10 +193,11 @@ export function ProjectMembersPanel({
               <SelectItem value="user_id">User ID</SelectItem>
             </Select>
           </div>
-          <div className="space-y-2">
+          <div className="flex min-w-0 flex-col gap-2">
             <Label htmlFor="member-value">精确查找用户</Label>
             <Input
               id="member-value"
+              className="h-10 max-md:min-h-11"
               value={value}
               maxLength={320}
               disabled={pending}
@@ -216,6 +217,7 @@ export function ProjectMembersPanel({
           <Button
             type="submit"
             variant="outline"
+            className="h-10 max-md:min-h-11"
             disabled={!value.trim() || lookup.isPending || pending}
           >
             查找
@@ -246,7 +248,7 @@ export function ProjectMembersPanel({
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <div className="space-y-2">
+            <div className="flex min-w-0 flex-col gap-2">
               <Label htmlFor="member-add-role">项目角色</Label>
               <RoleSelect
                 id="member-add-role"
@@ -256,7 +258,11 @@ export function ProjectMembersPanel({
                 disabled={pending}
               />
             </div>
-            <Button disabled={pending} onClick={() => add.mutate()}>
+            <Button
+              className="h-10 max-md:min-h-11"
+              disabled={pending}
+              onClick={() => add.mutate()}
+            >
               添加成员
             </Button>
           </div>
@@ -354,7 +360,7 @@ export function ProjectMembersPanel({
         editing &&
         (editing.role !== "owner" || canManageOwners) && (
           <div className="flex flex-wrap items-end gap-3 border-t bg-muted/30 p-5 text-sm">
-            <div className="space-y-2">
+            <div className="flex min-w-0 flex-col gap-2">
               <Label htmlFor="member-edit-role">
                 修改 {editing.displayName || editing.userId} 的角色
               </Label>
@@ -367,6 +373,7 @@ export function ProjectMembersPanel({
               />
             </div>
             <Button
+              className="h-10 max-md:min-h-11"
               disabled={pending || editRole === editing.role}
               onClick={() => update.mutate()}
             >
@@ -374,6 +381,7 @@ export function ProjectMembersPanel({
             </Button>
             <Button
               variant="ghost"
+              className="h-10 max-md:min-h-11"
               disabled={pending}
               onClick={() => setEditing(null)}
             >
@@ -435,7 +443,7 @@ function RoleSelect({
   return (
     <Select
       id={id}
-      className="h-10 min-w-32 rounded-md border border-input bg-background px-3 text-sm"
+      className="h-10 min-w-32 text-sm"
       value={value}
       disabled={disabled}
       onValueChange={(value) => onChange(value as Role)}
