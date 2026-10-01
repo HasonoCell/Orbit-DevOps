@@ -1,4 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { DeploymentTarget } from "@/api/http";
 import {
@@ -62,19 +67,21 @@ export function ReleaseHistory({
                       查看发布详情
                     </Link>
                   </div>
-                  <details>
-                    <summary className="cursor-pointer text-primary">
+                  <Collapsible>
+                    <CollapsibleTrigger className="text-primary">
                       镜像与执行结果
-                    </summary>
-                    <p className="runtime-code mt-3">
-                      {item.release.imageReference}
-                    </p>
-                    {item.releaseOperation.errorSummary && (
-                      <p className="mt-2 break-words text-destructive">
-                        {item.releaseOperation.errorSummary}
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <p className="runtime-code mt-3">
+                        {item.release.imageReference}
                       </p>
-                    )}
-                  </details>
+                      {item.releaseOperation.errorSummary && (
+                        <p className="mt-2 break-words text-destructive">
+                          {item.releaseOperation.errorSummary}
+                        </p>
+                      )}
+                    </CollapsibleContent>
+                  </Collapsible>
                 </article>
               ))}
             </div>

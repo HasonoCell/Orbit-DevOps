@@ -14,6 +14,11 @@ import {
 } from "@/features/projects/workbench/api";
 import { StatusPill, Timestamp } from "@/shared/OverviewUI";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { operationStatus, runStatus } from "@/shared/overview-status";
 import { ProjectPagination } from "./ProjectPagination";
@@ -282,10 +287,14 @@ export function ProjectWorkbench({
               <dt className="text-muted-foreground">创建时间</dt>
               <dd>{new Date(project.createdAt).toLocaleDateString("zh-CN")}</dd>
             </dl>
-            <details className="mt-3 text-xs">
-              <summary className="cursor-pointer text-primary">项目 ID</summary>
-              <p className="mt-2 break-all font-mono">{project.id}</p>
-            </details>
+            <Collapsible className="mt-3 text-xs">
+              <CollapsibleTrigger className="text-primary">
+                项目 ID
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <p className="mt-2 break-all font-mono">{project.id}</p>
+              </CollapsibleContent>
+            </Collapsible>
           </section>
         </aside>
       </div>

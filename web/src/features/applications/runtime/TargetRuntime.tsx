@@ -1,4 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Activity, Box, Globe, Server } from "lucide-react";
 import type { DeploymentTarget } from "@/api/http";
 import {
@@ -144,28 +149,30 @@ export function TargetRuntime({
                     <p className="break-all font-mono">
                       {release.data.release.id}
                     </p>
-                    <details className="mt-3">
-                      <summary className="cursor-pointer text-primary">
+                    <Collapsible className="mt-3">
+                      <CollapsibleTrigger className="text-primary">
                         镜像引用与目标差异
-                      </summary>
-                      <p className="runtime-code mt-3">
-                        {release.data.release.imageReference}
-                      </p>
-                      {report.targetDifferences.length ? (
-                        <ul className="mt-3 space-y-2">
-                          {report.targetDifferences.map((diff) => (
-                            <li key={diff.field} className="break-all">
-                              {diff.field}：快照 {diff.releaseValue} / 当前{" "}
-                              {diff.currentValue}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="mt-3 text-muted-foreground">
-                          目标配置与接纳快照一致。
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <p className="runtime-code mt-3">
+                          {release.data.release.imageReference}
                         </p>
-                      )}
-                    </details>
+                        {report.targetDifferences.length ? (
+                          <ul className="mt-3 space-y-2">
+                            {report.targetDifferences.map((diff) => (
+                              <li key={diff.field} className="break-all">
+                                {diff.field}：快照 {diff.releaseValue} / 当前{" "}
+                                {diff.currentValue}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-3 text-muted-foreground">
+                            目标配置与接纳快照一致。
+                          </p>
+                        )}
+                      </CollapsibleContent>
+                    </Collapsible>
                     {release.data.releaseOperation.errorSummary && (
                       <p className="mt-3 break-words text-destructive">
                         {release.data.releaseOperation.errorSummary}
@@ -330,17 +337,19 @@ export function DiagnosticEvidence({ report }: { report: DiagnosticReport }) {
                 }
               />
               <p className="mt-2">{signal.summary}</p>
-              <details className="mt-1 text-xs">
-                <summary className="cursor-pointer text-primary">
+              <Collapsible className="mt-1 text-xs">
+                <CollapsibleTrigger className="text-primary">
                   信号与证据
-                </summary>
-                <code className="mt-2 block">{signal.code}</code>
-                {signal.evidenceRefs.map((ref, position) => (
-                  <p key={position}>
-                    {ref.source} / {ref.kind} / {ref.id}
-                  </p>
-                ))}
-              </details>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <code className="mt-2 block">{signal.code}</code>
+                  {signal.evidenceRefs.map((ref, position) => (
+                    <p key={position}>
+                      {ref.source} / {ref.kind} / {ref.id}
+                    </p>
+                  ))}
+                </CollapsibleContent>
+              </Collapsible>
             </li>
           ))}
         </ul>

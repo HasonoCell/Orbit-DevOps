@@ -16,6 +16,7 @@ import { ResourceCreateDialog } from "@/features/projects/ResourceCreateDialog";
 import { ProjectWorkbench } from "@/features/projects/workbench/ProjectWorkbench";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ViewNavigation } from "@/shared/ViewNavigation";
 import { useResourceCreateDialog } from "@/features/projects/use-resource-create-dialog";
 import { AccessHostsPanel } from "@/features/projects/access/AccessHostsPanel";
 import { ProjectMembersPanel } from "@/features/projects/members/ProjectMembersPanel";
@@ -141,34 +142,23 @@ function ProjectContent({
           )}
         </div>
       </div>
-      <nav className="workbench-tabs" aria-label="项目视图">
-        {[
+      <ViewNavigation
+        label="项目视图"
+        value={view}
+        items={[
           ["overview", "应用总览"],
           ["delivery", "自动交付"],
           ["access", "访问入口"],
           ["members", "项目成员"],
-        ].map(([view, label]) => (
-          <button
-            key={view}
-            aria-pressed={
-              params.get("view") === view ||
-              (view === "overview" &&
-                !["delivery", "access", "members"].includes(
-                  params.get("view") ?? "",
-                ))
-            }
-            onClick={() =>
-              setParams((previous) => {
-                const next = new URLSearchParams(previous);
-                next.set("view", view);
-                return next;
-              })
-            }
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+        ]}
+        onValueChange={(view) =>
+          setParams((previous) => {
+            const next = new URLSearchParams(previous);
+            next.set("view", view);
+            return next;
+          })
+        }
+      />
       {view === "access" ? (
         <AccessHostsPanel projectId={project.id} canManage={canManageHosts} />
       ) : view === "members" ? (

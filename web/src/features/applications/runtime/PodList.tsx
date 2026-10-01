@@ -1,4 +1,10 @@
 import { Server } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import type { DiagnosticReport } from "@/features/applications/api";
 import { QuietEmpty, StatusPill, Timestamp } from "@/shared/OverviewUI";
 import {
@@ -29,7 +35,13 @@ export function PodList({ report }: { report: DiagnosticReport }) {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Sheet>
                 <SheetTrigger asChild>
-                  <button className="pod-name">{pod.name}</button>
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="h-auto min-w-0 shrink cursor-pointer justify-start p-0 text-left font-mono text-xs font-normal whitespace-normal [overflow-wrap:anywhere] max-md:min-h-11"
+                  >
+                    {pod.name}
+                  </Button>
                 </SheetTrigger>
                 <SheetContent className="overflow-y-auto sm:max-w-xl">
                   <SheetHeader>
@@ -69,16 +81,18 @@ export function PodList({ report }: { report: DiagnosticReport }) {
                           <p>退出码 {container.exitCode}</p>
                         )}
                         {container.previousTermination && (
-                          <details className="mt-3">
-                            <summary className="cursor-pointer text-primary">
+                          <Collapsible className="mt-3">
+                            <CollapsibleTrigger className="text-primary">
                               上次退出
-                            </summary>
-                            <p className="mt-2 break-words">
-                              {container.previousTermination.reason} ·{" "}
-                              {container.previousTermination.exitCode} ·{" "}
-                              {container.previousTermination.message}
-                            </p>
-                          </details>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <p className="mt-2 break-words">
+                                {container.previousTermination.reason} ·{" "}
+                                {container.previousTermination.exitCode} ·{" "}
+                                {container.previousTermination.message}
+                              </p>
+                            </CollapsibleContent>
+                          </Collapsible>
                         )}
                       </section>
                     ))}

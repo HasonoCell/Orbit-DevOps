@@ -1,4 +1,10 @@
 import { Select, SelectItem } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { ViewNavigation } from "@/shared/ViewNavigation";
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -163,7 +169,6 @@ function ApplicationOverview({
               </label>
               <Select
                 id="runtime-target"
-                className="runtime-select"
                 value={target?.id ?? ""}
                 onValueChange={(value) => changeTarget(value)}
               >
@@ -281,28 +286,23 @@ function ApplicationOverview({
           </div>
         </section>
       )}
-      <nav className="workbench-tabs" aria-label="应用视图">
-        {[
+      <ViewNavigation
+        label="应用视图"
+        value={view}
+        items={[
           ["overview", "运行总览"],
           ["workloads", "工作负载"],
           ["delivery", "交付记录"],
           ["diagnostics", "运行诊断"],
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            aria-pressed={view === key}
-            onClick={() =>
-              setParams((previous) => {
-                const next = new URLSearchParams(previous);
-                next.set("view", key);
-                return next;
-              })
-            }
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+        ]}
+        onValueChange={(key) =>
+          setParams((previous) => {
+            const next = new URLSearchParams(previous);
+            next.set("view", key);
+            return next;
+          })
+        }
+      />
       <p className="my-4 text-xs text-muted-foreground">
         {paused
           ? "自动刷新已暂停，点击刷新查看最新状态"
@@ -393,12 +393,14 @@ function ApplicationOverview({
           onOpenChange={setBuildOpen}
         />
       )}
-      <details className="mt-6 border-t pt-4 text-xs text-muted-foreground">
-        <summary className="cursor-pointer">应用标识</summary>
-        <p className="mt-2 break-all">
-          {application.slug} / {application.id}
-        </p>
-      </details>
+      <Collapsible className="mt-6 border-t pt-4 text-xs text-muted-foreground">
+        <CollapsibleTrigger>应用标识</CollapsibleTrigger>
+        <CollapsibleContent>
+          <p className="mt-2 break-all">
+            {application.slug} / {application.id}
+          </p>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

@@ -1,4 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { GitBranch } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -141,25 +146,27 @@ function PipelineItem({
             run={run.data}
             buildOnly={run.data.mode === "build_only"}
           />
-          <details className="text-xs">
-            <summary className="cursor-pointer font-medium text-primary">
+          <Collapsible className="text-xs">
+            <CollapsibleTrigger className="font-medium text-primary">
               运行摘要
-            </summary>
-            <dl className="mt-3 grid gap-3 rounded bg-muted/60 p-3">
-              <Fact label="Delivery Run">{run.data.run.id}</Fact>
-              <Fact label="触发来源">
-                {run.data.trigger.eventType} · {run.data.trigger.gitRef} ·{" "}
-                <Timestamp value={run.data.trigger.receivedAt} />
-              </Fact>
-              <Fact label="关联构建">{run.data.run.buildId}</Fact>
-              {run.data.run.releaseId && (
-                <Fact label="关联发布">{run.data.run.releaseId}</Fact>
-              )}
-              {run.data.run.reasonCode && (
-                <Fact label="停止原因">{run.data.run.reasonCode}</Fact>
-              )}
-            </dl>
-          </details>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <dl className="mt-3 grid gap-3 rounded bg-muted/60 p-3">
+                <Fact label="Delivery Run">{run.data.run.id}</Fact>
+                <Fact label="触发来源">
+                  {run.data.trigger.eventType} · {run.data.trigger.gitRef} ·{" "}
+                  <Timestamp value={run.data.trigger.receivedAt} />
+                </Fact>
+                <Fact label="关联构建">{run.data.run.buildId}</Fact>
+                {run.data.run.releaseId && (
+                  <Fact label="关联发布">{run.data.run.releaseId}</Fact>
+                )}
+                {run.data.run.reasonCode && (
+                  <Fact label="停止原因">{run.data.run.reasonCode}</Fact>
+                )}
+              </dl>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
       )}
     </article>

@@ -37,6 +37,57 @@ async function overview(page: Page) {
 }
 const applicationURL = "/projects/p-1/applications/a-1";
 
+test("共享折叠区支持键盘开关，隐藏内容不进入焦点顺序", async ({ page }) => {
+  await overview(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(applicationURL);
+  const trigger = page.getByRole("button", {
+    name: new RegExp(build.build.sourceCommit.slice(0, 8)),
+  });
+  const detailLink = page.getByRole("link", {
+    name: "查看构建详情",
+    includeHidden: true,
+  });
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(detailLink).toBeHidden();
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(detailLink).toBeVisible();
+  const contentId = await trigger.getAttribute("aria-controls");
+  expect(contentId).toBeTruthy();
+  await expect(page.locator(`[id=${JSON.stringify(contentId)}]`)).toBeVisible();
+  await page.keyboard.press("Space");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(trigger).toBeFocused();
+  await expect(detailLink).toBeHidden();
+  await page.keyboard.press("Tab");
+  await expect(detailLink).not.toBeFocused();
+});
+
+test("共享视图按钮保留 URL 参数与选中态，键盘切换后可刷新", async ({
+  page,
+}) => {
+  await overview(page);
+  await page.goto(
+    applicationURL + "?view=delivery&target=t-1&buildCursor=saved",
+  );
+  const navigation = page.getByRole("navigation", { name: "应用视图" });
+  const delivery = navigation.getByRole("button", { name: "交付记录" });
+  const diagnostics = navigation.getByRole("button", { name: "运行诊断" });
+  await expect(delivery).toHaveAttribute("aria-pressed", "true");
+  await diagnostics.focus();
+  await page.keyboard.press("Space");
+  await expect(diagnostics).toHaveAttribute("aria-pressed", "true");
+  await expect(delivery).toHaveAttribute("aria-pressed", "false");
+  const params = new URL(page.url()).searchParams;
+  expect(params.get("view")).toBe("diagnostics");
+  expect(params.get("target")).toBe("t-1");
+  expect(params.get("buildCursor")).toBe("saved");
+  await page.reload();
+  await expect(diagnostics).toHaveAttribute("aria-pressed", "true");
+});
+
 test("发布记录的时间和详情链接留有间距，窄屏可换行", async ({ page }) => {
   await overview(page);
   for (const width of [1440, 375]) {

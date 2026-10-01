@@ -10,6 +10,11 @@ import {
 import { errorText } from "@/api/http";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { overviewQueryKeys } from "@/features/applications/api";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
 import { useCommandKey } from "@/shared/use-command-key";
@@ -198,10 +203,12 @@ function TargetContent({
         </div>
       )}
       <TargetAccessRoutes projectId={projectId} targetId={targetId} />
-      <details className="mt-6 text-xs text-muted-foreground">
-        <summary className="cursor-pointer">目标标识</summary>
-        <p className="mt-2 break-all">{target.id}</p>
-      </details>
+      <Collapsible className="mt-6 text-xs text-muted-foreground">
+        <CollapsibleTrigger>目标标识</CollapsibleTrigger>
+        <CollapsibleContent>
+          <p className="mt-2 break-all">{target.id}</p>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

@@ -1,4 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Hammer } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { listBuilds, overviewQueryKeys } from "@/features/applications/api";
@@ -56,52 +61,57 @@ export function BuildSummary({
             <div className="divide-y">
               {builds.data.items.map(
                 ({ build, buildOperation, imageArtifact }) => (
-                  <details key={build.id} className="group px-5 py-4">
-                    <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                  <Collapsible key={build.id} className="px-5 py-4">
+                    <CollapsibleTrigger
+                      indicator={false}
+                      className="flex w-full flex-wrap items-center justify-between gap-3"
+                    >
+                      <span className="min-w-0">
+                        <span className="flex items-center gap-2">
                           <span className="font-mono text-sm font-medium">
                             {build.sourceCommit.slice(0, 8)}
                           </span>
                           <StatusPill
                             {...operationStatus[buildOperation.status]}
                           />
-                        </div>
-                        <p className="mt-1.5 text-xs text-muted-foreground">
+                        </span>
+                        <span className="mt-1.5 block text-xs text-muted-foreground">
                           Build {build.id.slice(0, 8)} ·{" "}
                           <Timestamp value={build.createdAt} />
-                        </p>
-                      </div>
-                      <span className="text-xs text-primary group-open:hidden">
+                        </span>
+                      </span>
+                      <span className="text-xs text-primary group-data-[state=open]/collapsible:hidden">
                         展开详情
                       </span>
-                      <span className="hidden text-xs text-primary group-open:inline">
+                      <span className="hidden text-xs text-primary group-data-[state=open]/collapsible:inline">
                         收起详情
                       </span>
-                    </summary>
-                    <dl className="mt-4 grid gap-4 rounded-md bg-muted/70 p-4">
-                      <Fact label="代码仓库">{build.repositoryUrl}</Fact>
-                      <Fact label="构建配置">
-                        {build.dockerfilePath} · {build.contextPath} ·{" "}
-                        {build.platform}
-                      </Fact>
-                      <Fact label="Build ID">{build.id}</Fact>
-                      <Fact label="镜像产物">
-                        {imageArtifact?.imageReference ?? "暂无产物"}
-                      </Fact>
-                      {buildOperation.errorSummary && (
-                        <Fact label="执行原因">
-                          {buildOperation.errorSummary}
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <dl className="mt-4 grid gap-4 rounded-md bg-muted/70 p-4">
+                        <Fact label="代码仓库">{build.repositoryUrl}</Fact>
+                        <Fact label="构建配置">
+                          {build.dockerfilePath} · {build.contextPath} ·{" "}
+                          {build.platform}
                         </Fact>
-                      )}
-                    </dl>
-                    <Link
-                      className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
-                      to={`/projects/${projectId}/applications/${applicationId}/builds/${build.id}`}
-                    >
-                      查看构建详情
-                    </Link>
-                  </details>
+                        <Fact label="Build ID">{build.id}</Fact>
+                        <Fact label="镜像产物">
+                          {imageArtifact?.imageReference ?? "暂无产物"}
+                        </Fact>
+                        {buildOperation.errorSummary && (
+                          <Fact label="执行原因">
+                            {buildOperation.errorSummary}
+                          </Fact>
+                        )}
+                      </dl>
+                      <Link
+                        className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
+                        to={`/projects/${projectId}/applications/${applicationId}/builds/${build.id}`}
+                      >
+                        查看构建详情
+                      </Link>
+                    </CollapsibleContent>
+                  </Collapsible>
                 ),
               )}
             </div>
