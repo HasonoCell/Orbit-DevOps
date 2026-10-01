@@ -1,3 +1,4 @@
+import { chooseOption } from "./helpers/select";
 import { expect, test } from "@playwright/test";
 import { principal, project, timestamp } from "./fixtures/overview";
 
@@ -22,7 +23,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const width of [1440, 375]) {
-  test(`单选下拉箭头保留内边距与原生交互（${width}px）`, async ({ page }) => {
+  test(`组件下拉菜单在触发器下方展开并保留选择与焦点（${width}px）`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.route("**/api/v1/projects/p-1/permissions", (route) =>
       route.fulfill({
@@ -38,23 +41,34 @@ for (const width of [1440, 375]) {
     );
     await page.goto("/projects/p-1?view=members");
     const select = page.getByRole("combobox", { name: "查找方式" });
-    await expect(select).toHaveCSS("appearance", "none");
-    await expect(select).toHaveCSS(
-      "background-position-x",
-      "calc(100% - 12px)",
+    const trigger = await select.boundingBox();
+    expect(trigger).not.toBeNull();
+    await select.click();
+    const menu = page.getByRole("listbox");
+    await expect(menu).toBeVisible();
+    await expect
+      .poll(async () => {
+        const content = await menu.boundingBox();
+        return trigger && content
+          ? content.y - (trigger.y + trigger.height)
+          : -1;
+      })
+      .toBeGreaterThanOrEqual(4);
+    const content = await menu.boundingBox();
+    expect(Math.abs((trigger?.x ?? 0) - (content?.x ?? 0))).toBeLessThanOrEqual(
+      1,
     );
-    await expect(select).toHaveCSS("background-position-y", "50%");
-    await expect(select).toHaveCSS("padding-right", "40px");
-    await select.selectOption("verified_email");
-    await expect(select).toHaveValue("verified_email");
+    await page.keyboard.press("Escape");
+    await expect(select).toBeFocused();
+    await chooseOption(select, "verified_email");
+    await expect(select).toHaveAttribute("data-value", "verified_email");
     await select.focus();
     await expect(select).toBeFocused();
 
-    // 强制颜色模式恢复系统箭头，避免装饰性 SVG 在高对比度环境中消失。
+    // 高对比度模式继续使用组件交互，不依赖系统菜单或背景 SVG。
     await page.emulateMedia({ forcedColors: "active" });
-    await expect(select).toHaveCSS("appearance", "auto");
-    await expect(select).toHaveCSS("background-image", "none");
-    await expect(select).toHaveValue("verified_email");
+    await chooseOption(select, "user_id");
+    await expect(select).toHaveAttribute("data-value", "user_id");
   });
 }
 
@@ -110,7 +124,7 @@ test("项目 owner 精确查找用户、添加成员并调整角色和移除", a
   await page.getByRole("button", { name: "添加成员" }).click();
   await expect(page.getByText("成员已添加。")).toBeVisible();
   await page.getByRole("button", { name: "修改角色" }).last().click();
-  await page.getByLabel(/修改 新同事 的角色/).selectOption("viewer");
+  await chooseOption(page.getByLabel(/修改 新同事 的角色/), "viewer");
   await page.getByRole("button", { name: "保存角色" }).click();
   await expect(page.getByText("成员角色已更新。")).toBeVisible();
   await page.getByRole("button", { name: "移除" }).last().click();
@@ -142,13 +156,13 @@ test("邮箱歧义不暴露候选人，最后 owner 冲突有明确反馈", asyn
     }),
   );
   await page.goto("/projects/p-1?view=members");
-  await page.getByLabel("查找方式").selectOption("verified_email");
+  await chooseOption(page.getByLabel("查找方式"), "verified_email");
   await page.getByLabel("精确查找用户").fill("shared@example.com");
   await page.getByRole("button", { name: "查找" }).click();
   await expect(page.getByText(/邮箱对应多个用户/)).toBeVisible();
   await expect(page.getByRole("button", { name: "添加成员" })).toHaveCount(0);
   await page.getByRole("button", { name: "修改角色" }).click();
-  await page.getByLabel(/修改 项目所有者 的角色/).selectOption("developer");
+  await chooseOption(page.getByLabel(/修改 项目所有者 的角色/), "developer");
   await page.getByRole("button", { name: "保存角色" }).click();
   await expect(page.getByText(/最后一位有效所有者/)).toBeVisible();
 });
@@ -205,7 +219,7 @@ test("降低自己的项目角色后回读权限并清除已查找的候选人",
   await page.getByRole("button", { name: "查找", exact: true }).click();
   await expect(page.getByText("新同事", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "修改角色" }).first().click();
-  await page.getByLabel(/修改 项目所有者 的角色/).selectOption("developer");
+  await chooseOption(page.getByLabel(/修改 项目所有者 的角色/), "developer");
   await page.getByRole("button", { name: "保存角色" }).click();
   await expect(
     page.locator(".workbench-heading").getByText("开发者", { exact: true }),

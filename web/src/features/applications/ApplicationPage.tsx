@@ -1,3 +1,4 @@
+import { Select, SelectItem } from "@/components/ui/select";
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -160,24 +161,24 @@ function ApplicationOverview({
               >
                 部署目标
               </label>
-              <select
+              <Select
                 id="runtime-target"
                 className="runtime-select"
                 value={target?.id ?? ""}
-                onChange={(event) => changeTarget(event.target.value)}
+                onValueChange={(value) => changeTarget(value)}
               >
                 {!target && (
-                  <option value="" disabled>
+                  <SelectItem value="" disabled>
                     目标不存在
-                  </option>
+                  </SelectItem>
                 )}
                 {targets.data.map((item) => (
-                  <option key={item.id} value={item.id}>
+                  <SelectItem key={item.id} value={item.id}>
                     {item.stage} ·{" "}
                     {item.stage === "production" ? "生产环境" : "开发环境"}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
+              </Select>
             </>
           )}
           <Button variant="outline" onClick={refresh} disabled={fetching}>

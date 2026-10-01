@@ -1,3 +1,4 @@
+import { chooseOption } from "./helpers/select";
 import { randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { request as httpsRequest } from "node:https";
@@ -99,17 +100,17 @@ test("浏览器经真实 API 管理资源并发布到本地 Kind", async ({ page
     await page.getByRole("link", { name: "添加域名" }).click();
     await page.getByLabel("域名").fill(hostname);
     if (tlsHostname && tlsSecretName) {
-      await page.getByLabel("TLS 模式").selectOption("existing_secret");
-      await page.getByLabel("TLS Secret 授权").selectOption({ index: 1 });
+      await chooseOption(page.getByLabel("TLS 模式"), "existing_secret");
+      await chooseOption(page.getByLabel("TLS Secret 授权"), { index: 1 });
     } else if (issuerPolicy) {
-      await page.getByLabel("TLS 模式").selectOption("managed");
-      await page.getByLabel("Issuer Policy").selectOption(issuerPolicy);
+      await chooseOption(page.getByLabel("TLS 模式"), "managed");
+      await chooseOption(page.getByLabel("Issuer Policy"), issuerPolicy);
     }
     await page.getByRole("button", { name: "创建域名" }).click();
     await expect(page).toHaveURL(/\/access-hosts\/[0-9a-f-]+$/);
     hostPath = new URL(page.url()).pathname;
     await page.getByLabel("PathPrefix").fill("/e2e");
-    await page.getByLabel("部署目标").selectOption(targetId);
+    await chooseOption(page.getByLabel("部署目标"), targetId);
     await page.getByRole("button", { name: "创建路由" }).click();
     await expect(page.getByText("/e2e", { exact: true })).toBeVisible();
   });
@@ -117,7 +118,7 @@ test("浏览器经真实 API 管理资源并发布到本地 Kind", async ({ page
   await test.step("创建发布并等候 Worker 在 Kind 中应用", async () => {
     await page.goto(applicationPath);
     await page.getByRole("button", { name: "新建发布" }).click();
-    await page.getByLabel("镜像来源").selectOption("reference");
+    await chooseOption(page.getByLabel("镜像来源"), "reference");
     await page.getByLabel("镜像引用", { exact: true }).fill(readyImage);
     await page.getByRole("checkbox").check();
     await page.getByRole("button", { name: "确认发布到开发环境" }).click();

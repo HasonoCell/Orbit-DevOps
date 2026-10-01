@@ -1,3 +1,4 @@
+import { Select, SelectItem } from "@/components/ui/select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { ApiError, errorText } from "@/api/http";
@@ -177,20 +178,20 @@ export function ProjectMembersPanel({
         >
           <div className="space-y-2">
             <Label htmlFor="member-kind">查找方式</Label>
-            <select
+            <Select
               id="member-kind"
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={kind}
               disabled={pending}
-              onChange={(event) => {
-                setKind(event.target.value as LookupKind);
+              onValueChange={(value) => {
+                setKind(value as LookupKind);
                 lookup.reset();
               }}
             >
-              <option value="login_name">登录名</option>
-              <option value="verified_email">已验证邮箱</option>
-              <option value="user_id">User ID</option>
-            </select>
+              <SelectItem value="login_name">登录名</SelectItem>
+              <SelectItem value="verified_email">已验证邮箱</SelectItem>
+              <SelectItem value="user_id">User ID</SelectItem>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="member-value">精确查找用户</Label>
@@ -432,17 +433,17 @@ function RoleSelect({
   disabled: boolean;
 }) {
   return (
-    <select
+    <Select
       id={id}
       className="h-10 min-w-32 rounded-md border border-input bg-background px-3 text-sm"
       value={value}
       disabled={disabled}
-      onChange={(event) => onChange(event.target.value as Role)}
+      onValueChange={(value) => onChange(value as Role)}
     >
-      {canManageOwners && <option value="owner">所有者</option>}
-      <option value="admin">管理员</option>
-      <option value="developer">开发者</option>
-      <option value="viewer">观察者</option>
-    </select>
+      {canManageOwners && <SelectItem value="owner">所有者</SelectItem>}
+      <SelectItem value="admin">管理员</SelectItem>
+      <SelectItem value="developer">开发者</SelectItem>
+      <SelectItem value="viewer">观察者</SelectItem>
+    </Select>
   );
 }

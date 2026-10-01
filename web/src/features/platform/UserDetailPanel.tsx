@@ -1,3 +1,4 @@
+import { Select, SelectItem } from "@/components/ui/select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { ApiError, errorText } from "@/api/http";
@@ -183,18 +184,18 @@ export function UserDetailPanel({
           <div className="flex flex-wrap items-end gap-2">
             <div className="space-y-2">
               <Label htmlFor="platform-role">平台角色</Label>
-              <select
+              <Select
                 id="platform-role"
                 className="h-10 rounded-md border border-input bg-background px-3"
                 value={role}
-                onChange={(event) => {
-                  setRole(event.target.value as Role);
+                onValueChange={(value) => {
+                  setRole(value as Role);
                   setConfirming(null);
                 }}
               >
-                <option value="user">普通用户</option>
-                <option value="platform_admin">平台管理员</option>
-              </select>
+                <SelectItem value="user">普通用户</SelectItem>
+                <SelectItem value="platform_admin">平台管理员</SelectItem>
+              </Select>
             </div>
             <Button
               variant="outline"

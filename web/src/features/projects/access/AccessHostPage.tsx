@@ -1,3 +1,4 @@
+import { Select, SelectItem } from "@/components/ui/select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -209,26 +210,26 @@ function HostCreate({
           </div>
           <div className="space-y-2">
             <Label htmlFor="access-tls-mode">TLS 模式</Label>
-            <select
+            <Select
               id="access-tls-mode"
               className="runtime-select w-full"
               value={tlsMode}
-              onChange={(event) => {
-                setTlsMode(event.target.value as Host["tlsMode"]);
+              onValueChange={(value) => {
+                setTlsMode(value as Host["tlsMode"]);
                 setPolicyKey("");
                 setBindingId("");
                 setBindingOffset(0);
               }}
             >
-              <option value="http_only">仅 HTTP</option>
-              <option
+              <SelectItem value="http_only">仅 HTTP</SelectItem>
+              <SelectItem
                 value="managed"
                 disabled={!options.data?.issuerPolicies.length}
               >
                 托管证书
-              </option>
-              <option value="existing_secret">已有 TLS Secret</option>
-            </select>
+              </SelectItem>
+              <SelectItem value="existing_secret">已有 TLS Secret</SelectItem>
+            </Select>
           </div>
           {options.isPending || options.error ? (
             <QueryNotice
@@ -245,19 +246,19 @@ function HostCreate({
               {tlsMode === "managed" && (
                 <div className="space-y-2">
                   <Label htmlFor="access-issuer">Issuer Policy</Label>
-                  <select
+                  <Select
                     id="access-issuer"
                     className="runtime-select w-full"
                     value={policyKey}
-                    onChange={(event) => setPolicyKey(event.target.value)}
+                    onValueChange={(value) => setPolicyKey(value)}
                   >
-                    <option value="">请选择</option>
+                    <SelectItem value="">请选择</SelectItem>
                     {options.data.issuerPolicies.map((policy) => (
-                      <option key={policy.key} value={policy.key}>
+                      <SelectItem key={policy.key} value={policy.key}>
                         {policy.key} · {policy.kind}/{policy.name}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               )}
             </>
@@ -276,19 +277,19 @@ function HostCreate({
                 />
               ) : (
                 <>
-                  <select
+                  <Select
                     id="access-secret-binding"
                     className="runtime-select w-full"
                     value={bindingId}
-                    onChange={(event) => setBindingId(event.target.value)}
+                    onValueChange={(value) => setBindingId(value)}
                   >
-                    <option value="">请选择</option>
+                    <SelectItem value="">请选择</SelectItem>
                     {bindings.data.slice(0, 20).map((item) => (
-                      <option key={item.id} value={item.id}>
+                      <SelectItem key={item.id} value={item.id}>
                         {item.secretName} · {item.clusterRef}/{item.namespace}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
+                  </Select>
                   {!bindings.data.length && (
                     <p className="text-xs text-muted-foreground">
                       当前域名没有已授权的 TLS Secret。
@@ -660,26 +661,26 @@ function HostTlsEditor({
       <form onSubmit={submit} className="space-y-4 p-5 text-sm">
         <div className="space-y-2">
           <Label htmlFor="access-detail-tls-mode">模式</Label>
-          <select
+          <Select
             id="access-detail-tls-mode"
             className="runtime-select w-full"
             value={mode}
-            onChange={(event) => {
-              setMode(event.target.value as Host["tlsMode"]);
+            onValueChange={(value) => {
+              setMode(value as Host["tlsMode"]);
               setPolicyKey("");
               setBindingId("");
               setBindingOffset(0);
             }}
           >
-            <option value="http_only">仅 HTTP</option>
-            <option
+            <SelectItem value="http_only">仅 HTTP</SelectItem>
+            <SelectItem
               value="managed"
               disabled={!options.data?.issuerPolicies.length}
             >
               托管证书
-            </option>
-            <option value="existing_secret">已有 TLS Secret</option>
-          </select>
+            </SelectItem>
+            <SelectItem value="existing_secret">已有 TLS Secret</SelectItem>
+          </Select>
         </div>
         {options.isPending || options.error ? (
           <QueryNotice
@@ -696,24 +697,24 @@ function HostTlsEditor({
             {mode === "managed" && (
               <div className="space-y-2">
                 <Label htmlFor="access-detail-issuer">Issuer Policy</Label>
-                <select
+                <Select
                   id="access-detail-issuer"
                   className="runtime-select w-full"
                   value={policyKey}
-                  onChange={(event) => setPolicyKey(event.target.value)}
+                  onValueChange={(value) => setPolicyKey(value)}
                 >
-                  <option value="">请选择</option>
+                  <SelectItem value="">请选择</SelectItem>
                   {policyKey && !selectedPolicy && (
-                    <option value={policyKey} disabled>
+                    <SelectItem value={policyKey} disabled>
                       {policyKey}（已不可用）
-                    </option>
+                    </SelectItem>
                   )}
                   {options.data.issuerPolicies.map((policy) => (
-                    <option key={policy.key} value={policy.key}>
+                    <SelectItem key={policy.key} value={policy.key}>
                       {policy.key} · {policy.kind}/{policy.name}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
           </>
@@ -730,15 +731,15 @@ function HostTlsEditor({
               />
             ) : (
               <>
-                <select
+                <Select
                   id="access-detail-secret-binding"
                   className="runtime-select w-full"
                   value={bindingId}
-                  onChange={(event) => setBindingId(event.target.value)}
+                  onValueChange={(value) => setBindingId(value)}
                 >
-                  <option value="">请选择</option>
+                  <SelectItem value="">请选择</SelectItem>
                   {bindingId && !selectedBinding && (
-                    <option
+                    <SelectItem
                       value={bindingId}
                       disabled={host.secretBindingState !== "active"}
                     >
@@ -747,14 +748,14 @@ function HostTlsEditor({
                         ? "已撤销"
                         : "当前授权"}
                       ）
-                    </option>
+                    </SelectItem>
                   )}
                   {bindings.data.slice(0, 20).map((item) => (
-                    <option key={item.id} value={item.id}>
+                    <SelectItem key={item.id} value={item.id}>
                       {item.secretName} · {item.clusterRef}/{item.namespace}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
+                </Select>
                 {!bindings.data.length && (
                   <p className="text-xs text-muted-foreground">
                     当前域名没有有效的 TLS Secret 授权。

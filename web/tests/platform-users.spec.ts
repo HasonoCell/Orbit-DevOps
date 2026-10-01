@@ -1,3 +1,4 @@
+import { chooseOption } from "./helpers/select";
 import { expect, test } from "@playwright/test";
 import { principal, timestamp } from "./fixtures/overview";
 
@@ -86,7 +87,7 @@ test("管理员创建本地用户、任命角色、停用并重置临时密码",
   await expect(page.getByText(/已创建 新同事/)).toBeVisible();
   await expect(page.getByLabel("临时密码", { exact: true })).toHaveValue("");
   await page.getByRole("button", { name: "管理" }).last().click();
-  await page.getByLabel("平台角色").selectOption("platform_admin");
+  await chooseOption(page.getByLabel("平台角色"), "platform_admin");
   await page.getByRole("button", { name: "修改角色" }).click();
   await page.getByRole("button", { name: "确认提交" }).click();
   await expect(page.getByText(/已接纳：新同事/)).toBeVisible();
@@ -120,7 +121,7 @@ test("最后管理员保护与并发变化不会被误报为成功", async ({ pa
   });
   await page.goto("/platform?view=users");
   await page.getByRole("button", { name: "管理" }).click();
-  await page.getByLabel("平台角色").selectOption("user");
+  await chooseOption(page.getByLabel("平台角色"), "user");
   await page.getByRole("button", { name: "修改角色" }).click();
   await page.getByRole("button", { name: "确认提交" }).click();
   await expect(page.getByText(/至少需要保留一位有效平台管理员/)).toBeVisible();

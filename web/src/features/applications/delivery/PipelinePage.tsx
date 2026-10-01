@@ -1,3 +1,4 @@
+import { Select, SelectItem } from "@/components/ui/select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -365,32 +366,34 @@ function PipelineEditor({
             </div>
             <div className="space-y-2">
               <Label htmlFor="pipeline-mode">交付模式</Label>
-              <select
+              <Select
                 id="pipeline-mode"
                 className="runtime-select w-full"
                 value={mode}
-                onChange={(event) => setMode(event.target.value as Mode)}
+                onValueChange={(value) => setMode(value as Mode)}
               >
-                <option value="build_only">仅构建</option>
-                <option value="auto_release">构建后自动部署到开发环境</option>
-              </select>
+                <SelectItem value="build_only">仅构建</SelectItem>
+                <SelectItem value="auto_release">
+                  构建后自动部署到开发环境
+                </SelectItem>
+              </Select>
             </div>
             {mode === "auto_release" && (
               <div className="space-y-2">
                 <Label htmlFor="pipeline-target">开发 Target</Label>
-                <select
+                <Select
                   id="pipeline-target"
                   className="runtime-select w-full"
                   value={targetId}
-                  onChange={(event) => setTargetId(event.target.value)}
+                  onValueChange={(value) => setTargetId(value)}
                 >
-                  <option value="">请选择开发 Target</option>
+                  <SelectItem value="">请选择开发 Target</SelectItem>
                   {developmentTargets.map((item) => (
-                    <option key={item.id} value={item.id}>
+                    <SelectItem key={item.id} value={item.id}>
                       {item.clusterRef} / {item.namespace}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
+                </Select>
                 {!developmentTargets.length && (
                   <p className="text-xs text-amber-800">
                     请先创建开发 Target。

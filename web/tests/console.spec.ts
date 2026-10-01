@@ -222,7 +222,10 @@ test("项目与应用深链可刷新，观察者看不到可用的创建操作",
     page.getByRole("button", { name: "创建应用" }).first(),
   ).toBeDisabled();
   await page.getByRole("link", { name: /Payment Service/ }).click();
-  await expect(page.getByLabel("部署目标", { exact: true })).toHaveValue("t-1");
+  await expect(page.getByLabel("部署目标", { exact: true })).toHaveAttribute(
+    "data-value",
+    "t-1",
+  );
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Payment Service" }),

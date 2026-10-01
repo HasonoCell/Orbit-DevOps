@@ -1,3 +1,4 @@
+import { Select, SelectItem } from "@/components/ui/select";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { errorText, type Application, type DeploymentTarget } from "@/api/http";
@@ -223,20 +224,22 @@ export function ReleaseCreateDialog({
           <fieldset disabled={mutation.isPending} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="release-source">镜像来源</Label>
-              <select
+              <Select
                 id="release-source"
                 className="runtime-select w-full"
                 value={source}
-                onChange={(event) => {
-                  setSource(event.target.value);
+                onValueChange={(value) => {
+                  setSource(value);
                   setPrefillDone(true);
                   setConfirmed(false);
                   setValidation("");
                 }}
               >
-                {<option value="artifact">成功构建产物</option>}
-                <option value="reference">不可变镜像引用（高级）</option>
-              </select>
+                {<SelectItem value="artifact">成功构建产物</SelectItem>}
+                <SelectItem value="reference">
+                  不可变镜像引用（高级）
+                </SelectItem>
+              </Select>
             </div>
             {source === "artifact" ? (
               <>
@@ -250,24 +253,24 @@ export function ReleaseCreateDialog({
                 {(builds.data || suggestedArtifact) && (
                   <>
                     <Label htmlFor="release-artifact">选择产物</Label>
-                    <select
+                    <Select
                       id="release-artifact"
                       className="runtime-select w-full"
                       value={artifactId}
-                      onChange={(event) => {
-                        setArtifactId(event.target.value);
+                      onValueChange={(value) => {
+                        setArtifactId(value);
                         setPrefillDone(true);
                         setConfirmed(false);
                       }}
                     >
-                      <option value="">请选择本页成功构建的产物</option>
+                      <SelectItem value="">请选择本页成功构建的产物</SelectItem>
                       {artifacts.map((artifact) => (
-                        <option key={artifact.id} value={artifact.id}>
+                        <SelectItem key={artifact.id} value={artifact.id}>
                           {artifact.buildId.slice(0, 8)} /{" "}
                           {artifact.digest.slice(0, 19)}
-                        </option>
+                        </SelectItem>
                       ))}
-                    </select>
+                    </Select>
                     {artifacts.length === 0 && (
                       <p className="text-xs text-muted-foreground">
                         本页构建没有可选产物，可继续翻页或使用高级引用。

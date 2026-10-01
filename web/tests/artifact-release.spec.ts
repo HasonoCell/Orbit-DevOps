@@ -1,3 +1,4 @@
+import { chooseOption } from "./helpers/select";
 import { expect, test } from "@playwright/test";
 import {
   application,
@@ -130,7 +131,11 @@ test("从成功 Build 预选当前应用产物，确认生产目标后创建新�
   await expect(
     page.getByText(build.imageArtifact!.imageReference),
   ).toBeVisible();
-  await page.getByLabel("部署目标", { exact: true }).selectOption("t-prod");
+  // 先关弹窗再选择页面目标；不绕过模态边界操作被遮挡的后台控件。
+  await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+  await chooseOption(page.getByLabel("部署目标", { exact: true }), "t-prod");
+  await page.getByRole("button", { name: "新建发布", exact: true }).click();
+  await expect(page.getByText(`来源：构建 ${build.build.id}`)).toBeVisible();
   await expect(page.getByText("生产目标", { exact: true })).toBeVisible();
   expect(accepted).toBe(false);
   await page.getByRole("checkbox").check();

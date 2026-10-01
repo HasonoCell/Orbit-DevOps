@@ -1,3 +1,4 @@
+import { chooseOption } from "./helpers/select";
 import { expect, test } from "@playwright/test";
 import {
   application,
@@ -156,7 +157,7 @@ test("项目创建 Host、选择同边界 Target 建 Route，并分开呈现入�
   await expect(page.getByText("不匹配")).toBeVisible();
   await expect(page.getByText(/未主动验证公网 HTTP\/HTTPS/)).toBeVisible();
   await page.getByLabel("PathPrefix").fill("/pay");
-  await page.getByLabel("部署目标").selectOption("t-1");
+  await chooseOption(page.getByLabel("部署目标"), "t-1");
   await page.getByRole("button", { name: "创建路由" }).click();
   await expect(page.getByText("/pay", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "删除", exact: true }).click();
@@ -319,8 +320,8 @@ for (const action of [
     await expect(page.getByText("待调和 · 修订 0/1")).toBeVisible();
     await page.clock.fastForward(301_000);
     if (action === "TLS") {
-      await page.getByLabel("模式", { exact: true }).selectOption("managed");
-      await page.getByLabel("Issuer Policy").selectOption("demo-issuer");
+      await chooseOption(page.getByLabel("模式", { exact: true }), "managed");
+      await chooseOption(page.getByLabel("Issuer Policy"), "demo-issuer");
       await page.getByRole("button", { name: "保存 TLS 配置" }).click();
       await expect(page.getByText(/配置已保存/)).toBeVisible();
     } else if (action === "创建路由" || action === "修改路由") {
@@ -329,7 +330,7 @@ for (const action of [
       await page
         .getByLabel("PathPrefix")
         .fill(action === "创建路由" ? "/pay" : "/pay-next");
-      await page.getByLabel("部署目标").selectOption("t-1");
+      await chooseOption(page.getByLabel("部署目标"), "t-1");
       await page
         .getByRole("button", {
           name: action === "创建路由" ? "创建路由" : "保存路由",
@@ -407,18 +408,27 @@ test("路由目标翻页后保留已选 Target", async ({ page }) => {
     },
   );
   await page.goto("/projects/p-1/access-hosts/h-1");
-  await page.getByLabel("部署目标").selectOption("t-1");
+  await chooseOption(page.getByLabel("部署目标"), "t-1");
   await page.getByRole("button", { name: "下一组 Target" }).click();
-  await expect(page.getByLabel("部署目标")).toHaveValue("t-1");
+  await expect(page.getByLabel("部署目标")).toHaveAttribute(
+    "data-value",
+    "t-1",
+  );
+  await page.getByLabel("部署目标").click();
   await expect(
     page.getByRole("option", { name: "已选 Target t-1" }),
-  ).toBeAttached();
-  await page.getByLabel("部署目标").selectOption("t-21");
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await chooseOption(page.getByLabel("部署目标"), "t-21");
   await page.getByRole("button", { name: "上一组 Target" }).click();
-  await expect(page.getByLabel("部署目标")).toHaveValue("t-21");
+  await expect(page.getByLabel("部署目标")).toHaveAttribute(
+    "data-value",
+    "t-21",
+  );
+  await page.getByLabel("部署目标").click();
   await expect(
     page.getByRole("option", { name: "已选 Target t-21" }),
-  ).toBeAttached();
+  ).toBeVisible();
 });
 
 test("Target 只读取受限关联投影并可跳转到 Host", async ({ page }) => {
@@ -486,9 +496,9 @@ test("创建托管 TLS Host 时只能选服务端返回的 Policy", async ({ pag
   );
   await page.goto("/projects/p-1/access-hosts/new");
   await page.getByLabel("域名").fill(host.hostname);
-  await page.getByLabel("TLS 模式").selectOption("managed");
+  await chooseOption(page.getByLabel("TLS 模式"), "managed");
   await expect(page.getByRole("button", { name: "创建域名" })).toBeDisabled();
-  await page.getByLabel("Issuer Policy").selectOption("demo-issuer");
+  await chooseOption(page.getByLabel("Issuer Policy"), "demo-issuer");
   await page.getByRole("button", { name: "创建域名" }).click();
   await expect(page).toHaveURL(/\/access-hosts\/h-1$/);
   await expect(
@@ -511,9 +521,9 @@ test("无 Policy 时禁用托管模式，已有 Policy 失效时拒绝继续提�
     }),
   );
   await page.goto("/projects/p-1/access-hosts/new");
-  await expect(
-    page.locator("#access-tls-mode option[value='managed']"),
-  ).toBeDisabled();
+  await page.getByLabel("TLS 模式").click();
+  await expect(page.getByRole("option", { name: "托管证书" })).toBeDisabled();
+  await page.keyboard.press("Escape");
   await expect(page.getByText(/当前没有可用的托管证书 Policy/)).toBeVisible();
 
   const managed = {

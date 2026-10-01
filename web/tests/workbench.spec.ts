@@ -1,3 +1,4 @@
+import { chooseOption } from "./helpers/select";
 import { expect, test, type Page } from "@playwright/test";
 import {
   application,
@@ -125,14 +126,17 @@ test("目标深链验证归属，切换目标只观察选中目标并能刷新�
   await page.goto(appURL + "?target=unrelated");
   await expect(page.getByText("部署目标不属于该应用或已不可用")).toBeVisible();
   expect(requests).toEqual([]);
-  await page.getByLabel("部署目标", { exact: true }).selectOption("t-2");
+  await chooseOption(page.getByLabel("部署目标", { exact: true }), "t-2");
   await expect(
     page.getByText("尚无发布记录。运行状态暂不可判断。"),
   ).toBeVisible();
   expect(requests.some((url) => url.includes("/t-1/"))).toBe(false);
   await page.reload();
-  await expect(page.getByLabel("部署目标", { exact: true })).toHaveValue("t-2");
-  await page.getByLabel("部署目标", { exact: true }).selectOption("t-1");
+  await expect(page.getByLabel("部署目标", { exact: true })).toHaveAttribute(
+    "data-value",
+    "t-2",
+  );
+  await chooseOption(page.getByLabel("部署目标", { exact: true }), "t-1");
   await expect(page.getByText("工作负载就绪")).toBeVisible();
 });
 
@@ -175,7 +179,7 @@ test("发布必须有权限、不可变镜像与明确确认", async ({ page }) 
   await expect(
     page.getByRole("button", { name: "确认发布到生产环境" }),
   ).toBeDisabled();
-  await page.getByLabel("镜像来源").selectOption("reference");
+  await chooseOption(page.getByLabel("镜像来源"), "reference");
   await page
     .getByLabel("镜像引用", { exact: true })
     .fill("registry.example.com/app:latest");
@@ -229,7 +233,7 @@ test("发布重试与关闭重开复用命令键，成功后显示接纳而非�
   );
   await page.goto(appURL);
   await page.getByRole("button", { name: "新建发布" }).click();
-  await page.getByLabel("选择产物").selectOption("i-1");
+  await chooseOption(page.getByLabel("选择产物"), "i-1");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "确认发布到生产环境" }).click();
   await expect(
@@ -243,7 +247,10 @@ test("发布重试与关闭重开复用命令键，成功后显示接纳而非�
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.getByRole("button", { name: "新建发布" }).click();
-  await expect(page.getByLabel("选择产物")).toHaveValue("i-1");
+  await expect(page.getByLabel("选择产物")).toHaveAttribute(
+    "data-value",
+    "i-1",
+  );
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "确认发布到生产环境" }).click();
   await expect(page).toHaveURL(/\/releases\/r-1$/);

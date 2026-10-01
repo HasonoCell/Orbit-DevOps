@@ -1,3 +1,4 @@
+import { chooseOption } from "./helpers/select";
 import { expect, test } from "@playwright/test";
 import {
   application,
@@ -135,11 +136,13 @@ test("自动部署只能使用开发 Target；修订冲突后读取新 Revision"
     });
   });
   await page.goto("/projects/p-1/applications/a-1/pipelines/pl-1");
-  await page.getByLabel("交付模式").selectOption("auto_release");
+  await chooseOption(page.getByLabel("交付模式"), "auto_release");
+  await page.getByLabel("开发 Target").click();
   await expect(
-    page.locator("#pipeline-target option[value='t-prod']"),
+    page.getByRole("listbox").locator('[data-value="t-prod"]'),
   ).toHaveCount(0);
-  await page.getByLabel("开发 Target").selectOption("t-dev");
+  await page.keyboard.press("Escape");
+  await chooseOption(page.getByLabel("开发 Target"), "t-dev");
   await page.getByRole("button", { name: "保存新 Revision" }).click();
   await expect(page.getByText(/配置已变化或存在冲突/)).toBeVisible();
   await page.getByRole("button", { name: "刷新服务端配置" }).click();

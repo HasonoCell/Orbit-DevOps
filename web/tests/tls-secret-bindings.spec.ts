@@ -1,3 +1,4 @@
+import { chooseOption } from "./helpers/select";
 import { expect, test } from "@playwright/test";
 import { principal, project, timestamp } from "./fixtures/overview";
 
@@ -155,8 +156,8 @@ test("项目成员只选择当前域名的有效授权创建 Host", async ({ pag
   );
   await page.goto("/projects/p-1/access-hosts/new");
   await page.getByLabel("域名").fill(binding.hostname);
-  await page.getByLabel("TLS 模式").selectOption("existing_secret");
-  await page.getByLabel("TLS Secret 授权").selectOption(binding.id);
+  await chooseOption(page.getByLabel("TLS 模式"), "existing_secret");
+  await chooseOption(page.getByLabel("TLS Secret 授权"), binding.id);
   await page.getByRole("button", { name: "创建域名" }).click();
   await expect(page).toHaveURL(/\/access-hosts\/host-1$/);
   expect(created).toBe(true);

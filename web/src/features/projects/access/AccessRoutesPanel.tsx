@@ -1,3 +1,4 @@
+import { Select, SelectItem } from "@/components/ui/select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import type { components } from "@/api/schema";
@@ -251,24 +252,26 @@ export function AccessRoutesPanel({
             </div>
             <div className="space-y-2">
               <Label htmlFor="access-target">部署目标</Label>
-              <select
+              <Select
                 id="access-target"
                 className="runtime-select w-full"
                 value={targetId}
-                onChange={(event) => setTargetId(event.target.value)}
+                onValueChange={(value) => setTargetId(value)}
               >
-                <option value="">请选择 Target</option>
+                <SelectItem value="">请选择 Target</SelectItem>
                 {targetId &&
                   !visibleTargets.some((item) => item.id === targetId) && (
-                    <option value={targetId}>已选 Target {targetId}</option>
+                    <SelectItem value={targetId}>
+                      已选 Target {targetId}
+                    </SelectItem>
                   )}
                 {visibleTargets.map((item) => (
-                  <option key={item.id} value={item.id}>
+                  <SelectItem key={item.id} value={item.id}>
                     {item.applicationName} · {item.stage} ·{" "}
                     {item.id.slice(0, 8)}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
           {targets.isPending || targets.error ? (

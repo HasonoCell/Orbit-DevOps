@@ -1,3 +1,4 @@
+import { chooseOption } from "../../tests/helpers/select";
 import { expect, test, type Page } from "@playwright/test";
 import { demoPassword } from "../state.ts";
 
@@ -124,10 +125,11 @@ test("场景面板触发自动交付，入口与证书状态变化回到真实�
   await expect(page.getByRole("link", { name: /^查看 Build / })).toBeVisible();
   await page.goto("/projects/p-1/access-hosts/h-1");
   await expect(page.getByText("已验证", { exact: true })).toBeVisible();
-  await page
-    .getByLabel("模式", { exact: true })
-    .selectOption("existing_secret");
-  await page.getByLabel("TLS Secret 授权").selectOption("binding-1");
+  await chooseOption(
+    page.getByLabel("模式", { exact: true }),
+    "existing_secret",
+  );
+  await chooseOption(page.getByLabel("TLS Secret 授权"), "binding-1");
   await page.getByRole("button", { name: "保存 TLS 配置" }).click();
   await expect(page.getByText(/配置已保存/)).toBeVisible();
   await scenario(page, { evidence: "dns_mismatch" });
@@ -147,7 +149,7 @@ test("场景面板触发自动交付，入口与证书状态变化回到真实�
   await page.getByRole("button", { name: "刷新入口状态" }).click();
   await expect(page.getByText("不匹配", { exact: true })).toBeVisible();
   await page.getByLabel("PathPrefix").fill("/order");
-  await page.getByLabel("部署目标").selectOption("a-4-production");
+  await chooseOption(page.getByLabel("部署目标"), "a-4-production");
   await page.getByRole("button", { name: "创建路由" }).click();
   await expect(page.getByText("/order", { exact: true })).toBeVisible();
 });
