@@ -53,13 +53,15 @@ export function ReleaseHistory({
                       {...operationStatus[item.releaseOperation.status]}
                     />
                   </div>
-                  <Timestamp value={item.release.createdAt} />
-                  <Link
-                    className="inline-block font-medium text-primary hover:underline"
-                    to={`/projects/${projectId}/applications/${applicationId}/releases/${item.release.id}`}
-                  >
-                    查看发布详情
-                  </Link>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <Timestamp value={item.release.createdAt} />
+                    <Link
+                      className="font-medium text-primary hover:underline"
+                      to={`/projects/${projectId}/applications/${applicationId}/releases/${item.release.id}`}
+                    >
+                      查看发布详情
+                    </Link>
+                  </div>
                   <details>
                     <summary className="cursor-pointer text-primary">
                       镜像与执行结果

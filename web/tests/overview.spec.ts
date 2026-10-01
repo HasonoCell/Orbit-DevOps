@@ -37,6 +37,36 @@ async function overview(page: Page) {
 }
 const applicationURL = "/projects/p-1/applications/a-1";
 
+test("发布记录的时间和详情链接留有间距，窄屏可换行", async ({ page }) => {
+  await overview(page);
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(applicationURL + "?view=delivery");
+    const record = page
+      .locator("section.workbench-panel")
+      .filter({ has: page.getByRole("heading", { name: "发布记录" }) })
+      .locator("article")
+      .first();
+    const link = record.getByRole("link", { name: "查看发布详情" });
+    await expect(link).toBeVisible();
+    const timeBox = await record.locator("time").first().boundingBox();
+    const linkBox = await link.boundingBox();
+    expect(timeBox).not.toBeNull();
+    expect(linkBox).not.toBeNull();
+    if (timeBox && linkBox) {
+      const sameLine = Math.abs(timeBox.y - linkBox.y) < 4;
+      expect(
+        sameLine
+          ? linkBox.x - (timeBox.x + timeBox.width)
+          : linkBox.y - (timeBox.y + timeBox.height),
+      ).toBeGreaterThanOrEqual(sameLine ? 16 : 8);
+    }
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+  }
+});
+
 test("工作台三层导航在桌面和移动端不溢出，摘要展示真实查询内容", async ({
   page,
 }) => {
