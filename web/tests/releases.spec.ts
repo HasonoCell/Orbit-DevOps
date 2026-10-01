@@ -60,6 +60,36 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+for (const status of [404, 503]) {
+  test(`发布详情返回 ${status} 时显示错误，并可重试恢复`, async ({ page }) => {
+    let failed = true;
+    await page.route("**/api/v1/releases/r-1", (route) =>
+      failed
+        ? route.fulfill({
+            status,
+            json: { code: "release_unavailable", message: "发布暂不可用" },
+          })
+        : route.fulfill({ json: detail }),
+    );
+    await page.route("**/api/v1/releases/r-1/diagnostics", (route) =>
+      route.fulfill({ json: diagnostic() }),
+    );
+    await page.goto("/projects/p-1/applications/a-1/releases/r-1");
+    await expect(
+      page.getByRole("heading", { name: "无法加载发布" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("status", { name: "正在加载发布" }),
+    ).toHaveCount(0);
+    failed = false;
+    await page.getByRole("button", { name: "重试", exact: true }).click();
+    await expect(page.getByText("Release r-1", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "无法加载发布" }),
+    ).toHaveCount(0);
+  });
+}
+
 test("发布详情区分执行结论、部分观测与配置差异，并按 Pod 读取运行日志", async ({
   page,
 }) => {

@@ -105,13 +105,7 @@ function ReleaseContent({
     enabled: !!detail.data && !detail.error,
     refetchInterval: (query) => pollInterval(until, query.state.error),
   });
-  if (
-    application.isPending ||
-    permissions.isPending ||
-    detail.isPending ||
-    target.isPending
-  )
-    return <LoadingPage label="正在加载发布" />;
+  // 上游失败时，尚未启用的 Target 查询仍是 pending，必须先展示错误与恢复入口。
   if (application.error)
     return (
       <ErrorPanel
@@ -144,6 +138,13 @@ function ReleaseContent({
         onRetry={() => void target.refetch()}
       />
     );
+  if (
+    application.isPending ||
+    permissions.isPending ||
+    detail.isPending ||
+    target.isPending
+  )
+    return <LoadingPage label="正在加载发布" />;
   if (
     application.data.projectId !== projectId ||
     detail.data.release.targetSnapshot.projectId !== projectId ||
