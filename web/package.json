@@ -4,13 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "demo": "node demo/start.mjs",
+    "demo:check": "tsc --noEmit -p demo/tsconfig.json",
+    "demo:test": "node --test demo/tests/*.test.ts",
+    "demo:e2e": "playwright test --config playwright.demo.config.ts",
     "dev": "vite",
     "generate": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts",
     "check": "tsc --noEmit",
     "build": "pnpm generate && tsc --noEmit && vite build",
     "test:e2e": "playwright test",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"tests/**/*.{ts,tsx}\" \"*.{ts,json,html}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"tests/**/*.{ts,tsx}\" \"*.{ts,json,html}\""
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"tests/**/*.{ts,tsx}\" \"demo/**/*.{ts,mjs,json}\" \"*.{ts,json,html}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"tests/**/*.{ts,tsx}\" \"demo/**/*.{ts,mjs,json}\" \"*.{ts,json,html}\""
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

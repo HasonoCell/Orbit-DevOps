@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "scripts": {
+    "demo": "pnpm --filter @orbit-devops/web demo",
     "prepare": "husky",
     "web:generate": "pnpm --filter @orbit-devops/web generate",
     "web:check": "pnpm --filter @orbit-devops/web check",
