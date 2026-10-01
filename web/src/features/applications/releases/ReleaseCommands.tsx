@@ -43,6 +43,7 @@ export function ReleaseCommands({
   applicationId,
   canDevelop,
   canResolveUnknown,
+  onAccepted,
 }: {
   release: Release;
   operation: Operation;
@@ -50,6 +51,7 @@ export function ReleaseCommands({
   applicationId: string;
   canDevelop: boolean;
   canResolveUnknown: boolean;
+  onAccepted: () => void;
 }) {
   const [selected, setSelected] = useState<Action | null>(null);
   const [reason, setReason] = useState("");
@@ -85,6 +87,7 @@ export function ReleaseCommands({
           `/projects/${projectId}/applications/${applicationId}/releases/${result.release.id}`,
         );
       } else if ("status" in result) {
+        onAccepted();
         queryClient.setQueryData(
           releaseQueryKeys.operation(operation.id),
           result,

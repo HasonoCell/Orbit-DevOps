@@ -105,6 +105,16 @@ function ReleaseContent({
     enabled: !!detail.data && !detail.error,
     refetchInterval: (query) => pollInterval(until, query.state.error),
   });
+  // 仅命令接纳或用户主动刷新重启观察，普通轮询不能延长五分钟上限。
+  function restartObservation() {
+    setUntil(Date.now() + 5 * 60_000);
+  }
+  function refresh() {
+    restartObservation();
+    void detail.refetch();
+    if (operationId) void operation.refetch();
+    if (detail.data && !detail.error) void report.refetch();
+  }
   // 上游失败时，尚未启用的 Target 查询仍是 pending，必须先展示错误与恢复入口。
   if (application.error)
     return (
@@ -124,11 +134,7 @@ function ReleaseContent({
     );
   if (detail.error)
     return (
-      <ErrorPanel
-        title="无法加载发布"
-        error={detail.error}
-        onRetry={() => void detail.refetch()}
-      />
+      <ErrorPanel title="无法加载发布" error={detail.error} onRetry={refresh} />
     );
   if (target.error)
     return (
@@ -170,12 +176,6 @@ function ReleaseContent({
     absent: "未观测到运行版本",
     unknown: "运行版本尚无法判断",
   } as const;
-  function refresh() {
-    setUntil(Date.now() + 5 * 60_000);
-    void detail.refetch();
-    void operation.refetch();
-    void report.refetch();
-  }
   return (
     <div className="workbench-page">
       <div className="workbench-heading">
@@ -195,7 +195,13 @@ function ReleaseContent({
             Release {release.id}
           </p>
         </div>
-        <Button variant="outline" onClick={refresh}>
+        <Button
+          variant="outline"
+          disabled={
+            detail.isFetching || operation.isFetching || report.isFetching
+          }
+          onClick={refresh}
+        >
           <RefreshCw className="size-4" aria-hidden="true" />
           刷新状态
         </Button>
@@ -297,10 +303,7 @@ function ReleaseContent({
         </header>
         {operation.isPending || operation.error ? (
           <div className="p-5">
-            <QueryNotice
-              error={operation.error}
-              retry={() => void operation.refetch()}
-            />
+            <QueryNotice error={operation.error} retry={refresh} />
           </div>
         ) : (
           current && (
@@ -358,6 +361,7 @@ function ReleaseContent({
             canResolveUnknown={permissions.data.allowed.includes(
               "resolve_unknown",
             )}
+            onAccepted={restartObservation}
           />
         </div>
       )}
@@ -391,10 +395,7 @@ function ReleaseContent({
           </span>
         </div>
         {report.isPending || report.error ? (
-          <QueryNotice
-            error={report.error}
-            retry={() => void report.refetch()}
-          />
+          <QueryNotice error={report.error} retry={refresh} />
         ) : (
           report.data && (
             <div className="space-y-5">

@@ -80,6 +80,91 @@ test("失败的执行经确认后重试，同一输入的网络重试复用幂�
   expect(keys[1]).toBe(keys[0]);
 });
 
+for (const scenario of [
+  {
+    command: "retry",
+    label: "重试执行",
+    initial: "failed",
+    accepted: "pending",
+    terminal: "succeeded",
+    finalLabel: "执行成功",
+  },
+  {
+    command: "cancel",
+    label: "取消执行",
+    initial: "running",
+    accepted: "cancel_requested",
+    terminal: "canceled",
+    finalLabel: "已取消",
+  },
+] as const) {
+  test(`五分钟后${scenario.label}，重新观察直到终态`, async ({ page }) => {
+    await page.clock.install();
+    let operation: components["schemas"]["ReleaseOperation"] = {
+      ...initialOperation,
+      status: scenario.initial,
+    };
+    let reads = 0;
+    await page.route("**/api/v1/projects/p-1/permissions", (route) =>
+      route.fulfill({
+        json: {
+          projectId: "p-1",
+          role: "developer",
+          allowed: ["read", "develop"],
+        },
+      }),
+    );
+    await page.route("**/api/v1/releases/r-1", (route) =>
+      route.fulfill({
+        json: {
+          release: release.release,
+          releaseOperation: operation,
+          snapshotDifferences: [],
+          auditTimeline: [],
+        },
+      }),
+    );
+    await page.route("**/api/v1/release-operations/ro-1", (route) => {
+      reads++;
+      return route.fulfill({ json: operation });
+    });
+    await page.route(
+      `**/api/v1/release-operations/ro-1/${scenario.command}`,
+      (route) => {
+        operation = { ...operation, status: scenario.accepted };
+        return route.fulfill({ json: operation });
+      },
+    );
+    await page.goto("/projects/p-1/applications/a-1/releases/r-1");
+    await expect(
+      page.getByRole("button", { name: scenario.label, exact: true }),
+    ).toBeVisible();
+    await page.clock.fastForward(301_000);
+    await page
+      .getByRole("button", { name: scenario.label, exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: `确认${scenario.label}`, exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "刷新状态", exact: true }),
+    ).toBeEnabled();
+    operation = { ...operation, status: scenario.terminal };
+    const acceptedReads = reads;
+    await page.clock.fastForward(31_000);
+    await expect(
+      page
+        .locator("#operation")
+        .getByText(scenario.finalLabel, { exact: true }),
+    ).toBeVisible();
+    expect(reads).toBeGreaterThan(acceptedReads);
+    const finishedReads = reads;
+    await page.clock.fastForward(31_000);
+    expect(reads).toBe(finishedReads);
+  });
+}
+
 test("回滚创建新的 Release 并跳转，不改写历史 Release", async ({ page }) => {
   const rollback = {
     release: {
