@@ -37,7 +37,7 @@ export function Select({
         data-slot="select-trigger"
         data-value={value}
         className={cn(
-          "inline-flex h-10 max-w-full items-center justify-between gap-3 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+          "inline-flex h-9 max-w-full items-center justify-between gap-3 rounded-md border border-input bg-background px-2.5 py-0 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-11 max-md:text-base",
           className,
         )}
       >

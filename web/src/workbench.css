@@ -25,28 +25,6 @@
   color: #3e5778;
   font-size: 27px;
 }
-.workbench-tabs {
-  display: flex;
-  gap: 26px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 0;
-  overflow: auto;
-}
-.workbench-tabs button,
-.workbench-tabs a {
-  padding: 0 1px 13px;
-  font-size: 13px;
-  white-space: nowrap;
-  border-bottom: 2px solid transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.workbench-tabs [aria-pressed="true"],
-.workbench-tabs [aria-current="page"] {
-  color: var(--foreground);
-  border-bottom-color: var(--primary);
-  font-weight: 600;
-}
 .workbench-summary {
   display: flex;
   gap: 20px;
@@ -279,28 +257,8 @@
   font-size: 11px;
   overflow-wrap: anywhere;
 }
-.runtime-select {
-  border: 1px solid var(--input);
-  background: white;
-  border-radius: 6px;
-  height: 36px;
-  padding: 0 10px;
-  max-width: 100%;
-  font-size: 13px;
-}
 .pod-row {
   padding: 18px;
-}
-.pod-name {
-  color: var(--primary);
-  text-align: left;
-  font-family: monospace;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-.pod-name:hover {
-  text-decoration: underline;
 }
 .runtime-code {
   overflow-wrap: anywhere;
@@ -331,14 +289,6 @@
 @media (max-width: 767px) {
   .workbench-heading h1 {
     font-size: 24px;
-  }
-  .workbench-tabs {
-    gap: 22px;
-  }
-  .workbench-tabs button,
-  .workbench-tabs a {
-    padding-top: 8px;
-    min-height: 44px;
   }
   .workbench-heading {
     align-items: flex-start;
@@ -403,18 +353,11 @@
     grid-template-columns: 1fr 1fr;
     gap: 20px;
   }
-  .runtime-select {
-    font-size: 16px;
-    min-height: 44px;
-  }
   .runtime-resource-grid {
     gap: 12px;
     padding: 14px;
   }
   .runtime-resource {
     padding: 12px;
-  }
-  .pod-name {
-    min-height: 44px;
   }
 }

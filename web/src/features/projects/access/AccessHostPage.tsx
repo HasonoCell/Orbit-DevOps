@@ -212,7 +212,7 @@ function HostCreate({
             <Label htmlFor="access-tls-mode">TLS 模式</Label>
             <Select
               id="access-tls-mode"
-              className="runtime-select w-full"
+              className="w-full"
               value={tlsMode}
               onValueChange={(value) => {
                 setTlsMode(value as Host["tlsMode"]);
@@ -248,7 +248,7 @@ function HostCreate({
                   <Label htmlFor="access-issuer">Issuer Policy</Label>
                   <Select
                     id="access-issuer"
-                    className="runtime-select w-full"
+                    className="w-full"
                     value={policyKey}
                     onValueChange={(value) => setPolicyKey(value)}
                   >
@@ -279,7 +279,7 @@ function HostCreate({
                 <>
                   <Select
                     id="access-secret-binding"
-                    className="runtime-select w-full"
+                    className="w-full"
                     value={bindingId}
                     onValueChange={(value) => setBindingId(value)}
                   >
@@ -663,7 +663,7 @@ function HostTlsEditor({
           <Label htmlFor="access-detail-tls-mode">模式</Label>
           <Select
             id="access-detail-tls-mode"
-            className="runtime-select w-full"
+            className="w-full"
             value={mode}
             onValueChange={(value) => {
               setMode(value as Host["tlsMode"]);
@@ -699,7 +699,7 @@ function HostTlsEditor({
                 <Label htmlFor="access-detail-issuer">Issuer Policy</Label>
                 <Select
                   id="access-detail-issuer"
-                  className="runtime-select w-full"
+                  className="w-full"
                   value={policyKey}
                   onValueChange={(value) => setPolicyKey(value)}
                 >
@@ -733,7 +733,7 @@ function HostTlsEditor({
               <>
                 <Select
                   id="access-detail-secret-binding"
-                  className="runtime-select w-full"
+                  className="w-full"
                   value={bindingId}
                   onValueChange={(value) => setBindingId(value)}
                 >

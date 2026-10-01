@@ -368,7 +368,7 @@ function PipelineEditor({
               <Label htmlFor="pipeline-mode">交付模式</Label>
               <Select
                 id="pipeline-mode"
-                className="runtime-select w-full"
+                className="w-full"
                 value={mode}
                 onValueChange={(value) => setMode(value as Mode)}
               >
@@ -383,7 +383,7 @@ function PipelineEditor({
                 <Label htmlFor="pipeline-target">开发 Target</Label>
                 <Select
                   id="pipeline-target"
-                  className="runtime-select w-full"
+                  className="w-full"
                   value={targetId}
                   onValueChange={(value) => setTargetId(value)}
                 >

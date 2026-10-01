@@ -254,7 +254,7 @@ export function AccessRoutesPanel({
               <Label htmlFor="access-target">部署目标</Label>
               <Select
                 id="access-target"
-                className="runtime-select w-full"
+                className="w-full"
                 value={targetId}
                 onValueChange={(value) => setTargetId(value)}
               >
