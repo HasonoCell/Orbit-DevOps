@@ -130,7 +130,7 @@ function ProjectContent({
           <div className="min-w-0">
             <h1>{project.name}</h1>
             <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              应用交付与运行管理 <Badge variant="secondary">{role}</Badge>
+              <Badge variant="secondary">{role}</Badge>
             </p>
           </div>
         </div>
@@ -199,7 +199,6 @@ function ProjectContent({
           page={applications.data}
           cursor={cursor}
           isFetching={applications.isFetching}
-          dataUpdatedAt={applications.dataUpdatedAt}
           onRefresh={() => void applications.refetch()}
         />
       )}

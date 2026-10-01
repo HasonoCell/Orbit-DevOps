@@ -21,6 +21,43 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+for (const width of [1440, 375]) {
+  test(`单选下拉箭头保留内边距与原生交互（${width}px）`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.route("**/api/v1/projects/p-1/permissions", (route) =>
+      route.fulfill({
+        json: {
+          projectId: "p-1",
+          role: "owner",
+          allowed: ["read", "manage_members", "manage_owners"],
+        },
+      }),
+    );
+    await page.route("**/api/v1/projects/p-1/members?*", (route) =>
+      route.fulfill({ json: { items: [owner] } }),
+    );
+    await page.goto("/projects/p-1?view=members");
+    const select = page.getByRole("combobox", { name: "查找方式" });
+    await expect(select).toHaveCSS("appearance", "none");
+    await expect(select).toHaveCSS(
+      "background-position-x",
+      "calc(100% - 12px)",
+    );
+    await expect(select).toHaveCSS("background-position-y", "50%");
+    await expect(select).toHaveCSS("padding-right", "40px");
+    await select.selectOption("verified_email");
+    await expect(select).toHaveValue("verified_email");
+    await select.focus();
+    await expect(select).toBeFocused();
+
+    // 强制颜色模式恢复系统箭头，避免装饰性 SVG 在高对比度环境中消失。
+    await page.emulateMedia({ forcedColors: "active" });
+    await expect(select).toHaveCSS("appearance", "auto");
+    await expect(select).toHaveCSS("background-image", "none");
+    await expect(select).toHaveValue("verified_email");
+  });
+}
+
 test("项目 owner 精确查找用户、添加成员并调整角色和移除", async ({ page }) => {
   let members = [owner];
   await page.route("**/api/v1/projects/p-1/permissions", (route) =>

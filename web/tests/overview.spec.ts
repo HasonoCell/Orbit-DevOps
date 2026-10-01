@@ -46,6 +46,12 @@ test("工作台三层导航在桌面和移动端不溢出，摘要展示真实�
     await page.goto("/projects");
     await page.getByRole("link", { name: /Yuuki/ }).click();
     await expect(page.getByRole("heading", { name: "项目资料" })).toBeVisible();
+    await expect(
+      page.getByText("应用交付与运行管理", { exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByText(/摘要按需读取|运行健康请进入应用/)).toHaveCount(
+      0,
+    );
     await page.getByRole("link", { name: /Payment Service/ }).click();
     await expect(page.getByText("工作负载就绪")).toBeVisible();
     await expect(page.getByText("交付成功")).toBeVisible();

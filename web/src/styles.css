@@ -20,6 +20,7 @@
   --secondary-foreground: #26364e;
   --muted: #f7f8fa;
   --muted-foreground: #586579;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23586579' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --accent: #edf6f1;
   --accent-foreground: #216448;
   --destructive: #b4233b;
@@ -99,6 +100,23 @@
   select:focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 3px;
+  }
+}
+
+/* 保留原生单选语义，只统一装饰箭头的位置；不影响多选和列表式控件。
+   置于未分层规则中，避免各页面的 background/padding 简写覆盖箭头与文字预留区。 */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem 1rem;
+  padding-right: 2.5rem;
+}
+@media (forced-colors: active) {
+  select:not([multiple]):not([size]) {
+    appearance: auto;
+    background-image: none;
   }
 }
 

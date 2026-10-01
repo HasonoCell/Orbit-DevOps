@@ -24,14 +24,12 @@ export function ProjectWorkbench({
   page,
   cursor,
   isFetching,
-  dataUpdatedAt,
   onRefresh,
 }: {
   project: Project;
   page: WorkbenchPage;
   cursor?: string;
   isFetching: boolean;
-  dataUpdatedAt: number;
   onRefresh: () => void;
 }) {
   const [params, setParams] = useSearchParams();
@@ -291,15 +289,6 @@ export function ProjectWorkbench({
           </section>
         </aside>
       </div>
-      <p className="mt-4 text-xs leading-5 text-muted-foreground">
-        摘要按需读取，每个应用最多采样 3 条 Pipeline 的最近运行。
-        {dataUpdatedAt > 0 && (
-          <>
-            读取于 <Timestamp value={new Date(dataUpdatedAt).toISOString()} />。
-          </>
-        )}
-        运行健康请进入应用查看 Kubernetes 观测。
-      </p>
     </>
   );
 }
