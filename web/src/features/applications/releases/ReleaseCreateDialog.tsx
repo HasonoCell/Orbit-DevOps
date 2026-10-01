@@ -1,4 +1,5 @@
 import { Select, SelectItem } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { errorText, type Application, type DeploymentTarget } from "@/api/http";
@@ -226,7 +227,7 @@ export function ReleaseCreateDialog({
               <Label htmlFor="release-source">镜像来源</Label>
               <Select
                 id="release-source"
-                className="runtime-select w-full"
+                className="w-full"
                 value={source}
                 onValueChange={(value) => {
                   setSource(value);
@@ -255,7 +256,7 @@ export function ReleaseCreateDialog({
                     <Label htmlFor="release-artifact">选择产物</Label>
                     <Select
                       id="release-artifact"
-                      className="runtime-select w-full"
+                      className="w-full"
                       value={artifactId}
                       onValueChange={(value) => {
                         setArtifactId(value);
@@ -315,12 +316,16 @@ export function ReleaseCreateDialog({
                 </p>
               </div>
             )}
-            <label className="flex items-start gap-3 rounded border p-3 text-sm leading-6">
-              <input
-                type="checkbox"
-                className="mt-1 size-4 shrink-0 accent-primary"
+            <label
+              htmlFor="release-confirmation"
+              className="flex items-start gap-3 rounded border p-3 text-sm leading-6"
+            >
+              <Checkbox
+                id="release-confirmation"
+                className="mt-1"
                 checked={confirmed}
-                onChange={(event) => setConfirmed(event.target.checked)}
+                disabled={mutation.isPending}
+                onCheckedChange={(checked) => setConfirmed(checked === true)}
               />
               我确认发布到{target.stage === "production" ? "生产" : "开发"}
               环境，这可能替换该目标当前运行的版本。

@@ -165,6 +165,37 @@ test("部分观测保持未知，Pod 抽屉支持键盘关闭与焦点恢复", a
   ).toBeFocused();
 });
 
+test("发布确认组件支持键盘和标签点击，未确认不能提交", async ({ page }) => {
+  await mock(page);
+  let submissions = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/releases"))
+      submissions++;
+  });
+  await page.goto(appURL);
+  await page.getByRole("button", { name: "新建发布" }).click();
+  await chooseOption(page.getByLabel("镜像来源"), "reference");
+  await page
+    .getByLabel("镜像引用", { exact: true })
+    .fill(build.imageArtifact!.imageReference);
+  const confirmation = page.getByRole("checkbox", {
+    name: /我确认发布到生产环境/,
+  });
+  const submit = page.getByRole("button", { name: "确认发布到生产环境" });
+  await expect(confirmation).toHaveAttribute("data-slot", "checkbox");
+  await expect(submit).toBeDisabled();
+  await confirmation.focus();
+  await page.keyboard.press("Space");
+  await expect(confirmation).toBeChecked();
+  await expect(submit).toBeEnabled();
+  await page.keyboard.press("Space");
+  await expect(confirmation).not.toBeChecked();
+  await expect(submit).toBeDisabled();
+  await page.locator('label[for="release-confirmation"]').click();
+  await expect(confirmation).toBeChecked();
+  expect(submissions).toBe(0);
+});
+
 test("发布必须有权限、不可变镜像与明确确认", async ({ page }) => {
   await mock(page, false);
   await page.goto(appURL);
