@@ -388,6 +388,15 @@ function HostDetail({
       !query.state.error && Date.now() < observeUntil ? 15_000 : false,
     refetchIntervalInBackground: false,
   });
+  // 入口写入接纳后，重新给异步调和与控制器观测五分钟；轮询本身不续期。
+  function restartObservation() {
+    setObserveUntil(Date.now() + 5 * 60_000);
+  }
+  function refresh() {
+    restartObservation();
+    void current.refetch();
+    void status.refetch();
+  }
   const remove = useMutation({
     mutationFn: () =>
       deleteHost(
@@ -397,6 +406,7 @@ function HostDetail({
       ),
     onSuccess(updated) {
       commandKey.clear();
+      restartObservation();
       queryClient.setQueryData(accessKeys.host(projectId, host.id), updated);
       void queryClient.invalidateQueries({
         queryKey: ["access-hosts", projectId],
@@ -423,11 +433,8 @@ function HostDetail({
         </div>
         <Button
           variant="outline"
-          onClick={() => {
-            setObserveUntil(Date.now() + 5 * 60_000);
-            void current.refetch();
-            void status.refetch();
-          }}
+          disabled={current.isFetching || status.isFetching}
+          onClick={refresh}
         >
           刷新入口状态
         </Button>
@@ -485,6 +492,7 @@ function HostDetail({
           key={displayed.id}
           projectId={projectId}
           host={displayed}
+          onAccepted={restartObservation}
         />
       )}
       <section className="workbench-panel mb-5">
@@ -495,10 +503,7 @@ function HostDetail({
           </span>
         </header>
         {status.isPending || status.error ? (
-          <QueryNotice
-            error={status.error}
-            retry={() => void status.refetch()}
-          />
+          <QueryNotice error={status.error} retry={refresh} />
         ) : (
           <HostEvidence status={status.data} />
         )}
@@ -507,6 +512,7 @@ function HostDetail({
         projectId={projectId}
         host={displayed}
         canManage={canManageRoutes}
+        onAccepted={restartObservation}
       />
       {canManageHost && displayed.lifecycle === "active" && (
         <section className="workbench-panel mt-5 max-w-3xl p-5 text-sm">
@@ -554,7 +560,15 @@ function HostDetail({
   );
 }
 
-function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
+function HostTlsEditor({
+  projectId,
+  host,
+  onAccepted,
+}: {
+  projectId: string;
+  host: Host;
+  onAccepted: () => void;
+}) {
   const [mode, setMode] = useState<Host["tlsMode"]>(host.tlsMode);
   const [policyKey, setPolicyKey] = useState(host.issuerPolicyKey ?? "");
   const [bindingId, setBindingId] = useState(host.secretBindingId ?? "");
@@ -606,6 +620,7 @@ function HostTlsEditor({ projectId, host }: { projectId: string; host: Host }) {
       ),
     onSuccess(updated) {
       commandKey.clear();
+      onAccepted();
       queryClient.setQueryData(accessKeys.host(projectId, host.id), updated);
       void queryClient.invalidateQueries({
         queryKey: accessKeys.host(projectId, host.id),

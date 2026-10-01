@@ -23,10 +23,12 @@ export function AccessRoutesPanel({
   projectId,
   host,
   canManage,
+  onAccepted,
 }: {
   projectId: string;
   host: Host;
   canManage: boolean;
+  onAccepted: () => void;
 }) {
   const [offset, setOffset] = useState(0);
   const [targetOffset, setTargetOffset] = useState(0);
@@ -62,6 +64,7 @@ export function AccessRoutesPanel({
     },
     onSuccess() {
       commandKey.clear();
+      onAccepted();
       setEditing(null);
       setPathPrefix("/");
       setTargetId("");
@@ -87,6 +90,7 @@ export function AccessRoutesPanel({
       ),
     onSuccess(updated) {
       deleteKey.clear();
+      onAccepted();
       setDeleteId(null);
       setCleanup(updated.id);
       void queryClient.invalidateQueries({

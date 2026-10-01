@@ -233,6 +233,148 @@ test("调和已应用后仍轮询 Gateway 与 DNS 观测，五分钟后暂停", 
   expect(reads).toBe(stoppedAt);
 });
 
+for (const action of [
+  "TLS",
+  "创建路由",
+  "修改路由",
+  "删除路由",
+  "删除域名",
+] as const) {
+  test(`五分钟后${action}，重新开启有界入口观测`, async ({ page }) => {
+    await page.clock.install();
+    let currentHost = { ...host, issuerPolicyKey: "" };
+    let routes = action === "创建路由" ? [] : [routeRecord];
+    let accepted = false;
+    let ready = false;
+    let reads = 0;
+    await page.route("**/api/v1/projects/p-1/access-hosts/h-1", (route) => {
+      const method = route.request().method();
+      if (method !== "GET") {
+        accepted = true;
+        currentHost = {
+          ...currentHost,
+          ...(method === "PATCH"
+            ? { tlsMode: "managed", issuerPolicyKey: "demo-issuer" }
+            : { lifecycle: "deleting" }),
+          updatedAt: "2026-09-30T10:00:00Z",
+        };
+      }
+      return route.fulfill({ json: currentHost });
+    });
+    await page.route(
+      "**/api/v1/projects/p-1/access-hosts/h-1/status",
+      (route) => {
+        reads++;
+        return route.fulfill({
+          json: {
+            ...status,
+            host: currentHost,
+            sync: {
+              desiredRevision: accepted ? 2 : 1,
+              appliedRevision: ready ? 2 : 0,
+              state: ready ? "applied" : "pending",
+            },
+            controller: {
+              ...status.controller,
+              gatewayState: ready ? "ready" : "not_ready",
+              certificateState: ready ? "ready" : "not_ready",
+              secretState: ready ? "ready" : "not_ready",
+            },
+          },
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/projects/p-1/access-hosts/h-1/routes?*",
+      (route) => route.fulfill({ json: routes }),
+    );
+    await page.route(
+      "**/api/v1/projects/p-1/access-hosts/h-1/eligible-targets?*",
+      (route) =>
+        route.fulfill({
+          json: [{ ...target, applicationName: application.name }],
+        }),
+    );
+    await page.route(
+      "**/api/v1/projects/p-1/access-hosts/h-1/routes",
+      (route) => {
+        accepted = true;
+        routes = [routeRecord];
+        return route.fulfill({ status: 201, json: routeRecord });
+      },
+    );
+    await page.route(
+      "**/api/v1/projects/p-1/access-hosts/h-1/routes/ar-1",
+      (route) => {
+        accepted = true;
+        const updated =
+          route.request().method() === "DELETE"
+            ? { ...routeRecord, lifecycle: "deleting" }
+            : { ...routeRecord, pathPrefix: "/pay-next" };
+        routes = [updated];
+        return route.fulfill({ json: updated });
+      },
+    );
+    await page.goto("/projects/p-1/access-hosts/h-1");
+    await expect(page.getByText("待调和 · 修订 0/1")).toBeVisible();
+    await page.clock.fastForward(301_000);
+    if (action === "TLS") {
+      await page.getByLabel("模式", { exact: true }).selectOption("managed");
+      await page.getByLabel("Issuer Policy").selectOption("demo-issuer");
+      await page.getByRole("button", { name: "保存 TLS 配置" }).click();
+      await expect(page.getByText(/配置已保存/)).toBeVisible();
+    } else if (action === "创建路由" || action === "修改路由") {
+      if (action === "修改路由")
+        await page.getByRole("button", { name: "修改", exact: true }).click();
+      await page
+        .getByLabel("PathPrefix")
+        .fill(action === "创建路由" ? "/pay" : "/pay-next");
+      await page.getByLabel("部署目标").selectOption("t-1");
+      await page
+        .getByRole("button", {
+          name: action === "创建路由" ? "创建路由" : "保存路由",
+        })
+        .click();
+      await expect(
+        page.getByText(action === "创建路由" ? "/pay" : "/pay-next", {
+          exact: true,
+        }),
+      ).toBeVisible();
+    } else if (action === "删除路由") {
+      await page.getByRole("button", { name: "删除", exact: true }).click();
+      await page.getByRole("button", { name: "确认删除路由" }).click();
+      await expect(page.getByText(/清理已接纳，等待控制器完成/)).toBeVisible();
+    } else {
+      await page.getByRole("button", { name: "删除域名" }).click();
+      await page.getByRole("button", { name: "确认删除", exact: true }).click();
+      await expect(page.getByText(/清理已接纳。请继续观察/)).toBeVisible();
+    }
+    await expect(page.getByText("待调和 · 修订 0/2")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "刷新入口状态" }),
+    ).toBeEnabled();
+    expect(accepted).toBe(true);
+    const acceptedReads = reads;
+    ready = true;
+    await page.clock.fastForward(16_000);
+    await expect(page.getByText("已应用 · 修订 2/2")).toBeVisible();
+    expect(reads).toBeGreaterThan(acceptedReads);
+    if (action === "TLS") {
+      const certificate = page
+        .getByRole("term")
+        .filter({ hasText: "证书 / Secret" });
+      await expect(certificate.locator("..")).toContainText("就绪 / 就绪");
+    }
+    await page.clock.fastForward(301_000);
+    await expect(
+      page.getByRole("button", { name: "刷新入口状态" }),
+    ).toBeEnabled();
+    const stoppedAt = reads;
+    await page.clock.fastForward(16_000);
+    expect(reads).toBe(stoppedAt);
+  });
+}
+
 test("路由目标翻页后保留已选 Target", async ({ page }) => {
   await page.route("**/api/v1/projects/p-1/access-hosts/h-1", (route) =>
     route.fulfill({ json: host }),
