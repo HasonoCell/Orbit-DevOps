@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/build"
@@ -58,7 +59,7 @@ type ExecutionObservation struct {
 	LogTruncated bool
 }
 
-// Executor 返回 Orbit-DevOps 构建语义，避免 Runner 依赖 Pod 或 client-go 类型；Cancel 只接收 Start 或 Observe 已确认的身份。
+// Executor 返回 Orbit-DevOps 构建语义，必须响应 Context 取消；Cancel 只接收 Start 或 Observe 已确认的身份。
 type Executor interface {
 	Start(context.Context, BuildExecution) (ExecutionIdentity, error)
 	Observe(context.Context, BuildExecution, ExecutionIdentity) (ExecutionObservation, error)
@@ -113,8 +114,46 @@ func (r *Runner) RunDispatch(ctx context.Context, ref buildoperation.DispatchRef
 	return claim.Outcome, r.runLease(ctx, claim.Lease)
 }
 
-func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) error {
-	record, err := r.builds.GetForExecution(ctx, lease.BuildID)
+func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) (resultErr error) {
+	// 在任何输入读取或外部调用前确认执行权；心跳不与 Start、Observe、Cancel 共用调用栈。
+	renewContext, cancelRenew := context.WithTimeout(ctx, r.renewInterval())
+	renewal, err := r.operations.Renew(renewContext, lease, r.config.LeaseDuration)
+	cancelRenew()
+	if err != nil {
+		return err
+	}
+	lease = renewal.Lease
+	leaseContext, cancelLease := context.WithCancel(ctx)
+	defer cancelLease()
+	executionContext, cancelExecution := context.WithTimeout(leaseContext, r.config.BuildTimeout)
+	defer cancelExecution()
+	workContext, cancelWork := context.WithCancel(executionContext)
+	defer cancelWork()
+	var cancelRequested atomic.Bool
+	cancelRequested.Store(lease.CancelRequested)
+	heartbeatContext, stopHeartbeat := context.WithCancel(leaseContext)
+	heartbeatDone := make(chan error, 1)
+	go func() {
+		heartbeatErr := r.maintainLease(heartbeatContext, lease, func() {
+			cancelRequested.Store(true)
+			cancelWork()
+		})
+		if heartbeatErr != nil {
+			// 失权立即中断外部调用；业务取消只中断观察，不中断后续安全删除及其心跳。
+			cancelLease()
+		}
+		heartbeatDone <- heartbeatErr
+	}()
+	defer func() {
+		stopHeartbeat()
+		heartbeatErr := <-heartbeatDone
+		// 已提交的终态是权威结果；其后并发 Renew 被围栏拒绝不应把成功变成失败。
+		if resultErr != nil && heartbeatErr != nil {
+			resultErr = heartbeatErr
+		}
+	}()
+
+	record, err := r.builds.GetForExecution(leaseContext, lease.BuildID)
 	if err != nil {
 		if errors.Is(err, build.ErrNotFound) {
 			_, completionErr := r.operations.Fail(ctx, lease, buildoperation.Failure{
@@ -130,11 +169,18 @@ func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) error
 		SourceCommit: record.SourceCommit, DockerfilePath: record.DockerfilePath, ContextPath: record.ContextPath,
 		Platform: record.Platform, DestinationRepository: record.DestinationRepository, InputDigest: record.InputDigest,
 	}
-	executionContext, cancel := context.WithTimeout(ctx, r.config.BuildTimeout)
-	defer cancel()
-
-	prepared, err := r.prepareExecution(executionContext, lease, execution)
+	prepareContext := workContext
+	if lease.CancelRequested {
+		prepareContext = executionContext
+	}
+	prepared, err := r.prepareExecution(prepareContext, lease, execution)
 	if err != nil {
+		if leaseContext.Err() != nil {
+			return leaseContext.Err()
+		}
+		if cancelRequested.Load() && executionContext.Err() == nil {
+			return r.cancelExecution(executionContext, lease, execution, prepared)
+		}
 		return r.finishExecutorError(ctx, lease, err)
 	}
 	if prepared.recordIdentity {
@@ -146,31 +192,126 @@ func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) error
 	}
 	observation := prepared.observation
 	for {
+		if leaseContext.Err() != nil {
+			return leaseContext.Err()
+		}
+		if cancelRequested.Load() && observation.Phase != PhaseCanceled && observation.ErrorCode != "build_job_ownership_conflict" {
+			return r.cancelExecution(executionContext, lease, execution, prepared)
+		}
 		if observation.Phase != "" && observation.Phase != PhaseRunning {
+			// 快速终态可能先于下一次心跳，提交前同步读取取消标记，避免绕过刚受理的取消。
+			checkContext, cancelCheck := context.WithTimeout(leaseContext, r.renewInterval())
+			renewal, err := r.operations.Renew(checkContext, lease, r.config.LeaseDuration)
+			cancelCheck()
+			if err != nil {
+				return err
+			}
+			if renewal.CancelRequested && observation.Phase != PhaseCanceled && observation.ErrorCode != "build_job_ownership_conflict" {
+				return r.cancelExecution(executionContext, lease, execution, prepared)
+			}
 			return r.finishObservation(ctx, lease, observation)
 		}
 		select {
-		case <-executionContext.Done():
+		case <-workContext.Done():
+			if cancelRequested.Load() && executionContext.Err() == nil {
+				continue
+			}
+			if leaseContext.Err() != nil {
+				return leaseContext.Err()
+			}
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			return r.finishExecutorError(ctx, lease, newFailure("build_timeout", "build execution timed out", buildoperation.NonRetryable, nil))
 		case <-time.After(r.config.PollInterval):
 		}
-		renewal, err := r.operations.Renew(ctx, lease, r.config.LeaseDuration)
+		observation, err = r.executor.Observe(workContext, prepared.execution, prepared.identity)
 		if err != nil {
-			return err
-		}
-		lease = renewal.Lease
-		if renewal.CancelRequested {
-			observation, err = r.executor.Cancel(executionContext, prepared.identity)
-		} else {
-			observation, err = r.executor.Observe(executionContext, prepared.execution, prepared.identity)
-		}
-		if err != nil {
+			if leaseContext.Err() != nil {
+				return leaseContext.Err()
+			}
+			if cancelRequested.Load() && executionContext.Err() == nil {
+				continue
+			}
 			return r.finishExecutorError(ctx, lease, err)
 		}
 	}
+}
+
+func (r *Runner) renewInterval() time.Duration {
+	return max(time.Nanosecond, min(r.config.LeaseDuration/3, 5*time.Second))
+}
+
+// maintainLease 持续覆盖输入读取、恢复、执行和取消；每次数据库调用有短预算，失败即停止执行。
+func (r *Runner) maintainLease(ctx context.Context, lease buildoperation.Lease, onCancel func()) error {
+	ticker := time.NewTicker(r.renewInterval())
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			renewContext, cancel := context.WithTimeout(ctx, r.renewInterval())
+			renewal, err := r.operations.Renew(renewContext, lease, r.config.LeaseDuration)
+			cancel()
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("renew claimed build operation: %w", err)
+			}
+			lease = renewal.Lease
+			if renewal.CancelRequested {
+				onCancel()
+			}
+		}
+	}
+}
+
+// cancelExecution 在独立于被打断观察的 Context 中取消 Job。Start 响应丢失时先回读确定性名称，绝不盲删。
+func (r *Runner) cancelExecution(ctx context.Context, lease buildoperation.Lease, execution BuildExecution, prepared preparedExecution) error {
+	// 即使 Start 响应失败，也保留实际调用的 Attempt；恢复中重建的新 Job 不属于旧 Attempt。
+	if prepared.execution.BuildAttemptID != uuid.Nil {
+		execution = prepared.execution
+	}
+	identity := prepared.identity
+	if identity.Name == "" || identity.UID == "" {
+		if prepared.execution.BuildAttemptID == uuid.Nil && lease.RecoveredFromAttemptID != nil {
+			execution.BuildAttemptID = *lease.RecoveredFromAttemptID
+		}
+		identity.Name = "orbit-devops-build-" + execution.BuildAttemptID.String()
+		if lease.RecoveredFromAttemptID != nil && execution.BuildAttemptID == *lease.RecoveredFromAttemptID {
+			if lease.PreviousExecutorName != nil {
+				identity.Name = *lease.PreviousExecutorName
+			}
+			if lease.PreviousExecutorUID != nil {
+				identity.UID = *lease.PreviousExecutorUID
+			}
+		}
+		observation, err := r.executor.Observe(ctx, execution, identity)
+		if err != nil {
+			return r.finishExecutorError(ctx, lease, err)
+		}
+		if observation.Phase == PhaseMissing {
+			return r.operations.ConfirmCanceled(ctx, lease, "", false)
+		}
+		if observation.ErrorCode == "build_job_ownership_conflict" {
+			return r.finishObservation(ctx, lease, observation)
+		}
+		identity = observation.Identity
+		if identity.Name == "" || identity.UID == "" {
+			return r.finishExecutorError(ctx, lease, newFailure("build_job_ownership_conflict",
+				"the canceled build job could not be identified safely", buildoperation.UnknownOutcome, nil))
+		}
+		if err := r.operations.RecordExecutorIdentity(ctx, lease, buildoperation.ExecutorIdentity{Name: identity.Name, UID: identity.UID}); err != nil {
+			return err
+		}
+	}
+	observation, err := r.executor.Cancel(ctx, identity)
+	if err != nil {
+		return r.finishExecutorError(ctx, lease, err)
+	}
+	return r.finishObservation(ctx, lease, observation)
 }
 
 // prepareExecution 在恢复窗口中优先核验旧 Job；取消恢复绝不创建新 Job，普通恢复仅在安全条件下重建。
@@ -189,7 +330,7 @@ func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Leas
 		previous := ExecutionIdentity{Name: name, UID: uid}
 		observation, err := r.executor.Observe(ctx, previousExecution, previous)
 		if err != nil {
-			return preparedExecution{}, err
+			return preparedExecution{execution: previousExecution, identity: previous}, err
 		}
 		// 取消请求在领取事务中已经确定。旧 Job 缺失即表示没有需要重新启动的执行；存在时只取消已核验身份。
 		if lease.CancelRequested {
@@ -202,12 +343,12 @@ func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Leas
 			}
 			identity := observation.Identity
 			if identity.Name == "" || identity.UID == "" {
-				return preparedExecution{}, newFailure("build_job_ownership_conflict",
+				return preparedExecution{execution: previousExecution}, newFailure("build_job_ownership_conflict",
 					"the recovered build job could not be identified safely for cancellation", buildoperation.UnknownOutcome, nil)
 			}
 			canceled, err := r.executor.Cancel(ctx, identity)
 			if err != nil {
-				return preparedExecution{}, err
+				return preparedExecution{execution: previousExecution, identity: identity}, err
 			}
 			return preparedExecution{execution: previousExecution, identity: identity,
 				observation: canceled, recordIdentity: true}, nil
@@ -223,7 +364,7 @@ func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Leas
 				observation: observation, recordIdentity: trusted}, nil
 		}
 		if uid != "" {
-			return preparedExecution{},
+			return preparedExecution{execution: previousExecution, identity: previous},
 				newFailure("build_job_missing", "previous build job disappeared after its UID was recorded", buildoperation.UnknownOutcome, nil)
 		}
 	}
@@ -233,7 +374,7 @@ func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Leas
 	}
 	identity, err := r.executor.Start(ctx, execution)
 	if err != nil {
-		return preparedExecution{}, err
+		return preparedExecution{execution: execution}, err
 	}
 	return preparedExecution{execution: execution, identity: identity,
 		observation: ExecutionObservation{Phase: PhaseRunning, Identity: identity}, recordIdentity: true}, nil
