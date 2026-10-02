@@ -17,6 +17,47 @@ const readyImage =
 test.skip(!loginName || !password, "需要显式提供本地验收管理员凭据");
 
 test("浏览器经真实 API 管理资源并发布到本地 Kind", async ({ page }) => {
+  // 即使不验收 Gateway，也必须从本地集群独立核验 Deployment/Service，不能只信 API succeeded。
+  const kubeconfig = process.env.ORBIT_DEVOPS_KUBECONFIG;
+  const context = process.env.ORBIT_DEVOPS_KUBERNETES_CONTEXT;
+  const namespace = process.env.ORBIT_DEVOPS_NAMESPACE;
+  if (!kubeconfig || !context?.startsWith("kind-") || !namespace) {
+    throw new Error(
+      "真实 E2E 需要显式指定本地 Kind kubeconfig、context 和任务 namespace",
+    );
+  }
+  const kubectlArgs = ["--kubeconfig", kubeconfig, "--context", context];
+  const kubectl = (...args: string[]) =>
+    JSON.parse(
+      execFileSync("kubectl", [...kubectlArgs, ...args], {
+        encoding: "utf8",
+        timeout: 10_000,
+      }),
+    );
+  const endpoint = execFileSync(
+    "kubectl",
+    [
+      ...kubectlArgs,
+      "config",
+      "view",
+      "--minify",
+      "-o",
+      "jsonpath={.clusters[0].cluster.server}",
+    ],
+    { encoding: "utf8", timeout: 10_000 },
+  );
+  expect(["127.0.0.1", "localhost", "[::1]"]).toContain(
+    new URL(endpoint).hostname,
+  );
+  const nodes = kubectl("get", "nodes", "-o", "json");
+  expect(nodes.items.length).toBeGreaterThan(0);
+  for (const node of nodes.items)
+    expect(node.metadata.name.startsWith(`${context.slice(5)}-`)).toBe(true);
+  const managedNamespace = kubectl("get", "namespace", namespace, "-o", "json");
+  expect(managedNamespace.metadata.labels["app.kubernetes.io/managed-by"]).toBe(
+    "orbit-devops",
+  );
+
   const seed = randomUUID().slice(0, 8);
   const memberLogin = `e2e-member-${seed}`;
   const projectSlug = `e2e-${seed}`;
@@ -137,6 +178,46 @@ test("浏览器经真实 API 管理资源并发布到本地 Kind", async ({ page
         { timeout: 90_000 },
       )
       .toBe("succeeded");
+    const resourceName = `orbit-devops-${targetId.replaceAll("-", "")}`;
+    const deployment = kubectl(
+      "-n",
+      namespace,
+      "get",
+      "deployment",
+      resourceName,
+      "-o",
+      "json",
+    );
+    const service = kubectl(
+      "-n",
+      namespace,
+      "get",
+      "service",
+      resourceName,
+      "-o",
+      "json",
+    );
+    for (const resource of [deployment, service]) {
+      expect(resource.metadata.uid).toBeTruthy();
+      expect(resource.metadata.labels["orbit-devops.dev/release-id"]).toBe(
+        releaseId,
+      );
+      expect(resource.metadata.labels["orbit-devops.dev/target-id"]).toBe(
+        targetId,
+      );
+      expect(resource.metadata.labels["app.kubernetes.io/managed-by"]).toBe(
+        "orbit-devops",
+      );
+    }
+    expect(deployment.spec.template.spec.containers[0].image).toBe(readyImage);
+    expect(deployment.status.observedGeneration).toBe(
+      deployment.metadata.generation,
+    );
+    expect(deployment.status.readyReplicas).toBe(2);
+    expect(service.spec.selector["orbit-devops.dev/target-id"]).toBe(targetId);
+    expect(service.spec.ports).toContainEqual(
+      expect.objectContaining({ port: 80, targetPort: "http" }),
+    );
     await page.getByRole("button", { name: "刷新状态" }).click();
     await expect(
       page.getByText("执行成功", { exact: true }).first(),
@@ -180,27 +261,7 @@ test("浏览器经真实 API 管理资源并发布到本地 Kind", async ({ page
           routes: [["ready", "ready"]],
         });
 
-      // 只转发到显式配置的本地 Kind；不使用开发者默认 context。
-      const kubeconfig = process.env.ORBIT_DEVOPS_KUBECONFIG!;
-      const context = process.env.ORBIT_DEVOPS_KUBERNETES_CONTEXT!;
-      expect(kubeconfig).toBeTruthy();
-      expect(context).toMatch(/^kind-/);
-      const kubectlArgs = ["--kubeconfig", kubeconfig, "--context", context];
-      const endpoint = execFileSync(
-        "kubectl",
-        [
-          ...kubectlArgs,
-          "config",
-          "view",
-          "--minify",
-          "-o",
-          "jsonpath={.clusters[0].cluster.server}",
-        ],
-        { encoding: "utf8" },
-      );
-      expect(["127.0.0.1", "localhost", "[::1]"]).toContain(
-        new URL(endpoint).hostname,
-      );
+      // 复用进入业务流程前已核验的本地连接；不使用开发者默认 context。
       const services = JSON.parse(
         execFileSync(
           "kubectl",
