@@ -92,6 +92,9 @@ func (m *Module) RegisterSecret(ctx context.Context, command RegisterSecretComma
 		return replayed, nil
 	}
 	if err := m.secretVerifier.VerifyTLSSecret(ctx, m.config.Namespace, command.SecretName, hostname); err != nil {
+		if errors.Is(err, identity.ErrUnavailable) {
+			return SecretBinding{}, identity.ErrUnavailable
+		}
 		return SecretBinding{}, ErrInvalidSecret
 	}
 	tx, err := m.db.BeginTxx(ctx, nil)

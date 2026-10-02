@@ -7,6 +7,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -19,6 +20,9 @@ func (a *Adapter) VerifyTLSSecret(ctx context.Context, namespace, name, hostname
 		return ErrTLSSecretInvalid
 	}
 	secret, err := a.client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+	if clusterTemporarilyUnavailable(err) {
+		return identity.ErrUnavailable
+	}
 	if err != nil || secret.Type != corev1.SecretTypeTLS {
 		return ErrTLSSecretInvalid
 	}

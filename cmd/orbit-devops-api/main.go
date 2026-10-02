@@ -52,7 +52,7 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 	metrics := observability.NewMetrics(nil)
-	adapter, err := kube.NewVerifiedLocalAdapter(
+	adapter, err := kube.NewAPIAdapter(
 		ctx,
 		config.Kubernetes.KubeconfigPath,
 		config.Kubernetes.Context,
@@ -63,16 +63,14 @@ func run(logger *slog.Logger) error {
 			PollInterval:        config.Kubernetes.PollInterval,
 			ReadFailureRecorder: metrics,
 		},
+		config.Access.GatewayClassName,
 	)
 	if err != nil {
 		return err
 	}
 	var accessObserver access.ControllerObserver
 	if config.Access.GatewayClassName != "" {
-		accessObserver, err = kube.NewGatewayAdapter(adapter, config.Access.GatewayClassName)
-		if err != nil {
-			return err
-		}
+		accessObserver = adapter
 	}
 	githubAdapter, err := githubsource.New(githubsource.Config{APIBaseURL: config.GitHubSource.APIBaseURL, Token: config.GitHubSource.Token, EndpointKeys: webhookEndpointKeys(config.GitHubWebhook.Endpoints), Timeout: config.GitHubSource.Timeout})
 	if err != nil {

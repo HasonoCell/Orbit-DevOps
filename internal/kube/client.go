@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -20,19 +21,32 @@ func NewVerifiedLocalAdapter(
 	expectedContext string,
 	config Config,
 ) (*Adapter, error) {
+	adapter, restConfig, err := newLocalAdapter(kubeconfigPath, expectedContext, config)
+	if err != nil {
+		return nil, err
+	}
+	if err := verifyKindIdentity(ctx, adapter.client, expectedContext, config.Namespace); err != nil {
+		return nil, err
+	}
+	adapter.restConfig = restConfig
+	return adapter, nil
+}
+
+// newLocalAdapter 只核验本地配置；REST 配置不赋给 Adapter，在线身份确认前不能创建动态写入客户端。
+func newLocalAdapter(kubeconfigPath, expectedContext string, config Config) (*Adapter, *rest.Config, error) {
 	if kubeconfigPath == "" {
-		return nil, errors.New("kubeconfig path is required")
+		return nil, nil, errors.New("kubeconfig path is required")
 	}
 	if !strings.HasPrefix(expectedContext, "kind-") {
-		return nil, errors.New("expected Kubernetes context must be a Kind context")
+		return nil, nil, errors.New("expected Kubernetes context must be a Kind context")
 	}
 
 	rawConfig, err := clientcmd.LoadFromFile(kubeconfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("load kubeconfig: %w", err)
+		return nil, nil, fmt.Errorf("load kubeconfig: %w", err)
 	}
 	if rawConfig.CurrentContext != expectedContext {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"current Kubernetes context %q does not match expected local context %q",
 			rawConfig.CurrentContext,
 			expectedContext,
@@ -40,14 +54,14 @@ func NewVerifiedLocalAdapter(
 	}
 	contextConfig, ok := rawConfig.Contexts[expectedContext]
 	if !ok {
-		return nil, fmt.Errorf("expected Kubernetes context %q does not exist", expectedContext)
+		return nil, nil, fmt.Errorf("expected Kubernetes context %q does not exist", expectedContext)
 	}
 	clusterConfig, ok := rawConfig.Clusters[contextConfig.Cluster]
 	if !ok {
-		return nil, fmt.Errorf("cluster for Kubernetes context %q does not exist", expectedContext)
+		return nil, nil, fmt.Errorf("cluster for Kubernetes context %q does not exist", expectedContext)
 	}
 	if err := requireLoopbackServer(clusterConfig.Server); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	restConfig, err := clientcmd.NewNonInteractiveClientConfig(
@@ -57,21 +71,17 @@ func NewVerifiedLocalAdapter(
 		nil,
 	).ClientConfig()
 	if err != nil {
-		return nil, fmt.Errorf("build Kubernetes REST config: %w", err)
+		return nil, nil, fmt.Errorf("build Kubernetes REST config: %w", err)
 	}
 	client, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
-		return nil, fmt.Errorf("build Kubernetes client: %w", err)
-	}
-	if err := verifyKindIdentity(ctx, client, expectedContext, config.Namespace); err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("build Kubernetes client: %w", err)
 	}
 	adapter, err := New(client, config)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	adapter.restConfig = restConfig
-	return adapter, nil
+	return adapter, restConfig, nil
 }
 
 // DynamicClient 只从已验证的本地 Kind 连接创建 Gateway API/cert-manager 客户端。
