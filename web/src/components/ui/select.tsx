@@ -1,4 +1,11 @@
-import type { ComponentProps, ReactNode } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { Select as SelectPrimitive } from "radix-ui";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "cn";
@@ -16,6 +23,7 @@ export function Select({
   disabled,
   className,
   placeholder = "请选择",
+  ref: forwardedRef,
   ...triggerProps
 }: Omit<
   ComponentProps<typeof SelectPrimitive.Trigger>,
@@ -26,14 +34,43 @@ export function Select({
   children: ReactNode;
   placeholder?: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useImperativeHandle(forwardedRef, () => trigger.current!);
+  useEffect(() => {
+    if (!open || !trigger.current) return;
+    // 上方异步内容可能把锚点推到视口外；碰撞处理仍需贴着锚点，无法单独修复这种位移。
+    // 只在菜单打开时按可见性变化保留当前操作位置，不使用持续逐帧的位置检查。
+    let observing = true;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!observing) return;
+        for (const entry of entries)
+          if (entry.target.isConnected && entry.intersectionRatio < 1)
+            entry.target.scrollIntoView({
+              block: "nearest",
+              inline: "nearest",
+            });
+      },
+      { threshold: 1 },
+    );
+    observer.observe(trigger.current);
+    return () => {
+      observing = false;
+      observer.disconnect();
+    };
+  }, [open]);
   return (
     <SelectPrimitive.Root
+      open={open}
+      onOpenChange={setOpen}
       value={encode(value)}
       disabled={disabled}
       onValueChange={(next) => onValueChange(next === emptyOption ? "" : next)}
     >
       <SelectPrimitive.Trigger
         {...triggerProps}
+        ref={trigger}
         data-slot="select-trigger"
         data-value={value}
         className={cn(

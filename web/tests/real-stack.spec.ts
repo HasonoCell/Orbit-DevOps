@@ -1,5 +1,5 @@
 import { chooseOption } from "./helpers/select";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { request as httpsRequest } from "node:https";
 import { expect, request as requestContext, test } from "@playwright/test";
@@ -17,6 +17,7 @@ const readyImage =
 test.skip(!loginName || !password, "需要显式提供本地验收管理员凭据");
 
 test("浏览器经真实 API 管理资源并发布到本地 Kind", async ({ page }) => {
+  page.setDefaultTimeout(15_000);
   // 即使不验收 Gateway，也必须从本地集群独立核验 Deployment/Service，不能只信 API succeeded。
   const kubeconfig = process.env.ORBIT_DEVOPS_KUBECONFIG;
   const context = process.env.ORBIT_DEVOPS_KUBERNETES_CONTEXT;
@@ -106,7 +107,15 @@ test("浏览器经真实 API 管理资源并发布到本地 Kind", async ({ page
 
     await page.getByRole("button", { name: "创建开发目标" }).click();
     await page.getByLabel("期望副本").fill("1");
-    await page.getByLabel("容器端口").fill(gatewayEnabled ? "80" : "8080");
+    await page
+      .getByLabel("容器端口")
+      .fill(
+        process.env.ORBIT_DEVOPS_E2E_SOURCE_BUILD === "1"
+          ? "8080"
+          : gatewayEnabled
+            ? "80"
+            : "8080",
+      );
     await page.getByRole("button", { name: "创建部署目标" }).click();
     await expect(page).toHaveURL(/\/targets\/[0-9a-f-]+$/);
     targetId = new URL(page.url()).pathname.split("/").at(-1)!;
@@ -125,6 +134,190 @@ test("浏览器经真实 API 管理资源并发布到本地 Kind", async ({ page
     await page.getByRole("button", { name: "添加成员" }).click();
     await expect(page.getByText("成员已添加。")).toBeVisible();
   });
+
+  if (process.env.ORBIT_DEVOPS_E2E_SOURCE_BUILD === "1") {
+    await test.step("浏览器创建 Pipeline，签名 Push 经真实 BuildKit 交付并晋级生产", async () => {
+      const secret = process.env.ORBIT_DEVOPS_E2E_WEBHOOK_SECRET;
+      const buildNamespace = process.env.ORBIT_DEVOPS_BUILD_NAMESPACE;
+      if (!secret || !buildNamespace)
+        throw new Error("源码验收需要显式 Webhook 密钥和独立 Build namespace");
+      await page.goto(applicationPath + "/pipelines/new");
+      await page.getByLabel("名称", { exact: true }).fill("Source E2E");
+      await page.getByLabel("Endpoint Key").fill("refactor-e2e");
+      await page
+        .getByLabel("GitHub Clone URL")
+        .fill("https://github.com/nginxinc/NGINX-Demos.git");
+      await page.getByLabel("分支", { exact: true }).fill("master");
+      await page
+        .getByLabel("Dockerfile 路径")
+        .fill("nginx-hello-nonroot/plain-text-version/Dockerfile");
+      await page
+        .getByLabel("构建上下文")
+        .fill("nginx-hello-nonroot/plain-text-version");
+      await chooseOption(page.getByLabel("交付模式"), "auto_release");
+      await chooseOption(page.getByLabel("开发 Target"), targetId);
+      await page.getByRole("button", { name: "创建 Pipeline" }).click();
+      await expect(page).toHaveURL(/\/pipelines\/[0-9a-f-]+$/);
+      const pipelineId = new URL(page.url()).pathname.split("/").at(-1)!;
+      await page
+        .getByRole("button", { name: "启用 Pipeline", exact: true })
+        .click();
+      await page.getByRole("button", { name: "确认", exact: true }).click();
+      await expect(
+        page.getByText("Orbit 已启用", { exact: true }),
+      ).toBeVisible();
+      const configResponse = await page.request.get(
+        `/api/v1/delivery-pipelines/${pipelineId}`,
+      );
+      expect(configResponse.ok()).toBe(true);
+      const config = await configResponse.json();
+      const sourceResponse = await page.request.get(
+        "https://api.github.com/repos/nginxinc/NGINX-Demos/commits/master",
+      );
+      expect(sourceResponse.ok()).toBe(true);
+      const source = await sourceResponse.json();
+      const payload = JSON.stringify({
+        ref: "refs/heads/master",
+        before: "0".repeat(40),
+        after: source.sha,
+        forced: false,
+        deleted: false,
+        repository: {
+          id: config.revision.repositoryId,
+          full_name: config.revision.repositoryFullName,
+          clone_url: config.revision.repositoryUrl,
+          owner: { id: config.revision.repositoryOwnerId },
+        },
+      });
+      const delivery = await page.request.post(
+        "/api/v1/webhooks/github/refactor-e2e",
+        {
+          data: payload,
+          headers: {
+            "Content-Type": "application/json",
+            "X-GitHub-Event": "push",
+            "X-GitHub-Delivery": randomUUID(),
+            "X-Hub-Signature-256":
+              "sha256=" +
+              createHmac("sha256", secret).update(payload).digest("hex"),
+          },
+        },
+      );
+      expect(delivery.status()).toBe(202);
+      expect((await delivery.json()).state).toBe("pending");
+      let completed: { buildId: string; releaseId: string } | undefined;
+      await expect
+        .poll(
+          async () => {
+            const response = await page.request.get(
+              `/api/v1/delivery-pipelines/${pipelineId}/runs?limit=1`,
+            );
+            expect(response.ok()).toBe(true);
+            const run = (await response.json()).items[0];
+            if (run?.status === "succeeded") completed = run.run;
+            return run?.status;
+          },
+          { timeout: 480_000, intervals: [1000, 3000, 5000] },
+        )
+        .toBe("succeeded");
+      if (!completed) throw new Error("交付未产生 Build/Release");
+      const buildResponse = await page.request.get(
+        "/api/v1/builds/" + completed.buildId,
+      );
+      expect(buildResponse.ok()).toBe(true);
+      const acceptedBuild = await buildResponse.json();
+      expect(acceptedBuild.buildOperation.status).toBe("succeeded");
+      expect(acceptedBuild.imageArtifact.digest).toMatch(
+        /^sha256:[a-f0-9]{64}$/,
+      );
+      const jobs = kubectl(
+        "-n",
+        buildNamespace,
+        "get",
+        "jobs",
+        "-l",
+        "orbit-devops.dev/build-id=" + completed.buildId,
+        "-o",
+        "json",
+      );
+      expect(jobs.items).toHaveLength(1);
+      expect(jobs.items[0].status.succeeded).toBe(1);
+      const name = "orbit-devops-" + targetId.replaceAll("-", "");
+      const deployed = kubectl(
+        "-n",
+        namespace,
+        "get",
+        "deployment",
+        name,
+        "-o",
+        "json",
+      );
+      expect(deployed.spec.template.spec.containers[0].image).toBe(
+        acceptedBuild.imageArtifact.imageReference,
+      );
+      expect(deployed.status.readyReplicas).toBe(2);
+      await page.goto(applicationPath + "/builds/" + completed.buildId);
+      await expect(
+        page.getByText(acceptedBuild.imageArtifact.digest, { exact: true }),
+      ).toBeVisible();
+      await page.goto(applicationPath);
+      await page.getByRole("button", { name: "创建生产目标" }).click();
+      await page.getByLabel("期望副本").fill("1");
+      await page.getByLabel("容器端口").fill("8080");
+      await page.getByRole("button", { name: "创建部署目标" }).click();
+      await expect(page).toHaveURL(/\/targets\/[0-9a-f-]+$/);
+      const productionId = new URL(page.url()).pathname.split("/").at(-1)!;
+      await page.goto(
+        applicationPath +
+          "?target=" +
+          productionId +
+          "&buildSource=" +
+          completed.buildId +
+          "&createRelease=1",
+      );
+      await page.getByRole("checkbox").check();
+      await page.getByRole("button", { name: "确认发布到生产环境" }).click();
+      await expect(page).toHaveURL(/\/releases\/[0-9a-f-]+$/);
+      const productionReleaseId = new URL(page.url()).pathname
+        .split("/")
+        .at(-1)!;
+      await expect
+        .poll(
+          async () => {
+            const response = await page.request.get(
+              "/api/v1/releases/" + productionReleaseId,
+            );
+            return (await response.json()).releaseOperation.status;
+          },
+          { timeout: 90_000 },
+        )
+        .toBe("succeeded");
+      const production = kubectl(
+        "-n",
+        namespace,
+        "get",
+        "deployment",
+        "orbit-devops-" + productionId.replaceAll("-", ""),
+        "-o",
+        "json",
+      );
+      expect(production.spec.template.spec.containers[0].image).toBe(
+        acceptedBuild.imageArtifact.imageReference,
+      );
+      expect(production.status.readyReplicas).toBe(1);
+      await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+      await expect(
+        page.locator("#operation").getByText("执行成功", { exact: true }),
+      ).toBeVisible();
+      // 后续 Gateway 断言使用 whoami:80；这里只修订开发 Target，不改写上述不可变 Release。
+      await page.goto(applicationPath + "/targets/" + targetId);
+      await page.getByLabel("容器端口").fill("80");
+      await page.getByRole("button", { name: "保存配置" }).click();
+      await expect(
+        page.getByText("配置已保存，将在下一次发布中应用"),
+      ).toBeVisible();
+    });
+  }
 
   await test.step("创建访问域名和基础路由", async () => {
     if (tlsHostname && tlsSecretName) {
@@ -157,7 +350,8 @@ test("浏览器经真实 API 管理资源并发布到本地 Kind", async ({ page
   });
 
   await test.step("创建发布并等候 Worker 在 Kind 中应用", async () => {
-    await page.goto(applicationPath);
+    // 双阶段验收已经创建 production；手动发布必须显式选 development，不依赖默认目标。
+    await page.goto(applicationPath + "?target=" + targetId);
     await page.getByRole("button", { name: "新建发布" }).click();
     await chooseOption(page.getByLabel("镜像来源"), "reference");
     await page.getByLabel("镜像引用", { exact: true }).fill(readyImage);

@@ -168,6 +168,68 @@ test("项目创建 Host、选择同边界 Target 建 Route，并分开呈现入�
   await expect(page.getByText(/清理已接纳。请继续观察/)).toBeVisible();
 });
 
+test("托管 TLS 长页面中的 Target 下拉可见且可点击", async ({ page }) => {
+  test.setTimeout(15_000);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const managed = {
+    ...host,
+    tlsMode: "managed",
+    issuerPolicyKey: "demo-issuer",
+  };
+  await page.route("**/api/v1/projects/p-1/access-hosts/h-1", (route) =>
+    route.fulfill({ json: managed }),
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/status",
+    async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return route.fulfill({
+        json: {
+          ...status,
+          host: managed,
+          controller: { ...status.controller, certificateNotAfter: timestamp },
+          dns: { ...status.dns, errorCode: "dns_lookup_failed" },
+        },
+      });
+    },
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/routes?*",
+    (route) => route.fulfill({ json: [] }),
+  );
+  await page.route(
+    "**/api/v1/projects/p-1/access-hosts/h-1/eligible-targets?*",
+    (route) =>
+      route.fulfill({
+        json: ["development", "production"].map((stage, n) => ({
+          id: `target-${n}`,
+          applicationId: "a-1",
+          applicationName: "E2E Service",
+          stage,
+          clusterRef: host.clusterRef,
+          namespace: host.namespace,
+        })),
+      }),
+  );
+  await page.goto("/projects/p-1/access-hosts/h-1");
+  await page.getByLabel("PathPrefix").fill("/e2e");
+  await page.getByLabel("部署目标").click();
+  const menu = page.getByRole("listbox");
+  await expect(menu.getByRole("option")).toHaveCount(3);
+  await expect(
+    page.getByText("dns_lookup_failed", { exact: true }),
+  ).toBeVisible();
+  await expect(menu).toBeInViewport({ ratio: 1 });
+  await menu
+    .locator('[data-slot="select-item"][data-value="target-0"]')
+    .click();
+  await expect(menu).toHaveCount(0);
+  await expect(page.getByLabel("部署目标")).toHaveAttribute(
+    "data-value",
+    "target-0",
+  );
+});
+
 test("Host 列表按 offset 分页，不扫描项目资源", async ({ page }) => {
   await page.route("**/api/v1/projects/p-1/access-hosts?*", (route) => {
     const offset = new URL(route.request().url()).searchParams.get("offset");

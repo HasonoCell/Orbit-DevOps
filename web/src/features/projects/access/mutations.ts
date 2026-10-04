@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import type { components } from "@/api/schema";
 import { useCommandKey } from "@/shared/use-command-key";
+import { invalidateHostTargetRoutes } from "./target-route-cache";
 import {
   accessKeys,
   createHost,
@@ -18,7 +19,7 @@ import {
 type Host = components["schemas"]["AccessHost"];
 type Route = components["schemas"]["AccessRoute"];
 
-/** Host 的关联入口只刷新已知包含此 Host 的 Target 分页，不干扰其他项目。 */
+/** Host 的关联入口覆盖相关 Target 的全部分页，不干扰其他项目。 */
 export function invalidateHost(
   client: QueryClient,
   projectId: string,
@@ -31,14 +32,7 @@ export function invalidateHost(
   void client.invalidateQueries({
     queryKey: accessKeys.status(projectId, hostId),
   });
-  void client.invalidateQueries({
-    predicate: (query) =>
-      query.queryKey[0] === "target-access-routes" &&
-      Array.isArray(query.state.data) &&
-      query.state.data.some(
-        (item: { hostId: string }) => item.hostId === hostId,
-      ),
-  });
+  invalidateHostTargetRoutes(client, projectId, hostId);
 }
 
 export function useWriteHost(
