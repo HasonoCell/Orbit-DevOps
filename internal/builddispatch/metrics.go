@@ -19,7 +19,7 @@ func (s *Service) Ready(ctx context.Context) error {
 	if _, err := s.operations.ReadMetricsSnapshot(ctx); err != nil {
 		return errors.New("build_dispatch_store_unavailable")
 	}
-	if err := s.connection.Ping(ctx).Err(); err != nil {
+	if err := s.transport.Ping(ctx); err != nil {
 		return errors.New("build_queue_unavailable")
 	}
 	return nil

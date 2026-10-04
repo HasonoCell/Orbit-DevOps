@@ -132,7 +132,8 @@ func (q *Transport) Start(handler asynq.Handler) error {
 		return handler.ProcessTask(ctx, task)
 	})); err != nil {
 		cancel()
-		_ = q.connection.Close()
+		q.closed, q.closing = true, true
+		q.closeOnce.Do(func() { _ = q.connection.Close() })
 		return errors.New("queue_start_failed")
 	}
 	return nil

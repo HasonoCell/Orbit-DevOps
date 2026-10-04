@@ -1,13 +1,15 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -32,7 +34,7 @@ func TestAPIContinuesStartupWhenKubernetesUnavailable(t *testing.T) {
 	t.Setenv("ORBIT_DEVOPS_DATABASE_URL", "postgres://test:test@127.0.0.1:1/test?sslmode=disable&connect_timeout=1")
 	t.Setenv("ORBIT_DEVOPS_MIGRATE_ON_BOOT", "false")
 	err := run(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), "ping database") {
+	if !errors.Is(err, database.ErrUnavailable) {
 		t.Fatalf("Kubernetes outage prevented database startup: %v", err)
 	}
 }

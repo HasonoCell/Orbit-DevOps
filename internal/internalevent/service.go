@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/taskqueue"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	redisclient "github.com/redis/go-redis/v9"
 )
 
 const TaskType = "orbit-devops:internal-event:v1"
@@ -37,9 +37,7 @@ type Service struct {
 	config           Config
 	events           *Module
 	executor         Executor
-	connection       *redisclient.Client
-	client           *asynq.Client
-	redis            asynq.RedisClientOpt
+	transport        *taskqueue.Transport
 	started          atomic.Bool
 	running          atomic.Bool
 	lastPublish      atomic.Int64
@@ -48,9 +46,6 @@ type Service struct {
 	ignored          atomic.Uint64
 	invalid          atomic.Uint64
 	processingErrors atomic.Uint64
-	workers          sync.WaitGroup
-	mu               sync.Mutex
-	closing          bool
 }
 
 func NewService(config Config, events *Module, executor Executor) (*Service, error) {
@@ -79,12 +74,21 @@ func NewService(config Config, events *Module, executor Executor) (*Service, err
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	redis := asynq.RedisClientOpt{Addr: config.RedisAddress, Username: config.RedisUsername, Password: config.RedisPassword, DB: config.RedisDB, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second}
-	connection := redisclient.NewClient(&redisclient.Options{Addr: config.RedisAddress, Username: config.RedisUsername, Password: config.RedisPassword, DB: config.RedisDB, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second, ContextTimeoutEnabled: true, MaxRetries: -1})
-	return &Service{config: config, events: events, executor: executor, redis: redis, connection: connection, client: asynq.NewClientFromRedisClient(connection)}, nil
+	service := &Service{config: config, events: events, executor: executor}
+	transport, err := taskqueue.New(taskqueue.Config{RedisAddress: config.RedisAddress,
+		RedisUsername: config.RedisUsername, RedisPassword: config.RedisPassword, RedisDB: config.RedisDB,
+		Queue: config.Queue, Concurrency: config.Concurrency, PollInterval: config.PollInterval,
+		TaskTimeout: config.TaskTimeout, ShutdownTimeout: config.ShutdownTimeout, MaxRetry: 8,
+		Logger:  config.Logger,
+		OnPanic: func() { service.processingErrors.Add(1) }})
+	if err != nil {
+		return nil, err
+	}
+	service.transport = transport
+	return service, nil
 }
 
-func (s *Service) Close() error { return s.connection.Close() }
+func (s *Service) Close() error { return s.transport.Close() }
 
 // PublishOnce 在数据库事务外并发发送有界批次，Redis 失败只延迟事件而不丢失事实。
 func (s *Service) PublishOnce(ctx context.Context) error {
@@ -115,9 +119,7 @@ func (s *Service) publish(ctx context.Context, item Reservation) error {
 	if err != nil {
 		return errors.New("internal_event_encoding_failed")
 	}
-	sendContext, cancel := context.WithTimeout(ctx, time.Second)
-	_, sendErr := s.client.EnqueueContext(sendContext, asynq.NewTask(TaskType, payload), asynq.Queue(s.config.Queue), asynq.ProcessAt(item.AvailableAt), asynq.MaxRetry(8), asynq.Timeout(s.config.TaskTimeout))
-	cancel()
+	_, sendErr := s.transport.Send(ctx, asynq.NewTask(TaskType, payload), item.AvailableAt)
 	code := ""
 	if sendErr != nil {
 		code = "queue_unavailable"
@@ -138,11 +140,8 @@ func (s *Service) Run(ctx context.Context) error {
 		return errors.New("internal event service already started")
 	}
 	defer s.Close()
-	workerContext, cancelWorkers := context.WithCancel(context.Background())
-	defer cancelWorkers()
-	server := asynq.NewServer(s.redis, asynq.Config{Concurrency: s.config.Concurrency, Queues: map[string]int{s.config.Queue: 1}, BaseContext: func() context.Context { return workerContext }, TaskCheckInterval: s.config.PollInterval, DelayedTaskCheckInterval: s.config.PollInterval, ShutdownTimeout: s.config.ShutdownTimeout, Logger: quietLogger{s.config.Logger}, LogLevel: asynq.ErrorLevel})
-	if err := server.Start(asynq.HandlerFunc(s.handle)); err != nil {
-		return errors.New("internal_event_queue_start_failed")
+	if err := s.transport.Start(asynq.HandlerFunc(s.handle)); err != nil {
+		return err
 	}
 	s.running.Store(true)
 	defer s.running.Store(false)
@@ -157,13 +156,10 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 		select {
 		case <-ctx.Done():
-			server.Stop()
-			server.Shutdown()
-			s.mu.Lock()
-			s.closing = true
-			cancelWorkers()
-			s.mu.Unlock()
-			s.workers.Wait()
+			s.transport.Stop()
+			if err := s.transport.Close(); err != nil {
+				return err
+			}
 			return nil
 		case <-ticker.C:
 		}
@@ -171,21 +167,6 @@ func (s *Service) Run(ctx context.Context) error {
 }
 
 func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
-	s.mu.Lock()
-	if s.closing {
-		s.mu.Unlock()
-		return errors.New("pipeline_worker_stopping")
-	}
-	s.workers.Add(1)
-	s.mu.Unlock()
-	defer s.workers.Done()
-	defer func() {
-		if recover() != nil {
-			s.processingErrors.Add(1)
-			s.config.Logger.WarnContext(ctx, "内部事件处理被中断")
-			result = errors.New("internal_event_handler_interrupted")
-		}
-	}()
 	var ref Ref
 	decoder := json.NewDecoder(bytes.NewReader(task.Payload()))
 	decoder.DisallowUnknownFields()
@@ -231,12 +212,3 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	}
 	return nil
 }
-
-type quietLogger struct{ logger *slog.Logger }
-
-func (quietLogger) Debug(args ...interface{}) {}
-func (quietLogger) Info(args ...interface{})  {}
-func (quietLogger) Warn(args ...interface{})  { quietLogger{}.discard(args...) }
-func (quietLogger) Error(args ...interface{}) { quietLogger{}.discard(args...) }
-func (quietLogger) Fatal(args ...interface{}) { quietLogger{}.discard(args...) }
-func (quietLogger) discard(...interface{})    {}

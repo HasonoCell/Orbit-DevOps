@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/taskqueue"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	redisclient "github.com/redis/go-redis/v9"
 )
 
 const TaskType = "orbit-devops:build-dispatch:v1"
@@ -46,9 +46,7 @@ type Service struct {
 	config          Config
 	operations      *buildoperation.Module
 	executor        Executor
-	connection      *redisclient.Client
-	client          *asynq.Client
-	redis           asynq.RedisClientOpt
+	transport       *taskqueue.Transport
 	started         atomic.Bool
 	running         atomic.Bool
 	lastPublish     atomic.Int64
@@ -58,9 +56,6 @@ type Service struct {
 	ignored         atomic.Uint64
 	invalid         atomic.Uint64
 	executionErrors atomic.Uint64
-	workersMu       sync.Mutex
-	workers         sync.WaitGroup
-	closing         bool
 }
 
 func New(config Config, operations *buildoperation.Module, executor Executor) (*Service, error) {
@@ -78,20 +73,21 @@ func New(config Config, operations *buildoperation.Module, executor Executor) (*
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	redis := asynq.RedisClientOpt{
-		Addr: config.RedisAddress, Username: config.RedisUsername, Password: config.RedisPassword,
-		DB: config.RedisDB, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second,
+	service := &Service{config: config, operations: operations, executor: executor}
+	transport, err := taskqueue.New(taskqueue.Config{RedisAddress: config.RedisAddress,
+		RedisUsername: config.RedisUsername, RedisPassword: config.RedisPassword, RedisDB: config.RedisDB,
+		Queue: config.Queue, Concurrency: config.Concurrency, PollInterval: config.PollInterval,
+		TaskTimeout: config.TaskTimeout, ShutdownTimeout: config.ShutdownTimeout, MaxRetry: 5,
+		RetryDelay: taskqueue.ShortRetryDelay, Logger: config.Logger,
+		OnPanic: func() { service.executionErrors.Add(1) }})
+	if err != nil {
+		return nil, err
 	}
-	connection := redisclient.NewClient(&redisclient.Options{
-		Addr: config.RedisAddress, Username: config.RedisUsername, Password: config.RedisPassword,
-		DB: config.RedisDB, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second,
-		ContextTimeoutEnabled: true, MaxRetries: -1,
-	})
-	return &Service{config: config, operations: operations, executor: executor, redis: redis,
-		connection: connection, client: asynq.NewClientFromRedisClient(connection)}, nil
+	service.transport = transport
+	return service, nil
 }
 
-func (s *Service) Close() error { return s.connection.Close() }
+func (s *Service) Close() error { return s.transport.Close() }
 
 // PublishOnce 在数据库事务外发送消息；确认失败时保留同一持久化意图供补发。
 func (s *Service) PublishOnce(ctx context.Context) error {
@@ -125,10 +121,7 @@ func (s *Service) publish(ctx context.Context, item buildoperation.Dispatch) err
 	if err != nil {
 		return errors.New("build_dispatch_encoding_failed")
 	}
-	sendContext, cancel := context.WithTimeout(ctx, time.Second)
-	_, sendErr := s.client.EnqueueContext(sendContext, asynq.NewTask(TaskType, payload),
-		asynq.Queue(s.config.Queue), asynq.ProcessAt(item.AvailableAt), asynq.MaxRetry(5), asynq.Timeout(s.config.TaskTimeout))
-	cancel()
+	_, sendErr := s.transport.Send(ctx, asynq.NewTask(TaskType, payload), item.AvailableAt)
 	code := ""
 	if sendErr != nil {
 		code = "queue_unavailable"
@@ -151,19 +144,8 @@ func (s *Service) Run(ctx context.Context) error {
 		return errors.New("build dispatch service already started")
 	}
 	defer s.Close()
-	workerContext, cancelWorkers := context.WithCancel(context.Background())
-	defer cancelWorkers()
-	server := asynq.NewServer(s.redis, asynq.Config{
-		Concurrency: s.config.Concurrency, Queues: map[string]int{s.config.Queue: 1},
-		BaseContext: func() context.Context { return workerContext }, TaskCheckInterval: s.config.PollInterval,
-		DelayedTaskCheckInterval: s.config.PollInterval, ShutdownTimeout: s.config.ShutdownTimeout,
-		Logger: quietLogger{s.config.Logger}, LogLevel: asynq.ErrorLevel,
-		RetryDelayFunc: func(n int, _ error, _ *asynq.Task) time.Duration {
-			return min(time.Second*time.Duration(1<<min(n, 5)), 30*time.Second)
-		},
-	})
-	if err := server.Start(asynq.HandlerFunc(s.handle)); err != nil {
-		return errors.New("build_queue_start_failed")
+	if err := s.transport.Start(asynq.HandlerFunc(s.handle)); err != nil {
+		return err
 	}
 	s.running.Store(true)
 	var loops sync.WaitGroup
@@ -181,14 +163,11 @@ func (s *Service) Run(ctx context.Context) error {
 	}()
 	<-ctx.Done()
 	s.running.Store(false)
-	server.Stop()
+	s.transport.Stop()
 	loops.Wait()
-	server.Shutdown()
-	s.workersMu.Lock()
-	s.closing = true
-	cancelWorkers()
-	s.workersMu.Unlock()
-	s.workers.Wait()
+	if err := s.transport.Close(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -214,20 +193,6 @@ func (s *Service) loop(ctx context.Context, interval time.Duration, run func(con
 }
 
 func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
-	s.workersMu.Lock()
-	if s.closing {
-		s.workersMu.Unlock()
-		return errors.New("build_worker_stopping")
-	}
-	s.workers.Add(1)
-	s.workersMu.Unlock()
-	defer s.workers.Done()
-	defer func() {
-		if recover() != nil {
-			s.executionErrors.Add(1)
-			result = errors.New("build_dispatch_handler_interrupted")
-		}
-	}()
 	var ref buildoperation.DispatchRef
 	decoder := json.NewDecoder(bytes.NewReader(task.Payload()))
 	decoder.DisallowUnknownFields()
@@ -247,11 +212,3 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	}
 	return nil
 }
-
-type quietLogger struct{ logger *slog.Logger }
-
-func (l quietLogger) Debug(...interface{}) {}
-func (l quietLogger) Info(...interface{})  {}
-func (l quietLogger) Warn(...interface{})  { l.logger.Warn("Asynq 构建队列警告") }
-func (l quietLogger) Error(...interface{}) { l.logger.Error("Asynq 构建队列暂时不可用") }
-func (l quietLogger) Fatal(...interface{}) { l.logger.Error("Asynq 构建队列运行失败") }

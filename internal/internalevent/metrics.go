@@ -60,7 +60,7 @@ func (s *Service) Ready(ctx context.Context) error {
 	if _, err := s.events.ReadMetricsSnapshot(ctx); err != nil {
 		return errors.New("internal_event_store_unavailable")
 	}
-	if err := s.connection.Ping(ctx).Err(); err != nil {
+	if err := s.transport.Ping(ctx); err != nil {
 		return errors.New("internal_event_queue_unavailable")
 	}
 	return nil
