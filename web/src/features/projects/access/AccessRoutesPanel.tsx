@@ -1,21 +1,14 @@
-import { Select, SelectItem } from "@/components/ui/select";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
-import type { components } from "@/api/schema";
 import { errorText } from "@/api/http";
+import type { components } from "@/api/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectItem } from "@/components/ui/select";
 import { QueryNotice } from "@/shared/OverviewUI";
-import { useCommandKey } from "@/shared/use-command-key";
-import {
-  accessKeys,
-  createRoute,
-  deleteRoute,
-  listEligibleTargets,
-  listRoutes,
-  updateRoute,
-} from "./api";
+import { useQuery } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
+import { accessQueries } from "./api";
+import { useDeleteRoute, useWriteRoute } from "./mutations";
 
 type Host = components["schemas"]["AccessHost"];
 type Route = components["schemas"]["AccessRoute"];
@@ -39,71 +32,25 @@ export function AccessRoutesPanel({
   const [validation, setValidation] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [cleanup, setCleanup] = useState("");
-  const commandKey = useCommandKey();
-  const deleteKey = useCommandKey();
-  const queryClient = useQueryClient();
   const routes = useQuery({
-    queryKey: accessKeys.routes(projectId, host.id, offset),
-    queryFn: () => listRoutes(projectId, host.id, offset),
+    ...accessQueries.routes(projectId, host.id, offset),
   });
   const targets = useQuery({
-    queryKey: accessKeys.eligible(projectId, host.id, targetOffset),
-    queryFn: () => listEligibleTargets(projectId, host.id, targetOffset),
+    ...accessQueries.eligible(projectId, host.id, targetOffset),
     enabled: canManage && host.lifecycle === "active",
   });
   const visibleTargets = targets.data?.slice(0, 20) ?? [];
-  const write = useMutation({
-    mutationFn: (body: { pathPrefix: string; deploymentTargetId: string }) => {
-      const key = commandKey.forPayload({
-        hostId: host.id,
-        routeId: editing?.id,
-        ...body,
-      });
-      return editing
-        ? updateRoute(projectId, host.id, editing.id, body, key)
-        : createRoute(projectId, host.id, body, key);
-    },
-    onSuccess() {
-      commandKey.clear();
-      onAccepted();
-      setEditing(null);
-      setPathPrefix("/");
-      setTargetId("");
-      setValidation("");
-      void queryClient.invalidateQueries({
-        queryKey: ["access-routes", projectId, host.id],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: accessKeys.status(projectId, host.id),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["target-access-routes"],
-      });
-    },
+  const write = useWriteRoute(projectId, host.id, editing, () => {
+    onAccepted();
+    setEditing(null);
+    setPathPrefix("/");
+    setTargetId("");
+    setValidation("");
   });
-  const remove = useMutation({
-    mutationFn: (routeId: string) =>
-      deleteRoute(
-        projectId,
-        host.id,
-        routeId,
-        deleteKey.forPayload({ hostId: host.id, routeId, action: "delete" }),
-      ),
-    onSuccess(updated) {
-      deleteKey.clear();
-      onAccepted();
-      setDeleteId(null);
-      setCleanup(updated.id);
-      void queryClient.invalidateQueries({
-        queryKey: ["access-routes", projectId, host.id],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: accessKeys.status(projectId, host.id),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["target-access-routes"],
-      });
-    },
+  const remove = useDeleteRoute(projectId, host.id, (updated) => {
+    onAccepted();
+    setDeleteId(null);
+    setCleanup(updated.id);
   });
   function submit(event: FormEvent) {
     event.preventDefault();

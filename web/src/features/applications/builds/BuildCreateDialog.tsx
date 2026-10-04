@@ -1,8 +1,3 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
-import { z } from "zod";
 import { errorText } from "@/api/http";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -16,8 +11,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useCommandKey } from "@/shared/use-command-key";
-import { createBuild } from "./api";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { useNavigate } from "react-router-dom";
+import { z } from "zod";
+import { useCreateBuild } from "./mutations";
 
 const schema = z.object({
   repositoryUrl: z
@@ -60,7 +58,6 @@ export function BuildCreateDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
-  const commandKey = useCommandKey();
   const form = useForm<BuildValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -71,16 +68,11 @@ export function BuildCreateDialog({
     },
     mode: "onBlur",
   });
-  const mutation = useMutation({
-    mutationFn: (values: BuildValues) =>
-      createBuild(applicationId, values, commandKey.forPayload(values)),
-    onSuccess(accepted) {
-      commandKey.clear();
-      onOpenChange(false);
-      navigate(
-        `/projects/${projectId}/applications/${applicationId}/builds/${accepted.build.id}`,
-      );
-    },
+  const mutation = useCreateBuild(applicationId, (accepted) => {
+    onOpenChange(false);
+    navigate(
+      `/projects/${projectId}/applications/${applicationId}/builds/${accepted.build.id}`,
+    );
   });
   // 网络结果不明时保留草稿和幂等键；用户修改输入才产生新命令。
   return (

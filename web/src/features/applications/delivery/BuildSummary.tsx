@@ -1,12 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Hammer } from "lucide-react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
-import { listBuilds, overviewQueryKeys } from "@/features/applications/api";
 import { CursorPagination } from "@/shared/CursorPagination";
 import {
   Fact,
@@ -21,6 +17,10 @@ import {
   operationStatus,
   pollInterval,
 } from "@/shared/overview-status";
+import { useQuery } from "@tanstack/react-query";
+import { Hammer } from "lucide-react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { buildQueries } from "../builds/api";
 
 export function BuildSummary({
   applicationId,
@@ -33,8 +33,7 @@ export function BuildSummary({
   const [params, setParams] = useSearchParams();
   const cursor = params.get("buildCursor") ?? undefined;
   const builds = useQuery({
-    queryKey: overviewQueryKeys.builds(applicationId, cursor),
-    queryFn: () => listBuilds(applicationId, cursor),
+    ...buildQueries.list(applicationId, cursor),
     refetchInterval: (query) =>
       pollInterval(
         until,

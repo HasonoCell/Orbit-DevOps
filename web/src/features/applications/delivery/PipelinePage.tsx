@@ -1,7 +1,3 @@
-import { Select, SelectItem } from "@/components/ui/select";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   getApplication,
   getProjectPermissions,
@@ -13,18 +9,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { overviewQueryKeys } from "@/features/applications/api";
-import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { Select, SelectItem } from "@/components/ui/select";
 import { Fact, Timestamp } from "@/shared/OverviewUI";
-import { useCommandKey } from "@/shared/use-command-key";
-import {
-  changePipelineState,
-  createPipeline,
-  getPipeline,
-  pipelineKeys,
-  updatePipeline,
-  type PipelineInput,
-} from "./pipeline-api";
+import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { useQuery } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { usePipelineState, useWritePipeline } from "./mutations";
+import { pipelineQueries } from "./pipeline-api";
 import { PipelineRuns } from "./PipelineRuns";
 
 type Detail = components["schemas"]["DeliveryPipelineDetail"];
@@ -42,12 +34,11 @@ export function PipelinePage() {
     queryFn: () => getProjectPermissions(projectId),
   });
   const targets = useQuery({
-    queryKey: overviewQueryKeys.targets(applicationId),
+    queryKey: ["deployment-targets", applicationId],
     queryFn: () => listDeploymentTargets(applicationId),
   });
   const detail = useQuery({
-    queryKey: pipelineKeys.detail(pipelineId),
-    queryFn: () => getPipeline(pipelineId),
+    ...pipelineQueries.detail(pipelineId),
     enabled: !creating,
   });
   if (
@@ -142,8 +133,6 @@ function PipelineEditor({
 }) {
   const creating = pipelineId === "new";
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const commandKey = useCommandKey();
   const [name, setName] = useState(detail?.pipeline.name ?? "");
   const [endpointKey, setEndpointKey] = useState(
     detail?.revision.endpointKey ?? "",
@@ -171,45 +160,17 @@ function PipelineEditor({
   const developmentTargets = targets.filter(
     (item) => item.stage === "development",
   );
-  const mutation = useMutation({
-    mutationFn: (body: PipelineInput) => {
-      const key = commandKey.forPayload({
-        pipelineId,
-        body,
-        expectedRevision: detail?.revision.revision,
-      });
-      return creating
-        ? createPipeline(applicationId, body, key)
-        : updatePipeline(
-            pipelineId,
-            {
-              expectedRevision: detail!.revision.revision,
-              endpointKey: body.endpointKey,
-              repositoryUrl: body.repositoryUrl,
-              branch: body.branch,
-              dockerfilePath: body.dockerfilePath,
-              contextPath: body.contextPath,
-              mode: body.mode,
-              deploymentTargetId: body.deploymentTargetId,
-            },
-            key,
-          );
-    },
-    onSuccess(updated) {
-      commandKey.clear();
-      queryClient.setQueryData(
-        pipelineKeys.detail(updated.pipeline.id),
-        updated,
-      );
-      void queryClient.invalidateQueries({
-        queryKey: overviewQueryKeys.pipelines(applicationId, undefined),
-      });
+  const mutation = useWritePipeline(
+    applicationId,
+    pipelineId,
+    detail?.revision.revision,
+    (updated) => {
       if (creating)
         navigate(
           `/projects/${projectId}/applications/${applicationId}/pipelines/${updated.pipeline.id}`,
         );
     },
-  });
+  );
   function submit(event: FormEvent) {
     event.preventDefault();
     const cleanName = name.trim();
@@ -490,28 +451,12 @@ function PipelineActivation({
   selected: "enable" | "disable" | null;
   onSelected: (value: "enable" | "disable" | null) => void;
 }) {
-  const queryClient = useQueryClient();
-  const commandKey = useCommandKey();
-  const mutation = useMutation({
-    mutationFn: (action: "enable" | "disable") =>
-      changePipelineState(
-        pipelineId,
-        action,
-        commandKey.forPayload({
-          pipelineId,
-          action,
-          revision: detail.revision.revision,
-        }),
-      ),
-    onSuccess(updated) {
-      commandKey.clear();
-      queryClient.setQueryData(pipelineKeys.detail(pipelineId), updated);
-      void queryClient.invalidateQueries({
-        queryKey: overviewQueryKeys.pipelines(applicationId, undefined),
-      });
-      onSelected(null);
-    },
-  });
+  const mutation = usePipelineState(
+    applicationId,
+    pipelineId,
+    detail.revision.revision,
+    () => onSelected(null),
+  );
   if (!canDevelop) return null;
   const action = detail.pipeline.enabled ? "disable" : "enable";
   return (

@@ -1,18 +1,6 @@
-import { Select, SelectItem } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useState, type FormEvent } from "react";
 import { errorText, type Application, type DeploymentTarget } from "@/api/http";
-import { listBuilds } from "@/features/applications/api";
-import { getBuild } from "@/features/applications/builds/api";
-import {
-  acceptRelease,
-  getRelease,
-  releaseQueryKeys,
-} from "@/features/applications/releases/api";
-import { CursorPagination } from "@/shared/CursorPagination";
-import { QueryNotice } from "@/shared/OverviewUI";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +11,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useCommandKey } from "@/shared/use-command-key";
+import { Select, SelectItem } from "@/components/ui/select";
+import { CursorPagination } from "@/shared/CursorPagination";
+import { QueryNotice } from "@/shared/OverviewUI";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState, type FormEvent } from "react";
+import { buildQueries } from "../builds/api";
+import { releaseQueries } from "./api";
+import { useCreateRelease } from "./mutations";
 
 /** 发布必须显式选择产物/不可变引用并确认目标。失败与关闭后保留草稿及幂等键，
  * 避免网络结果未知时重新打开对话框，重复接纳相同的发布；编辑载荷才形成新命令。
@@ -43,7 +38,6 @@ export function ReleaseCreateDialog({
   onOpenChange: (open: boolean) => void;
   onAccepted: (id: string) => void;
 }) {
-  const commandKey = useCommandKey();
   const [source, setSource] = useState(
     initialSource?.kind === "release" ? "reference" : "artifact",
   );
@@ -54,13 +48,11 @@ export function ReleaseCreateDialog({
   const [validation, setValidation] = useState("");
   const [prefillDone, setPrefillDone] = useState(false);
   const sourceBuild = useQuery({
-    queryKey: ["build", initialSource?.id],
-    queryFn: () => getBuild(initialSource!.id),
+    ...buildQueries.detail(initialSource?.id ?? ""),
     enabled: open && initialSource?.kind === "build",
   });
   const sourceRelease = useQuery({
-    queryKey: releaseQueryKeys.detail(initialSource?.id ?? ""),
-    queryFn: () => getRelease(initialSource!.id),
+    ...releaseQueries.detail(initialSource?.id ?? ""),
     enabled: open && initialSource?.kind === "release",
   });
   const suggestedArtifact =
@@ -90,8 +82,7 @@ export function ReleaseCreateDialog({
     }
   }, [prefillDone, suggestedArtifact, suggestedRelease, artifactId, reference]);
   const builds = useQuery({
-    queryKey: releaseQueryKeys.artifacts(application.id, cursor),
-    queryFn: () => listBuilds(application.id, cursor),
+    ...buildQueries.list(application.id, cursor),
     enabled: open,
   });
   const artifacts = (builds.data?.items ?? [])
@@ -107,22 +98,13 @@ export function ReleaseCreateDialog({
     .filter((artifact) => artifact.id !== suggestedArtifact?.id);
   if (suggestedArtifact) artifacts.unshift(suggestedArtifact);
   const selected = artifacts.find((artifact) => artifact.id === artifactId);
-  const mutation = useMutation({
-    mutationFn: (body: { imageReference: string; imageArtifactId?: string }) =>
-      acceptRelease(
-        target.id,
-        body,
-        commandKey.forPayload({ targetId: target.id, ...body }),
-      ),
-    onSuccess(result) {
-      commandKey.clear();
-      setReference("");
-      setArtifactId("");
-      setConfirmed(false);
-      setValidation("");
-      onOpenChange(false);
-      onAccepted(result.release.id);
-    },
+  const mutation = useCreateRelease(target.id, (result) => {
+    setReference("");
+    setArtifactId("");
+    setConfirmed(false);
+    setValidation("");
+    onOpenChange(false);
+    onAccepted(result.release.id);
   });
   function submit(event: FormEvent) {
     event.preventDefault();

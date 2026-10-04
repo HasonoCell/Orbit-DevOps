@@ -1,17 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { GitBranch } from "lucide-react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
-import {
-  latestRun,
-  listPipelines,
-  overviewQueryKeys,
-  type Pipeline,
-} from "@/features/applications/api";
+import type { Pipeline } from "@/features/applications/api";
 import { CursorPagination } from "@/shared/CursorPagination";
 import {
   Fact,
@@ -22,7 +14,11 @@ import {
   Timestamp,
 } from "@/shared/OverviewUI";
 import { isActiveRun, pollInterval, runStatus } from "@/shared/overview-status";
+import { useQuery } from "@tanstack/react-query";
+import { GitBranch } from "lucide-react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { DeliveryStages } from "./DeliveryStages";
+import { pipelineQueries } from "./pipeline-api";
 
 export function PipelineSummary({
   applicationId,
@@ -34,8 +30,7 @@ export function PipelineSummary({
   const [params, setParams] = useSearchParams();
   const cursor = params.get("pipelineCursor") ?? undefined;
   const pipelines = useQuery({
-    queryKey: overviewQueryKeys.pipelines(applicationId, cursor),
-    queryFn: () => listPipelines(applicationId, cursor),
+    ...pipelineQueries.list(applicationId, cursor),
   });
   return (
     <Panel
@@ -94,8 +89,7 @@ function PipelineItem({
 }) {
   const { projectId = "" } = useParams();
   const run = useQuery({
-    queryKey: overviewQueryKeys.run(applicationId, pipeline.id),
-    queryFn: () => latestRun(pipeline.id),
+    ...pipelineQueries.latest(pipeline.id),
     refetchInterval: (query) =>
       pollInterval(
         until,

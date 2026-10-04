@@ -1,12 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { CursorPagination } from "@/shared/CursorPagination";
 import { QueryNotice, StatusPill, Timestamp } from "@/shared/OverviewUI";
 import { pollInterval, runStatus } from "@/shared/overview-status";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { DeliveryStages } from "./DeliveryStages";
-import { listRuns, pipelineKeys } from "./pipeline-api";
+import { pipelineQueries } from "./pipeline-api";
 
 export function PipelineRuns({
   projectId,
@@ -21,8 +21,7 @@ export function PipelineRuns({
   const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
   const cursor = params.get("runCursor") ?? undefined;
   const runs = useQuery({
-    queryKey: pipelineKeys.runs(pipelineId, cursor),
-    queryFn: () => listRuns(pipelineId, cursor),
+    ...pipelineQueries.runs(pipelineId, cursor),
     refetchInterval: (query) => pollInterval(until, query.state.error),
     refetchIntervalInBackground: false,
   });

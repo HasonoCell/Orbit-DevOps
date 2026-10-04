@@ -1,4 +1,6 @@
 import { client, requireData } from "@/api/http";
+import { queryOptions } from "@tanstack/react-query";
+import type { DiagnosticReport } from "../api";
 
 export const releaseQueryKeys = {
   detail: (releaseId: string) => ["release", releaseId] as const,
@@ -7,17 +9,12 @@ export const releaseQueryKeys = {
   diagnostics: (releaseId: string) =>
     ["release-diagnostics", releaseId] as const,
   logs: (releaseId: string, podName: string, container: string) =>
-    ["release-logs", releaseId, podName, container] as const,
-  artifacts: (applicationId: string, cursor?: string) =>
-    ["release-artifacts", applicationId, cursor] as const,
-  history: (applicationId: string, targetId: string, cursor?: string) =>
-    [
-      "application-overview",
-      applicationId,
-      "history",
-      targetId,
-      cursor,
-    ] as const,
+    ["release-logs", releaseId, podName, container, 200, false] as const,
+  lists: (targetId: string) => ["target-releases", targetId] as const,
+  latest: (targetId: string) =>
+    [...releaseQueryKeys.lists(targetId), 1] as const,
+  history: (targetId: string, cursor?: string) =>
+    [...releaseQueryKeys.lists(targetId), 5, cursor] as const,
 };
 
 export async function getRelease(releaseId: string) {
@@ -101,3 +98,52 @@ export async function acceptRelease(
     "接纳发布",
   );
 }
+
+export async function getDiagnostics(
+  releaseId: string,
+): Promise<DiagnosticReport> {
+  return requireData(
+    await client.GET("/api/v1/releases/{releaseId}/diagnostics", {
+      params: { path: { releaseId } },
+    }),
+    "查询运行诊断",
+  );
+}
+
+export const releaseQueries = {
+  detail: (id: string) =>
+    queryOptions({
+      queryKey: releaseQueryKeys.detail(id),
+      queryFn: () => getRelease(id),
+      staleTime: 30_000,
+    }),
+  operation: (id: string) =>
+    queryOptions({
+      queryKey: releaseQueryKeys.operation(id),
+      queryFn: () => getReleaseOperation(id),
+      staleTime: 30_000,
+    }),
+  diagnostics: (id: string) =>
+    queryOptions({
+      queryKey: releaseQueryKeys.diagnostics(id),
+      queryFn: () => getDiagnostics(id),
+      staleTime: 30_000,
+    }),
+  latest: (id: string) =>
+    queryOptions({
+      queryKey: releaseQueryKeys.latest(id),
+      queryFn: () => latestRelease(id),
+      staleTime: 30_000,
+    }),
+  history: (id: string, cursor?: string) =>
+    queryOptions({
+      queryKey: releaseQueryKeys.history(id, cursor),
+      queryFn: () => listReleaseHistory(id, cursor),
+      staleTime: 30_000,
+    }),
+  logs: (id: string, pod: string, container: string) =>
+    queryOptions({
+      queryKey: releaseQueryKeys.logs(id, pod, container),
+      queryFn: () => getRuntimeLogs(id, pod, container),
+    }),
+};

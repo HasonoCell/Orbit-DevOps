@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { QueryNotice, Timestamp } from "@/shared/OverviewUI";
-import { accessKeys, listHosts } from "./api";
+import { useQuery } from "@tanstack/react-query";
+import { Link, useSearchParams } from "react-router-dom";
+import { accessQueries } from "./api";
 
 export function AccessHostsPanel({
   projectId,
@@ -18,8 +18,7 @@ export function AccessHostsPanel({
       ? rawOffset
       : 0;
   const hosts = useQuery({
-    queryKey: accessKeys.hosts(projectId, offset),
-    queryFn: () => listHosts(projectId, offset),
+    ...accessQueries.hosts(projectId, offset),
   });
   function changeOffset(next: number) {
     setParams((previous) => {

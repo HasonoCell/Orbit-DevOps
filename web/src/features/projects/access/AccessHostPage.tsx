@@ -1,27 +1,18 @@
-import { Select, SelectItem } from "@/components/ui/select";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
 import { getProject, getProjectPermissions } from "@/api/catalog";
 import { errorText } from "@/api/http";
 import type { components } from "@/api/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { Select, SelectItem } from "@/components/ui/select";
 import { Fact, QueryNotice, Timestamp } from "@/shared/OverviewUI";
-import { useCommandKey } from "@/shared/use-command-key";
+import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { AccessRoutesPanel } from "./AccessRoutesPanel";
-import {
-  accessKeys,
-  createHost,
-  deleteHost,
-  getHost,
-  getHostOptions,
-  getHostStatus,
-  listSecretBindingOptions,
-  updateHost,
-} from "./api";
+import { accessQueries } from "./api";
+import { useDeleteHost, useWriteHost } from "./mutations";
 
 type Host = components["schemas"]["AccessHost"];
 type HostStatus = components["schemas"]["AccessHostStatus"];
@@ -39,8 +30,7 @@ export function AccessHostPage() {
     queryFn: () => getProjectPermissions(projectId),
   });
   const host = useQuery({
-    queryKey: accessKeys.host(projectId, hostId),
-    queryFn: () => getHost(projectId, hostId),
+    ...accessQueries.host(projectId, hostId),
     enabled: !creating,
   });
   if (
@@ -116,37 +106,16 @@ function HostCreate({
   const [bindingId, setBindingId] = useState("");
   const [bindingOffset, setBindingOffset] = useState(0);
   const [validation, setValidation] = useState("");
-  const commandKey = useCommandKey();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const options = useQuery({
-    queryKey: ["access-host-options", projectId],
-    queryFn: () => getHostOptions(projectId),
+    ...accessQueries.options(projectId),
   });
   const bindings = useQuery({
-    queryKey: accessKeys.secretBindings(
-      projectId,
-      hostname.trim(),
-      bindingOffset,
-    ),
-    queryFn: () =>
-      listSecretBindingOptions(projectId, hostname.trim(), bindingOffset),
+    ...accessQueries.secretBindings(projectId, hostname.trim(), bindingOffset),
     enabled: tlsMode === "existing_secret" && hostname.trim().length >= 4,
   });
-  const mutation = useMutation({
-    mutationFn: (body: HostInput) =>
-      createHost(
-        projectId,
-        body,
-        commandKey.forPayload({ projectId, ...body }),
-      ),
-    onSuccess(created) {
-      commandKey.clear();
-      void queryClient.invalidateQueries({
-        queryKey: ["access-hosts", projectId],
-      });
-      navigate(`/projects/${projectId}/access-hosts/${created.id}`);
-    },
+  const mutation = useWriteHost(projectId, undefined, (created) => {
+    navigate(`/projects/${projectId}/access-hosts/${created.id}`);
   });
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -369,21 +338,17 @@ function HostDetail({
   canManageHost: boolean;
   canManageRoutes: boolean;
 }) {
-  const queryClient = useQueryClient();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteAccepted, setDeleteAccepted] = useState(false);
   const [observeUntil, setObserveUntil] = useState(
     () => Date.now() + 5 * 60_000,
   );
-  const commandKey = useCommandKey();
   const current = useQuery({
-    queryKey: accessKeys.host(projectId, host.id),
-    queryFn: () => getHost(projectId, host.id),
+    ...accessQueries.host(projectId, host.id),
     initialData: host,
   });
   const status = useQuery({
-    queryKey: accessKeys.status(projectId, host.id),
-    queryFn: () => getHostStatus(projectId, host.id),
+    ...accessQueries.status(projectId, host.id),
     // 数据库调和完成后，Gateway、证书和 DNS 仍可能继续变化。
     refetchInterval: (query) =>
       !query.state.error && Date.now() < observeUntil ? 15_000 : false,
@@ -398,26 +363,10 @@ function HostDetail({
     void current.refetch();
     void status.refetch();
   }
-  const remove = useMutation({
-    mutationFn: () =>
-      deleteHost(
-        projectId,
-        host.id,
-        commandKey.forPayload({ projectId, hostId: host.id, action: "delete" }),
-      ),
-    onSuccess(updated) {
-      commandKey.clear();
-      restartObservation();
-      queryClient.setQueryData(accessKeys.host(projectId, host.id), updated);
-      void queryClient.invalidateQueries({
-        queryKey: ["access-hosts", projectId],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: accessKeys.status(projectId, host.id),
-      });
-      setDeleteConfirm(false);
-      setDeleteAccepted(true);
-    },
+  const remove = useDeleteHost(projectId, host.id, () => {
+    restartObservation();
+    setDeleteConfirm(false);
+    setDeleteAccepted(true);
   });
   const displayed = current.data ?? host;
   return (
@@ -575,20 +524,11 @@ function HostTlsEditor({
   const [bindingId, setBindingId] = useState(host.secretBindingId ?? "");
   const [bindingOffset, setBindingOffset] = useState(0);
   const [validation, setValidation] = useState("");
-  const commandKey = useCommandKey();
-  const queryClient = useQueryClient();
   const options = useQuery({
-    queryKey: ["access-host-options", projectId],
-    queryFn: () => getHostOptions(projectId),
+    ...accessQueries.options(projectId),
   });
   const bindings = useQuery({
-    queryKey: accessKeys.secretBindings(
-      projectId,
-      host.hostname,
-      bindingOffset,
-    ),
-    queryFn: () =>
-      listSecretBindingOptions(projectId, host.hostname, bindingOffset),
+    ...accessQueries.secretBindings(projectId, host.hostname, bindingOffset),
     enabled: mode === "existing_secret",
   });
   useEffect(() => {
@@ -611,29 +551,9 @@ function HostTlsEditor({
       (bindingId === host.secretBindingId &&
         host.secretBindingState === "active"),
   );
-  const mutation = useMutation({
-    mutationFn: (body: HostInput) =>
-      updateHost(
-        projectId,
-        host.id,
-        body,
-        commandKey.forPayload({ hostId: host.id, ...body }),
-      ),
-    onSuccess(updated) {
-      commandKey.clear();
-      onAccepted();
-      queryClient.setQueryData(accessKeys.host(projectId, host.id), updated);
-      void queryClient.invalidateQueries({
-        queryKey: accessKeys.host(projectId, host.id),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: accessKeys.status(projectId, host.id),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["access-hosts", projectId],
-      });
-      setValidation("");
-    },
+  const mutation = useWriteHost(projectId, host.id, () => {
+    onAccepted();
+    setValidation("");
   });
   function submit(event: FormEvent) {
     event.preventDefault();

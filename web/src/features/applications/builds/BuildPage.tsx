@@ -1,23 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
 import { getApplication, getProjectPermissions } from "@/api/catalog";
 import type { components } from "@/api/schema";
 import { Button } from "@/components/ui/button";
-import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
-import { Fact, QueryNotice, StatusPill, Timestamp } from "@/shared/OverviewUI";
 import {
   isActiveOperation,
   operationStatus,
   pollInterval,
 } from "@/shared/overview-status";
-import {
-  buildQueryKeys,
-  getBuild,
-  getBuildAttemptLog,
-  getBuildOperation,
-} from "./api";
+import { Fact, QueryNotice, StatusPill, Timestamp } from "@/shared/OverviewUI";
+import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { buildQueries } from "./api";
 import { BuildCommands } from "./BuildCommands";
 
 type Attempt = components["schemas"]["BuildAttempt"];
@@ -54,8 +49,7 @@ function BuildContent({
     queryFn: () => getProjectPermissions(projectId),
   });
   const build = useQuery({
-    queryKey: buildQueryKeys.detail(buildId),
-    queryFn: () => getBuild(buildId),
+    ...buildQueries.detail(buildId),
     refetchInterval: (query) =>
       pollInterval(
         until,
@@ -66,8 +60,7 @@ function BuildContent({
   });
   const operationId = build.data?.buildOperation.id ?? "";
   const operation = useQuery({
-    queryKey: buildQueryKeys.operation(operationId),
-    queryFn: () => getBuildOperation(operationId),
+    ...buildQueries.operation(operationId),
     enabled: !!operationId,
     refetchInterval: (query) =>
       pollInterval(
@@ -239,6 +232,7 @@ function BuildContent({
       </section>
       {current && (
         <BuildCommands
+          applicationId={applicationId}
           operation={current}
           buildId={buildId}
           canDevelop={permissions.data.allowed.includes("develop")}
@@ -260,8 +254,7 @@ function AttemptCard({
   canReadLog: boolean;
 }) {
   const log = useQuery({
-    queryKey: buildQueryKeys.log(attempt.id),
-    queryFn: () => getBuildAttemptLog(attempt.id),
+    ...buildQueries.log(attempt.id),
     enabled: false,
   });
   return (

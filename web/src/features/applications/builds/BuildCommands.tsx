@@ -1,7 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import type { components } from "@/api/schema";
 import { errorText } from "@/api/http";
+import type { components } from "@/api/schema";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,9 +12,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useCommandKey } from "@/shared/use-command-key";
-import { buildQueryKeys } from "./api";
-import { runBuildCommand, type BuildCommand } from "./commands-api";
+import { useState } from "react";
+import { type BuildCommand } from "./commands-api";
+import { useBuildCommand } from "./mutations";
 
 type Operation = components["schemas"]["BuildOperation"];
 
@@ -30,12 +28,14 @@ const labels: Record<BuildCommand, string> = {
 export function BuildCommands({
   operation,
   buildId,
+  applicationId,
   canDevelop,
   canResolveUnknown,
   onAccepted,
 }: {
   operation: Operation;
   buildId: string;
+  applicationId: string;
   canDevelop: boolean;
   canResolveUnknown: boolean;
   onAccepted: () => void;
@@ -43,33 +43,11 @@ export function BuildCommands({
   const [selected, setSelected] = useState<BuildCommand | null>(null);
   const [reason, setReason] = useState("");
   const [validation, setValidation] = useState("");
-  const commandKey = useCommandKey();
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: ({
-      command,
-      reason,
-    }: {
-      command: BuildCommand;
-      reason?: string;
-    }) =>
-      runBuildCommand(
-        operation.id,
-        command,
-        commandKey.forPayload({ operationId: operation.id, command, reason }),
-        reason,
-      ),
-    onSuccess(updated) {
-      commandKey.clear();
-      queryClient.setQueryData(buildQueryKeys.operation(operation.id), updated);
-      void queryClient.invalidateQueries({
-        queryKey: buildQueryKeys.detail(buildId),
-      });
-      setSelected(null);
-      setReason("");
-      setValidation("");
-      onAccepted();
-    },
+  const mutation = useBuildCommand(applicationId, buildId, operation.id, () => {
+    setSelected(null);
+    setReason("");
+    setValidation("");
+    onAccepted();
   });
   const available: BuildCommand[] = [];
   if (canDevelop) {

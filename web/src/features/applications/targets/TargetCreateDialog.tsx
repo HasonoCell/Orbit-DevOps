@@ -1,5 +1,3 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { createDeploymentTarget } from "@/api/catalog";
 import { errorText } from "@/api/http";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -12,9 +10,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { overviewQueryKeys } from "@/features/applications/api";
-import { TargetFields, useTargetForm, type TargetValues } from "./TargetForm";
 import { useCommandKey } from "@/shared/use-command-key";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import { TargetFields, useTargetForm, type TargetValues } from "./TargetForm";
 
 export function TargetCreateDialog({
   projectId,
@@ -44,7 +43,7 @@ export function TargetCreateDialog({
       commandKey.clear();
       form.reset();
       void queryClient.invalidateQueries({
-        queryKey: overviewQueryKeys.targets(applicationId),
+        queryKey: ["deployment-targets", applicationId],
       });
       onOpenChange(false);
       navigate(

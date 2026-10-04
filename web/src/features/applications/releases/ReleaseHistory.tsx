@@ -1,15 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import type { DeploymentTarget } from "@/api/http";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Link, useParams, useSearchParams } from "react-router-dom";
-import type { DeploymentTarget } from "@/api/http";
-import {
-  listReleaseHistory,
-  releaseQueryKeys,
-} from "@/features/applications/releases/api";
 import { CursorPagination } from "@/shared/CursorPagination";
 import {
   QueryNotice,
@@ -18,6 +12,9 @@ import {
   Timestamp,
 } from "@/shared/OverviewUI";
 import { operationStatus } from "@/shared/overview-status";
+import { useQuery } from "@tanstack/react-query";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { releaseQueries } from "./api";
 
 export function ReleaseHistory({
   target,
@@ -30,8 +27,7 @@ export function ReleaseHistory({
   const [params, setParams] = useSearchParams();
   const cursor = params.get("releaseCursor") ?? undefined;
   const query = useQuery({
-    queryKey: releaseQueryKeys.history(applicationId, target.id, cursor),
-    queryFn: () => listReleaseHistory(target.id, cursor),
+    ...releaseQueries.history(target.id, cursor),
   });
   return (
     <section className="workbench-panel">

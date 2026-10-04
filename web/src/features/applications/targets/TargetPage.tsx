@@ -1,6 +1,3 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
 import {
   getApplication,
   getDeploymentTarget,
@@ -15,11 +12,13 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { overviewQueryKeys } from "@/features/applications/api";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
 import { useCommandKey } from "@/shared/use-command-key";
-import { TargetFields, useTargetForm, type TargetValues } from "./TargetForm";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import { TargetAccessRoutes } from "./TargetAccessRoutes";
+import { TargetFields, useTargetForm, type TargetValues } from "./TargetForm";
 
 export function TargetPage() {
   const { projectId = "", applicationId = "", targetId = "" } = useParams();
@@ -115,7 +114,7 @@ function TargetContent({
       });
       queryClient.setQueryData(["deployment-target", targetId], updated);
       void queryClient.invalidateQueries({
-        queryKey: overviewQueryKeys.targets(applicationId),
+        queryKey: ["deployment-targets", applicationId],
       });
       setSaved(true);
     },

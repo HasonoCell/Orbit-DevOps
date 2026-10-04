@@ -1,8 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import type { components } from "@/api/schema";
 import { errorText } from "@/api/http";
+import type { components } from "@/api/schema";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,13 +12,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useCommandKey } from "@/shared/use-command-key";
-import { releaseQueryKeys } from "./api";
-import {
-  rollbackRelease,
-  runReleaseCommand,
-  type ReleaseCommand,
-} from "./commands-api";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { type ReleaseCommand } from "./commands-api";
+import { useReleaseCommand } from "./mutations";
 
 type Release = components["schemas"]["Release"];
 type Operation = components["schemas"]["ReleaseOperation"];
@@ -56,29 +50,12 @@ export function ReleaseCommands({
   const [selected, setSelected] = useState<Action | null>(null);
   const [reason, setReason] = useState("");
   const [validation, setValidation] = useState("");
-  const commandKey = useCommandKey();
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const mutation = useMutation({
-    mutationFn: ({
-      action,
-      reason,
-    }: {
-      action: Action;
-      reason?: string;
-    }): Promise<Operation | ReleaseAcceptance> => {
-      const key = commandKey.forPayload({
-        releaseId: release.id,
-        operationId: operation.id,
-        action,
-        reason,
-      });
-      return action === "rollback"
-        ? rollbackRelease(release.id, key)
-        : runReleaseCommand(operation.id, action, key, reason);
-    },
-    onSuccess(result, variables) {
-      commandKey.clear();
+  const mutation = useReleaseCommand(
+    release.deploymentTargetId,
+    release.id,
+    operation.id,
+    (result, variables) => {
       setSelected(null);
       setReason("");
       setValidation("");
@@ -86,21 +63,9 @@ export function ReleaseCommands({
         navigate(
           `/projects/${projectId}/applications/${applicationId}/releases/${result.release.id}`,
         );
-      } else if ("status" in result) {
-        onAccepted();
-        queryClient.setQueryData(
-          releaseQueryKeys.operation(operation.id),
-          result,
-        );
-        void queryClient.invalidateQueries({
-          queryKey: releaseQueryKeys.detail(release.id),
-        });
-        void queryClient.invalidateQueries({
-          queryKey: releaseQueryKeys.diagnostics(release.id),
-        });
-      }
+      } else if ("status" in result) onAccepted();
     },
-  });
+  );
   const available: Action[] = [];
   if (canDevelop) {
     if (operation.status === "failed") available.push("retry");

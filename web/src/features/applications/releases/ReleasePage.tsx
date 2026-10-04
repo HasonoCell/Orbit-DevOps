@@ -1,7 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
 import {
   getApplication,
   getDeploymentTarget,
@@ -10,28 +6,26 @@ import {
 } from "@/api/catalog";
 import { errorText } from "@/api/http";
 import { Button } from "@/components/ui/button";
-import { getDiagnostics } from "@/features/applications/api";
+import type { DiagnosticReport } from "@/features/applications/api";
 import { PodList } from "@/features/applications/runtime/PodList";
 import {
   DiagnosticEvidence,
   EventEvidence,
   RuntimeResources,
 } from "@/features/applications/runtime/TargetRuntime";
-import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
-import { Fact, QueryNotice, StatusPill, Timestamp } from "@/shared/OverviewUI";
 import {
   isActiveOperation,
   operationStatus,
   pollInterval,
 } from "@/shared/overview-status";
-import {
-  getRelease,
-  getReleaseOperation,
-  getRuntimeLogs,
-  releaseQueryKeys,
-} from "./api";
+import { Fact, QueryNotice, StatusPill, Timestamp } from "@/shared/OverviewUI";
+import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { releaseQueries } from "./api";
 import { ReleaseCommands } from "./ReleaseCommands";
-import type { DiagnosticReport } from "@/features/applications/api";
 
 export function ReleasePage() {
   const { projectId = "", applicationId = "", releaseId = "" } = useParams();
@@ -64,8 +58,7 @@ function ReleaseContent({
     queryFn: () => getProjectPermissions(projectId),
   });
   const detail = useQuery({
-    queryKey: releaseQueryKeys.detail(releaseId),
-    queryFn: () => getRelease(releaseId),
+    ...releaseQueries.detail(releaseId),
     refetchInterval: (query) =>
       pollInterval(
         until,
@@ -89,8 +82,7 @@ function ReleaseContent({
   });
   const operationId = detail.data?.releaseOperation.id ?? "";
   const operation = useQuery({
-    queryKey: releaseQueryKeys.operation(operationId),
-    queryFn: () => getReleaseOperation(operationId),
+    ...releaseQueries.operation(operationId),
     enabled: !!operationId,
     refetchInterval: (query) =>
       pollInterval(
@@ -100,8 +92,7 @@ function ReleaseContent({
       ),
   });
   const report = useQuery({
-    queryKey: releaseQueryKeys.diagnostics(releaseId),
-    queryFn: () => getDiagnostics(releaseId),
+    ...releaseQueries.diagnostics(releaseId),
     enabled: !!detail.data && !detail.error,
     refetchInterval: (query) => pollInterval(until, query.state.error),
   });
@@ -448,13 +439,11 @@ function RuntimeLogs({
     container: string;
   } | null>(null);
   const logs = useQuery({
-    queryKey: releaseQueryKeys.logs(
+    ...releaseQueries.logs(
       releaseId,
       selected?.podName ?? "",
       selected?.container ?? "",
     ),
-    queryFn: () =>
-      getRuntimeLogs(releaseId, selected!.podName, selected!.container),
     enabled: !!selected && canRead,
   });
   return (

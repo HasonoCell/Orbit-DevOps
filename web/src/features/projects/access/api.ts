@@ -1,24 +1,26 @@
 import { client, requireData } from "@/api/http";
 import type { components } from "@/api/schema";
+import { queryOptions } from "@tanstack/react-query";
 
 type HostInput = components["schemas"]["AccessHostInput"];
 type RouteInput = components["schemas"]["AccessRouteInput"];
 
 export const accessKeys = {
+  options: (projectId: string) => ["access-host-options", projectId] as const,
   hosts: (projectId: string, offset: number) =>
-    ["access-hosts", projectId, offset] as const,
+    ["access-hosts", projectId, 21, offset] as const,
   host: (projectId: string, hostId: string) =>
     ["access-host", projectId, hostId] as const,
   status: (projectId: string, hostId: string) =>
     ["access-status", projectId, hostId] as const,
   routes: (projectId: string, hostId: string, offset: number) =>
-    ["access-routes", projectId, hostId, offset] as const,
+    ["access-routes", projectId, hostId, 21, offset] as const,
   eligible: (projectId: string, hostId: string, offset: number) =>
     ["access-targets", projectId, hostId, offset] as const,
   targetRoutes: (targetId: string, offset: number) =>
-    ["target-access-routes", targetId, offset] as const,
+    ["target-access-routes", targetId, 21, offset] as const,
   secretBindings: (projectId: string, hostname: string, offset: number) =>
-    ["access-secret-binding-options", projectId, hostname, offset] as const,
+    ["access-secret-binding-options", projectId, hostname, 21, offset] as const,
 };
 
 export async function listSecretBindingOptions(
@@ -221,3 +223,48 @@ export async function listTargetRoutes(targetId: string, offset: number) {
     "查询目标关联入口",
   );
 }
+
+export const accessQueries = {
+  host: (projectId: string, hostId: string) =>
+    queryOptions({
+      queryKey: accessKeys.host(projectId, hostId),
+      queryFn: () => getHost(projectId, hostId),
+      staleTime: 30_000,
+    }),
+  status: (projectId: string, hostId: string) =>
+    queryOptions({
+      queryKey: accessKeys.status(projectId, hostId),
+      queryFn: () => getHostStatus(projectId, hostId),
+      staleTime: 15_000,
+    }),
+  options: (projectId: string) =>
+    queryOptions({
+      queryKey: accessKeys.options(projectId),
+      queryFn: () => getHostOptions(projectId),
+    }),
+  hosts: (projectId: string, offset: number) =>
+    queryOptions({
+      queryKey: accessKeys.hosts(projectId, offset),
+      queryFn: () => listHosts(projectId, offset),
+    }),
+  routes: (projectId: string, hostId: string, offset: number) =>
+    queryOptions({
+      queryKey: accessKeys.routes(projectId, hostId, offset),
+      queryFn: () => listRoutes(projectId, hostId, offset),
+    }),
+  eligible: (projectId: string, hostId: string, offset: number) =>
+    queryOptions({
+      queryKey: accessKeys.eligible(projectId, hostId, offset),
+      queryFn: () => listEligibleTargets(projectId, hostId, offset),
+    }),
+  targetRoutes: (targetId: string, offset: number) =>
+    queryOptions({
+      queryKey: accessKeys.targetRoutes(targetId, offset),
+      queryFn: () => listTargetRoutes(targetId, offset),
+    }),
+  secretBindings: (projectId: string, hostname: string, offset: number) =>
+    queryOptions({
+      queryKey: accessKeys.secretBindings(projectId, hostname, offset),
+      queryFn: () => listSecretBindingOptions(projectId, hostname, offset),
+    }),
+};

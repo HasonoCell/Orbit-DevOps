@@ -37,6 +37,54 @@ async function overview(page: Page) {
 }
 const applicationURL = "/projects/p-1/applications/a-1";
 
+test("概览与发布详情共用诊断缓存，返回概览后手动刷新仍读取诊断", async ({
+  page,
+}) => {
+  await overview(page);
+  let reads = 0;
+  await page.route("**/api/v1/releases/r-1/diagnostics", (route) => {
+    reads++;
+    return route.fulfill({ json: diagnostic() });
+  });
+  await page.route("**/api/v1/releases/r-1", (route) =>
+    route.fulfill({
+      json: {
+        release: release.release,
+        releaseOperation: diagnostic().releaseOperation,
+        snapshotDifferences: [],
+        auditTimeline: [],
+      },
+    }),
+  );
+  await page.route("**/api/v1/release-operations/ro-1", (route) =>
+    route.fulfill({ json: diagnostic().releaseOperation }),
+  );
+  await page.route("**/api/v1/deployment-targets/t-1", (route) =>
+    route.fulfill({ json: target }),
+  );
+  await page.goto(applicationURL);
+  await expect(page.getByText("工作负载就绪")).toBeVisible();
+  expect(reads).toBe(1);
+  await page
+    .getByRole("navigation", { name: "应用视图" })
+    .getByRole("button", { name: "交付记录" })
+    .click();
+  await page
+    .locator(`a[href="${applicationURL}/releases/r-1"]`)
+    .first()
+    .click();
+  await expect(page.getByText("Release r-1", { exact: true })).toBeVisible();
+  expect(reads).toBe(1);
+  await page.goBack();
+  await page
+    .getByRole("navigation", { name: "应用视图" })
+    .getByRole("button", { name: "运行诊断" })
+    .click();
+  await expect(page.getByText("工作负载就绪")).toBeVisible();
+  await page.getByRole("button", { name: "刷新概览" }).click();
+  await expect.poll(() => reads).toBe(2);
+});
+
 test("共享折叠区支持键盘开关，隐藏内容不进入焦点顺序", async ({ page }) => {
   await overview(page);
   await page.emulateMedia({ reducedMotion: "reduce" });

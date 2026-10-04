@@ -1,17 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import type { DeploymentTarget } from "@/api/http";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Activity, Box, Globe, Server } from "lucide-react";
-import type { DeploymentTarget } from "@/api/http";
-import {
-  getDiagnostics,
-  overviewQueryKeys,
-  type DiagnosticReport,
-} from "@/features/applications/api";
-import { latestRelease } from "@/features/applications/releases/api";
+import type { DiagnosticReport } from "@/features/applications/api";
+import { ReleaseHistory } from "@/features/applications/releases/ReleaseHistory";
 import {
   Fact,
   QueryNotice,
@@ -25,8 +19,10 @@ import {
   pollInterval,
   runtimeStatus,
 } from "@/shared/overview-status";
+import { useQuery } from "@tanstack/react-query";
+import { Activity, Box, Globe, Server } from "lucide-react";
+import { releaseQueries } from "../releases/api";
 import { PodList } from "./PodList";
-import { ReleaseHistory } from "@/features/applications/releases/ReleaseHistory";
 
 /** 只观察已校验的所选目标。发布查询失败时不使用缓存继续派生运行健康。 */
 export function TargetRuntime({
@@ -41,8 +37,7 @@ export function TargetRuntime({
   view: string;
 }) {
   const release = useQuery({
-    queryKey: overviewQueryKeys.release(applicationId, target.id),
-    queryFn: () => latestRelease(target.id),
+    ...releaseQueries.latest(target.id),
     refetchInterval: (query) =>
       pollInterval(
         until,
@@ -54,8 +49,7 @@ export function TargetRuntime({
   });
   const releaseId = !release.error ? release.data?.release.id : undefined;
   const diagnostic = useQuery({
-    queryKey: overviewQueryKeys.diagnostics(applicationId, releaseId),
-    queryFn: () => getDiagnostics(releaseId!),
+    ...releaseQueries.diagnostics(releaseId ?? ""),
     enabled: !!releaseId && view !== "delivery",
     refetchInterval: (query) => pollInterval(until, query.state.error),
     refetchIntervalInBackground: false,

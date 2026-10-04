@@ -1,9 +1,9 @@
+import { Button } from "@/components/ui/button";
+import { accessQueries } from "@/features/projects/access/api";
+import { QueryNotice } from "@/shared/OverviewUI";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { accessKeys, listTargetRoutes } from "@/features/projects/access/api";
-import { QueryNotice } from "@/shared/OverviewUI";
 
 export function TargetAccessRoutes({
   projectId,
@@ -14,8 +14,7 @@ export function TargetAccessRoutes({
 }) {
   const [offset, setOffset] = useState(0);
   const routes = useQuery({
-    queryKey: accessKeys.targetRoutes(targetId, offset),
-    queryFn: () => listTargetRoutes(targetId, offset),
+    ...accessQueries.targetRoutes(targetId, offset),
   });
   return (
     <section className="workbench-panel mt-5 max-w-3xl">

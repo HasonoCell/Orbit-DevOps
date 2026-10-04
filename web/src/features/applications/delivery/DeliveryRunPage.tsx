@@ -1,21 +1,16 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
 import { getApplication, getProjectPermissions } from "@/api/catalog";
 import { errorText } from "@/api/http";
 import { Button } from "@/components/ui/button";
-import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
 import { Fact, StatusPill, Timestamp } from "@/shared/OverviewUI";
+import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
 import { isActiveRun, pollInterval, runStatus } from "@/shared/overview-status";
-import { useCommandKey } from "@/shared/use-command-key";
+import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import { DeliveryStages } from "./DeliveryStages";
-import {
-  getPipeline,
-  getRun,
-  pipelineKeys,
-  reconcileRun,
-} from "./pipeline-api";
+import { useReconcileRun } from "./mutations";
+import { pipelineQueries } from "./pipeline-api";
 
 const stageLabel = {
   build: "构建",
@@ -64,12 +59,10 @@ function DeliveryRunContent({
     queryFn: () => getProjectPermissions(projectId),
   });
   const pipeline = useQuery({
-    queryKey: pipelineKeys.detail(pipelineId),
-    queryFn: () => getPipeline(pipelineId),
+    ...pipelineQueries.detail(pipelineId),
   });
   const run = useQuery({
-    queryKey: ["delivery-run", runId],
-    queryFn: () => getRun(runId),
+    ...pipelineQueries.run(runId),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       // 重新对账的 202 可能仍是阻塞状态，需要短期观察后台推进，终态仍停止。
@@ -83,17 +76,10 @@ function DeliveryRunContent({
       );
     },
   });
-  const commandKey = useCommandKey();
-  const queryClient = useQueryClient();
-  const reconcile = useMutation({
-    mutationFn: () => reconcileRun(runId, commandKey.forPayload({ runId })),
-    onSuccess(result) {
-      commandKey.clear();
-      queryClient.setQueryData(["delivery-run", runId], result);
-      setConfirm(false);
-      setAccepted(true);
-      setUntil(Date.now() + 5 * 60_000);
-    },
+  const reconcile = useReconcileRun(pipelineId, runId, () => {
+    setConfirm(false);
+    setAccepted(true);
+    setUntil(Date.now() + 5 * 60_000);
   });
   function refresh() {
     setAccepted(false);

@@ -1,9 +1,26 @@
-import { Select, SelectItem } from "@/components/ui/select";
+import {
+  getApplication,
+  getProject,
+  getProjectPermissions,
+  listDeploymentTargets,
+} from "@/api/catalog";
+import type { Application, Project } from "@/api/http";
+import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Select, SelectItem } from "@/components/ui/select";
+import { BuildCreateDialog } from "@/features/applications/builds/BuildCreateDialog";
+import { BuildSummary } from "@/features/applications/delivery/BuildSummary";
+import { PipelineSummary } from "@/features/applications/delivery/PipelineSummary";
+import { ReleaseCreateDialog } from "@/features/applications/releases/ReleaseCreateDialog";
+import { TargetRuntime } from "@/features/applications/runtime/TargetRuntime";
+import { TargetCreateDialog } from "@/features/applications/targets/TargetCreateDialog";
+import { workbenchQueryKeys } from "@/features/projects/workbench/api";
+import { QueryNotice } from "@/shared/OverviewUI";
+import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
 import { ViewNavigation } from "@/shared/ViewNavigation";
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw } from "lucide-react";
@@ -14,24 +31,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import {
-  getApplication,
-  getProject,
-  getProjectPermissions,
-  listDeploymentTargets,
-} from "@/api/catalog";
-import type { Application, Project } from "@/api/http";
-import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
-import { Button } from "@/components/ui/button";
-import { BuildSummary } from "@/features/applications/delivery/BuildSummary";
-import { PipelineSummary } from "@/features/applications/delivery/PipelineSummary";
-import { QueryNotice } from "@/shared/OverviewUI";
-import { TargetRuntime } from "@/features/applications/runtime/TargetRuntime";
-import { ReleaseCreateDialog } from "@/features/applications/releases/ReleaseCreateDialog";
-import { TargetCreateDialog } from "@/features/applications/targets/TargetCreateDialog";
-import { BuildCreateDialog } from "@/features/applications/builds/BuildCreateDialog";
-import { overviewQueryKeys } from "@/features/applications/api";
-import { workbenchQueryKeys } from "@/features/projects/workbench/api";
+import { overviewScope } from "./overview-scope";
 
 export function ApplicationPage() {
   const { projectId = "", applicationId = "" } = useParams();
@@ -99,9 +99,10 @@ function ApplicationOverview({
   const [buildOpen, setBuildOpen] = useState(false);
   const [accepted, setAccepted] = useState("");
   const fetching =
-    useIsFetching({ queryKey: overviewQueryKeys.root(application.id) }) > 0;
+    useIsFetching({ predicate: overviewScope(queryClient, application.id) }) >
+    0;
   const targets = useQuery({
-    queryKey: overviewQueryKeys.targets(application.id),
+    queryKey: ["deployment-targets", application.id],
     queryFn: () => listDeploymentTargets(application.id),
   });
   const permissions = useQuery({
@@ -133,7 +134,7 @@ function ApplicationOverview({
     setPaused(false);
     setUntil(Date.now() + 5 * 60_000);
     void queryClient.invalidateQueries({
-      queryKey: overviewQueryKeys.root(application.id),
+      predicate: overviewScope(queryClient, application.id),
     });
   }
   function changeTarget(value: string) {
