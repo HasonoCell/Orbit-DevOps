@@ -11,13 +11,22 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/build"
 	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
 	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/codes"
 )
 
 const systemActorID = "orbit-devops-pipeline"
 
 // HandleEvent 只把内部事件作为唤醒信号；每次处理都重新读取 PostgreSQL 权威事实。
-func (m *Module) HandleEvent(ctx context.Context, event internalevent.Ref) error {
+func (m *Module) HandleEvent(ctx context.Context, event internalevent.Ref) (result error) {
+	ctx, span := m.config.Tracer.Start(ctx, "pipeline process event")
+	defer func() {
+		if result != nil {
+			span.SetStatus(codes.Error, "pipeline_processing_interrupted")
+		}
+		span.End()
+	}()
 	switch event.Topic {
 	case "webhook_delivery.received.v1":
 		return m.processWebhookDelivery(ctx, event.AggregateID)
@@ -137,11 +146,15 @@ func (m *Module) createRunAndBuild(ctx context.Context, pipelineID uuid.UUID, we
 	}
 	now := time.Now().UTC()
 	runID, buildID, operationID := uuid.New(), uuid.New(), uuid.New()
+	parent, state := observability.TraceFields(ctx)
+	if parent == "" {
+		parent, state = webhook.TraceParent, webhook.TraceState
+	}
 	if _, err := m.builds.CreateForDelivery(ctx, tx, build.DeliveryCreateCommand{
 		BuildID: buildID, BuildOperationID: operationID, DeliveryRunID: runID,
 		PipelineID: pipelineID, PipelineRevision: evidence.CurrentRevision,
 		WebhookDeliveryID: webhook.ID, SourceCommit: *webhook.AfterCommit,
-		ActorID: systemActorID, TraceParent: webhook.TraceParent, TraceState: webhook.TraceState, CreatedAt: now,
+		ActorID: systemActorID, TraceParent: parent, TraceState: state, CreatedAt: now,
 	}); err != nil {
 		return false, err
 	}
@@ -152,9 +165,9 @@ func (m *Module) createRunAndBuild(ctx context.Context, pipelineID uuid.UUID, we
 		 traceparent,tracestate,created_at,updated_at)
 		SELECT $1,$2,$3,$4,w.id,$6,$7,'build_created',1,$8,w.event_type,
 		 COALESCE(w.repository_full_name,''),COALESCE(w.git_ref,''),w.forced,w.received_at,
-		 w.traceparent,w.tracestate,$9,$9 FROM webhook_deliveries w WHERE w.id=$5`, runID, pipelineID,
+		 $10,$11,$9,$9 FROM webhook_deliveries w WHERE w.id=$5`, runID, pipelineID,
 		evidence.CurrentRevision, evidence.ActivationGeneration, webhook.ID, *webhook.AfterCommit,
-		evidence.RepositoryURL, buildID, now); err != nil {
+		evidence.RepositoryURL, buildID, now, parent, state); err != nil {
 		return false, fmt.Errorf("insert delivery run: %w", err)
 	}
 	if err := audit.Append(ctx, tx, audit.Entry{ActorID: systemActorID, ActorKind: audit.ActorKindSystem,
@@ -443,11 +456,15 @@ func (m *Module) deferOrBlockSourceCheck(ctx context.Context, check sourceCheck,
 		return err
 	}
 	if count == 1 {
+		parent, state := observability.TraceFields(ctx)
+		if parent == "" {
+			parent, state = check.TraceParent, check.TraceState
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO internal_event_outbox
 			(id,topic,aggregate_id,protocol_version,state,available_at,next_dispatch_at,
 			 traceparent,tracestate,created_at,updated_at)
 			VALUES($1,'delivery_run.reconcile.v1',$2,1,'pending',$3,$3,$4,$5,$6,$6)`, uuid.New(),
-			check.RunID, next, check.TraceParent, check.TraceState, now); err != nil {
+			check.RunID, next, parent, state, now); err != nil {
 			return err
 		}
 	}
@@ -501,9 +518,13 @@ func (m *Module) createAutomaticRelease(ctx context.Context, check sourceCheck, 
 	}
 	now := time.Now().UTC()
 	releaseID, operationID := uuid.New(), uuid.New()
+	parent, state := observability.TraceFields(ctx)
+	if parent == "" {
+		parent, state = check.TraceParent, check.TraceState
+	}
 	if _, err := m.releases.CreateForDeliveryRun(ctx, tx, delivery.DeliveryRunCreateCommand{
 		ReleaseID: releaseID, ReleaseOperationID: operationID, DeliveryRunID: check.RunID,
-		ActorID: systemActorID, TraceParent: check.TraceParent, TraceState: check.TraceState, CreatedAt: now,
+		ActorID: systemActorID, TraceParent: parent, TraceState: state, CreatedAt: now,
 	}); err != nil {
 		if errors.Is(err, delivery.ErrAutomaticReleaseTargetStage) {
 			const reason = "auto_release_target_stage_forbidden"

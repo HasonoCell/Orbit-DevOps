@@ -72,7 +72,7 @@ func run(logger *slog.Logger) error {
 	}
 	metrics := pipeline.NewMetrics(database)
 	pipelines := pipeline.New(database, pipeline.Config{Platform: config.SourceBuild.Platform,
-		SourceRecoveryWindow: config.SourceRecoveryWindow, SourceRetryBaseDelay: config.SourceRetryBaseDelay, Recorder: metrics},
+		SourceRecoveryWindow: config.SourceRecoveryWindow, SourceRetryBaseDelay: config.SourceRetryBaseDelay, Recorder: metrics, Tracer: tracing.Provider.Tracer("orbit-devops-pipeline-worker")},
 		builds, releases, authorizer, github)
 	events := internalevent.New(database)
 	service, err := internalevent.NewService(internalevent.Config{RedisAddress: config.Queue.RedisAddress,
@@ -80,7 +80,7 @@ func run(logger *slog.Logger) error {
 		RedisDB: config.Queue.RedisDB, Queue: config.Queue.Name, Concurrency: config.Queue.Concurrency,
 		Topics:       []string{"webhook_delivery.received.v1", "build_operation.changed.v1", "release_operation.changed.v1", "delivery_run.reconcile.v1"},
 		PollInterval: config.PollInterval, ConsumptionGrace: config.Queue.ConsumptionGrace,
-		TaskTimeout: config.Queue.TaskTimeout, ShutdownTimeout: config.Queue.ShutdownTimeout, Logger: logger}, events, pipelines)
+		TaskTimeout: config.Queue.TaskTimeout, ShutdownTimeout: config.Queue.ShutdownTimeout, Logger: logger, Tracer: tracing.Provider.Tracer("orbit-devops-pipeline-worker"), Propagator: tracing.Propagator}, events, pipelines)
 	if err != nil {
 		return err
 	}

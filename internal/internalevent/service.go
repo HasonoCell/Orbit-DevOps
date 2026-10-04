@@ -12,9 +12,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/taskqueue"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const TaskType = "orbit-devops:internal-event:v1"
@@ -24,6 +30,8 @@ type Executor interface {
 }
 
 type Config struct {
+	Tracer                                                       trace.Tracer
+	Propagator                                                   propagation.TextMapPropagator
 	RedisAddress, RedisUsername, RedisPassword                   string
 	RedisDB                                                      int
 	Queue                                                        string
@@ -73,6 +81,12 @@ func NewService(config Config, events *Module, executor Executor) (*Service, err
 	}
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if config.Tracer == nil {
+		config.Tracer = otel.Tracer("orbit-devops-internal-event")
+	}
+	if config.Propagator == nil {
+		config.Propagator = propagation.TraceContext{}
 	}
 	service := &Service{config: config, events: events, executor: executor}
 	transport, err := taskqueue.New(taskqueue.Config{RedisAddress: config.RedisAddress,
@@ -186,7 +200,7 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 		return asynq.SkipRetry
 	}
 	s.received.Add(1)
-	exists, err := s.events.ExistsForConsumption(ctx, ref)
+	metadata, exists, err := s.events.ReadForConsumption(ctx, ref)
 	if err != nil {
 		s.processingErrors.Add(1)
 		s.config.Logger.WarnContext(ctx, "内部事件存储暂时不可用", "topic", ref.Topic)
@@ -196,6 +210,23 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 		s.ignored.Add(1)
 		return nil
 	}
+	ctx = observability.RestoreTrace(ctx, metadata.TraceParent, metadata.TraceState, s.config.Propagator)
+	ctx, span := s.config.Tracer.Start(ctx, "internal event processing", trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(attribute.String("orbit-devops.event.id", ref.EventID.String()),
+			attribute.String("orbit-devops.event.topic", ref.Topic), attribute.String("orbit-devops.aggregate.id", ref.AggregateID.String())))
+	defer func() {
+		if value := recover(); value != nil {
+			span.SetStatus(codes.Error, "internal_event_handler_interrupted")
+			span.End()
+			panic(value) // 原值只交给公共运输层脱敏，不写日志或 Trace。
+		}
+		if result != nil {
+			span.SetStatus(codes.Error, "internal_event_processing_interrupted")
+		} else {
+			span.SetStatus(codes.Ok, "")
+		}
+		span.End()
+	}()
 	if err := s.executor.HandleEvent(ctx, ref); err != nil {
 		s.processingErrors.Add(1)
 		s.config.Logger.WarnContext(ctx, "内部事件处理暂时不可用", "topic", ref.Topic)

@@ -118,16 +118,24 @@ func (m *Module) Resolve(ctx context.Context, ref Ref) (bool, error) {
 	return count == 1, err
 }
 
-// ExistsForConsumption 拒绝 Redis 中伪造或已经收束的引用，不向运输层泄露业务数据。
-func (m *Module) ExistsForConsumption(ctx context.Context, ref Ref) (bool, error) {
-	var exists bool
-	err := m.db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM internal_event_outbox
-		WHERE id=$1 AND topic=$2 AND aggregate_id=$3 AND protocol_version=$4
-		AND state IN ('pending','published'))`, ref.EventID, ref.Topic, ref.AggregateID, ref.ProtocolVersion)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+type TraceMetadata struct {
+	TraceParent string `db:"traceparent"`
+	TraceState  string `db:"tracestate"`
+}
+
+// ReadForConsumption 同时校验完整引用和可消费状态，只返回持久化 Trace 元数据，不加载业务载荷。
+func (m *Module) ReadForConsumption(ctx context.Context, ref Ref) (TraceMetadata, bool, error) {
+	if ref.EventID == uuid.Nil || ref.AggregateID == uuid.Nil || ref.Topic == "" || ref.ProtocolVersion != 1 {
+		return TraceMetadata{}, false, nil
 	}
-	return exists, err
+	var metadata TraceMetadata
+	err := m.db.GetContext(ctx, &metadata, `SELECT traceparent,tracestate FROM internal_event_outbox
+		WHERE id=$1 AND topic=$2 AND aggregate_id=$3 AND protocol_version=$4
+		AND state IN ('pending','published')`, ref.EventID, ref.Topic, ref.AggregateID, ref.ProtocolVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return TraceMetadata{}, false, nil
+	}
+	return metadata, err == nil, err
 }
 
 // ReadMetricsSnapshot 从持久化事实重建事件积压，避免进程重启让核心指标归零。

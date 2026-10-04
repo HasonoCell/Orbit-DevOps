@@ -11,6 +11,10 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
 	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const Topic = "project_gateway.reconcile.v1"
@@ -24,13 +28,28 @@ type Worker struct {
 	reconciler    Reconciler
 	leaseDuration time.Duration
 	logger        *slog.Logger
+	tracer        trace.Tracer
 }
 
-func New(module *access.Module, reconciler Reconciler, leaseDuration time.Duration, logger *slog.Logger) (*Worker, error) {
+type Option func(*Worker)
+
+func WithTracer(tracer trace.Tracer) Option {
+	return func(worker *Worker) {
+		if tracer != nil {
+			worker.tracer = tracer
+		}
+	}
+}
+
+func New(module *access.Module, reconciler Reconciler, leaseDuration time.Duration, logger *slog.Logger, options ...Option) (*Worker, error) {
 	if module == nil || reconciler == nil || leaseDuration <= 0 || logger == nil {
 		return nil, errors.New("invalid access worker configuration")
 	}
-	return &Worker{module: module, reconciler: reconciler, leaseDuration: leaseDuration, logger: logger}, nil
+	worker := &Worker{module: module, reconciler: reconciler, leaseDuration: leaseDuration, logger: logger, tracer: otel.Tracer("orbit-devops-gateway-worker")}
+	for _, option := range options {
+		option(worker)
+	}
+	return worker, nil
 }
 
 // HandleEvent 不按队列中可能过期的修订执行，而是始终重读 PostgreSQL 当前完整期望。
@@ -41,11 +60,18 @@ func (w *Worker) HandleEvent(ctx context.Context, ref internalevent.Ref) error {
 	return w.reconcile(ctx, ref.AggregateID)
 }
 
-func (w *Worker) reconcile(ctx context.Context, projectID uuid.UUID) error {
+func (w *Worker) reconcile(ctx context.Context, projectID uuid.UUID) (result error) {
 	lease, acquired, err := w.module.AcquireReconcileLease(ctx, projectID, w.leaseDuration)
 	if err != nil || !acquired {
 		return err
 	}
+	ctx, span := w.tracer.Start(ctx, "gateway reconcile project", trace.WithAttributes(attribute.String("orbit-devops.project.id", projectID.String())))
+	defer func() {
+		if result != nil {
+			span.SetStatus(codes.Error, "gateway_reconcile_interrupted")
+		}
+		span.End()
+	}()
 	snapshot, err := w.module.LoadSnapshot(ctx, projectID)
 	code := "access_store_unavailable"
 	if err == nil {

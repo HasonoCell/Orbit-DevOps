@@ -151,7 +151,7 @@ func NewWithDependencies(
 		RegistryPrefix:  config.BuildRegistryPrefix,
 	}, buildOperationModule, authorizer)
 	deliveryModule := delivery.New(db, releaseOperationModule, authorizer)
-	pipelineModule := pipeline.New(db, pipeline.Config{Platform: config.BuildPlatform}, buildModule, deliveryModule, authorizer, dependencies.GitSourceInspector)
+	pipelineModule := pipeline.New(db, pipeline.Config{Platform: config.BuildPlatform, Tracer: dependencies.Tracer}, buildModule, deliveryModule, authorizer, dependencies.GitSourceInspector)
 	diagnosticModule := diagnostics.New(db, authorizer, dependencies.RuntimeSource)
 	logger := dependencies.Logger
 	if logger == nil {

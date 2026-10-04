@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -245,14 +246,7 @@ func (r *Runner) RunDispatch(ctx context.Context, ref releaseoperation.DispatchR
 // runLease 复用已验证的续期、取消与读后写恢复；仅在业务领取事务提交后调用。
 func (r *Runner) runLease(ctx context.Context, lease releaseoperation.Lease) (bool, error) {
 	attemptStartedAt := time.Now()
-	carrier := propagation.MapCarrier{}
-	if lease.TraceParent != "" {
-		carrier.Set("traceparent", lease.TraceParent)
-	}
-	if lease.TraceState != "" {
-		carrier.Set("tracestate", lease.TraceState)
-	}
-	attemptContext := r.propagator.Extract(ctx, carrier)
+	attemptContext := observability.RestoreTrace(ctx, lease.TraceParent, lease.TraceState, r.propagator)
 	attemptContext, span := r.tracer.Start(
 		attemptContext,
 		"release delivery attempt",

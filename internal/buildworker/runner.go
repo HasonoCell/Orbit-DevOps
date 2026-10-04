@@ -13,7 +13,13 @@ import (
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/build"
 	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Phase string
@@ -75,6 +81,8 @@ type preparedExecution struct {
 }
 
 type Config struct {
+	Tracer        trace.Tracer
+	Propagator    propagation.TextMapPropagator
 	WorkerID      string
 	LeaseDuration time.Duration
 	BuildTimeout  time.Duration
@@ -98,6 +106,12 @@ func New(config Config, operations *buildoperation.Module, builds *build.Module,
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if config.Tracer == nil {
+		config.Tracer = otel.Tracer("orbit-devops-build-worker")
+	}
+	if config.Propagator == nil {
+		config.Propagator = propagation.TraceContext{}
+	}
 	return &Runner{config: config, operations: operations, builds: builds, executor: executor, logger: config.Logger}, nil
 }
 
@@ -115,6 +129,17 @@ func (r *Runner) RunDispatch(ctx context.Context, ref buildoperation.DispatchRef
 }
 
 func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) (resultErr error) {
+	ctx = observability.RestoreTrace(ctx, lease.TraceParent, lease.TraceState, r.config.Propagator)
+	ctx, span := r.config.Tracer.Start(ctx, "build execution attempt", trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(attribute.String("orbit-devops.build_operation.id", lease.BuildOperationID.String()),
+			attribute.String("orbit-devops.build_attempt.id", lease.BuildAttemptID.String()),
+			attribute.Int("orbit-devops.build_attempt.number", lease.BuildAttemptNumber)))
+	defer func() {
+		if resultErr != nil {
+			span.SetStatus(codes.Error, "build_attempt_interrupted")
+		}
+		span.End()
+	}()
 	// 在任何输入读取或外部调用前确认执行权；心跳不与 Start、Observe、Cancel 共用调用栈。
 	renewContext, cancelRenew := context.WithTimeout(ctx, r.renewInterval())
 	renewal, err := r.operations.Renew(renewContext, lease, r.config.LeaseDuration)
@@ -316,6 +341,8 @@ func (r *Runner) cancelExecution(ctx context.Context, lease buildoperation.Lease
 
 // prepareExecution 在恢复窗口中优先核验旧 Job；取消恢复绝不创建新 Job，普通恢复仅在安全条件下重建。
 func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Lease, execution BuildExecution) (preparedExecution, error) {
+	ctx, span := r.config.Tracer.Start(ctx, "build prepare execution")
+	defer span.End()
 	if lease.Recovery && lease.RecoveredFromAttemptID != nil {
 		previousExecution := execution
 		previousExecution.BuildAttemptID = *lease.RecoveredFromAttemptID
@@ -381,14 +408,18 @@ func (r *Runner) prepareExecution(ctx context.Context, lease buildoperation.Leas
 }
 
 func (r *Runner) finishObservation(ctx context.Context, lease buildoperation.Lease, observation ExecutionObservation) error {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("orbit-devops.build.phase", string(observation.Phase)))
 	switch observation.Phase {
 	case PhaseSucceeded:
+		span.SetStatus(codes.Ok, "")
 		_, err := r.operations.Succeed(ctx, lease, buildoperation.ArtifactResult{
 			Repository: observation.Repository, Digest: observation.Digest,
 			LogExcerpt: observation.LogExcerpt, LogTruncated: observation.LogTruncated,
 		})
 		return err
 	case PhaseFailed:
+		span.SetStatus(codes.Error, "build_execution_failed")
 		disposition := observation.Disposition
 		if disposition == "" {
 			disposition = buildoperation.NonRetryable
@@ -401,6 +432,7 @@ func (r *Runner) finishObservation(ctx context.Context, lease buildoperation.Lea
 	case PhaseCanceled:
 		return r.operations.ConfirmCanceled(ctx, lease, observation.LogExcerpt, observation.LogTruncated)
 	case PhaseMissing, PhaseUnknown:
+		span.SetStatus(codes.Error, "build_result_unknown")
 		_, err := r.operations.HandleUnknownOutcome(ctx, lease, buildoperation.Failure{
 			Code:        stableValue(observation.ErrorCode, "build_result_unknown"),
 			Summary:     stableValue(observation.ErrorSummary, "build executor result could not be confirmed"),
@@ -414,6 +446,7 @@ func (r *Runner) finishObservation(ctx context.Context, lease buildoperation.Lea
 }
 
 func (r *Runner) finishExecutorError(ctx context.Context, lease buildoperation.Lease, err error) error {
+	trace.SpanFromContext(ctx).SetStatus(codes.Error, "build_executor_interrupted")
 	var failure *FailureError
 	if !errors.As(err, &failure) {
 		// Adapter 的普通错误表示观察通道中断，不能据此断言外部 Job 已失败。

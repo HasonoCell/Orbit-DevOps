@@ -78,7 +78,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	worker, err := accessworker.New(module, gateway, config.LeaseDuration, logger)
+	worker, err := accessworker.New(module, gateway, config.LeaseDuration, logger, accessworker.WithTracer(tracing.Provider.Tracer("orbit-devops-gateway-worker")))
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func run(logger *slog.Logger) error {
 		Queue: config.Queue.Name, Topics: []string{accessworker.Topic},
 		Concurrency: config.Queue.Concurrency, PollInterval: config.PollInterval,
 		ConsumptionGrace: config.Queue.ConsumptionGrace, TaskTimeout: config.Queue.TaskTimeout,
-		ShutdownTimeout: config.Queue.ShutdownTimeout, Logger: logger}, events, worker)
+		ShutdownTimeout: config.Queue.ShutdownTimeout, Logger: logger, Tracer: tracing.Provider.Tracer("orbit-devops-gateway-worker"), Propagator: tracing.Propagator}, events, worker)
 	if err != nil {
 		return err
 	}

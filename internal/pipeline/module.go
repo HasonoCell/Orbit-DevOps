@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"path"
 	"regexp"
 	"strings"
@@ -16,10 +15,13 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/catalog"
 	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
+	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -36,6 +38,7 @@ var (
 var endpointKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 type Config struct {
+	Tracer               trace.Tracer
 	Platform             string
 	SourceRecoveryWindow time.Duration
 	SourceRetryBaseDelay time.Duration
@@ -78,6 +81,9 @@ func New(db *sqlx.DB, config Config, builds *build.Module, releases *delivery.Mo
 	}
 	if config.Recorder == nil {
 		config.Recorder = noopRecorder{}
+	}
+	if config.Tracer == nil {
+		config.Tracer = otel.Tracer("orbit-devops-pipeline")
 	}
 	return &Module{db: db, config: config, builds: builds, releases: releases, authorizer: authorizer, inspector: inspector, recorder: config.Recorder}
 }

@@ -79,7 +79,7 @@ func run(logger *slog.Logger) error {
 		LeaseDuration: config.LeaseDuration,
 		// Job 自己持有业务截止时间；Runner 多留一个观察窗口，用 Kubernetes 终态而非本地时钟判定超时。
 		BuildTimeout: config.BuildOperationTimeout + 30*time.Second,
-		PollInterval: config.PollInterval, Logger: logger}, operations, builds, adapter)
+		PollInterval: config.PollInterval, Logger: logger, Tracer: tracing.Provider.Tracer("orbit-devops-build-worker"), Propagator: tracing.Propagator}, operations, builds, adapter)
 	if err != nil {
 		return err
 	}

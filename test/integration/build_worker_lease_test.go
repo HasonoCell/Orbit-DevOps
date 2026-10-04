@@ -23,6 +23,9 @@ func TestBuildWorkerRenewsLeaseDuringSlowExecutorCalls(t *testing.T) {
 	project := createProject(t, environment, "slow-build-project")
 	application := createApplication(t, environment, project.ID, "slow-build-application")
 	db := openTestDatabase(t, environment.databaseURL)
+	// 有限池下，外部 Job 调用不能占住事务连接；独立续租与修复扫描仍须取得连接。
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(2)
 	operations := buildoperation.New(db, buildoperation.WithAuthorizer(projectauth.New(db, environment.identities)))
 	for _, phase := range []string{"start", "observe", "cancel"} {
 		t.Run(phase, func(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/audit"
 	"github.com/HasonoCell/Orbit-DevOps/internal/idempotency"
 	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -210,9 +211,10 @@ func (m *Module) changeSync(ctx context.Context, tx *sqlx.Tx, projectID uuid.UUI
 		WHERE project_id=$1 AND cluster_ref=$2 AND namespace=$3`, projectID, m.config.ClusterRef, m.config.Namespace, now); err != nil {
 		return err
 	}
+	parent, state := observability.TraceFields(ctx)
 	_, err := tx.ExecContext(ctx, `INSERT INTO internal_event_outbox
-		(id,topic,aggregate_id,state,available_at,next_dispatch_at,created_at,updated_at)
-		VALUES ($1,'project_gateway.reconcile.v1',$2,'pending',$3,$3,$3,$3)`, uuid.New(), projectID, now)
+		(id,topic,aggregate_id,state,available_at,next_dispatch_at,traceparent,tracestate,created_at,updated_at)
+		VALUES ($1,'project_gateway.reconcile.v1',$2,'pending',$3,$3,$4,$5,$3,$3)`, uuid.New(), projectID, now, parent, state)
 	return err
 }
 
