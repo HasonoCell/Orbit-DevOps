@@ -13,10 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/taskqueue"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	redisclient "github.com/redis/go-redis/v9"
 )
 
 const TaskType = "orbit-devops:release-dispatch:v1"
@@ -49,9 +49,7 @@ type Service struct {
 	config            Config
 	releaseOperations *releaseoperation.Module
 	executor          Executor
-	client            *asynq.Client
-	connection        *redisclient.Client
-	redis             asynq.RedisClientOpt
+	transport         *taskqueue.Transport
 	started           atomic.Bool
 	running           atomic.Bool
 	lastPublish       atomic.Int64
@@ -61,9 +59,6 @@ type Service struct {
 	ignored           atomic.Uint64
 	invalid           atomic.Uint64
 	executionErrors   atomic.Uint64
-	workersMu         sync.Mutex
-	closing           bool
-	workers           sync.WaitGroup
 }
 
 // New 校验运行参数；创建对象不会领取或执行任务。
@@ -81,17 +76,22 @@ func New(config Config, releaseOperations *releaseoperation.Module, executor Exe
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	// go-redis 的底层日志是进程级全局入口，不能让它绕过安全日志直接打印原始连接错误。
-	redisLogOnce.Do(func() { redisclient.SetLogger(discardRedisLogger{}) })
-	redis := asynq.RedisClientOpt{Addr: config.RedisAddress, Username: config.RedisUsername, Password: config.RedisPassword,
-		DB: config.RedisDB, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second}
-	connection := redisclient.NewClient(&redisclient.Options{Addr: config.RedisAddress, Username: config.RedisUsername, Password: config.RedisPassword,
-		DB: config.RedisDB, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second, ContextTimeoutEnabled: true, MaxRetries: -1})
-	return &Service{config: config, releaseOperations: releaseOperations, executor: executor, redis: redis, connection: connection, client: asynq.NewClientFromRedisClient(connection)}, nil
+	service := &Service{config: config, releaseOperations: releaseOperations, executor: executor}
+	transport, err := taskqueue.New(taskqueue.Config{RedisAddress: config.RedisAddress,
+		RedisUsername: config.RedisUsername, RedisPassword: config.RedisPassword, RedisDB: config.RedisDB,
+		Queue: config.Queue, Concurrency: config.Concurrency, PollInterval: config.PollInterval,
+		TaskTimeout: config.TaskTimeout, ShutdownTimeout: config.ShutdownTimeout, MaxRetry: 5,
+		RetryDelay: taskqueue.ShortRetryDelay, Logger: config.Logger,
+		OnPanic: func() { service.executionErrors.Add(1) }})
+	if err != nil {
+		return nil, err
+	}
+	service.transport = transport
+	return service, nil
 }
 
 // Close 释放投递连接；Run 自动调用，单独执行 PublishOnce 的调用方需在结束后调用。
-func (s *Service) Close() error { return s.connection.Close() }
+func (s *Service) Close() error { return s.transport.Close() }
 
 // PublishOnce 先取得短期投递 token，再在事务外入队；确认失败不会抹去原意图。
 func (s *Service) PublishOnce(ctx context.Context) error {
@@ -127,16 +127,13 @@ func (s *Service) publish(ctx context.Context, item releaseoperation.Dispatch) e
 	if err != nil {
 		return errors.New("dispatch_encoding_failed")
 	}
-	sendContext, cancel := context.WithTimeout(ctx, time.Second)
-	info, sendErr := s.client.EnqueueContext(sendContext, asynq.NewTask(TaskType, payload),
-		asynq.Queue(s.config.Queue), asynq.ProcessAt(item.AvailableAt), asynq.MaxRetry(5), asynq.Timeout(s.config.TaskTimeout))
-	cancel()
+	taskID, sendErr := s.transport.Send(ctx, asynq.NewTask(TaskType, payload), item.AvailableAt)
 	code := ""
 	if sendErr != nil {
 		code = "queue_unavailable"
 		s.sendErrors.Add(1)
 	} else {
-		s.config.Logger.InfoContext(ctx, "发布意图已入队", "release_operation_id", item.ReleaseOperationID, "release_dispatch_id", item.DispatchID, "sequence", item.Sequence, "task_id", info.ID)
+		s.config.Logger.InfoContext(ctx, "发布意图已入队", "release_operation_id", item.ReleaseOperationID, "release_dispatch_id", item.DispatchID, "sequence", item.Sequence, "task_id", taskID)
 		if s.config.AfterEnqueue != nil {
 			s.config.AfterEnqueue(item)
 		}
@@ -156,19 +153,8 @@ func (s *Service) Run(ctx context.Context) error {
 		return errors.New("release dispatch service already started")
 	}
 	defer s.Close()
-	workerContext, cancelWorkers := context.WithCancel(context.Background())
-	defer cancelWorkers()
-	server := asynq.NewServer(s.redis, asynq.Config{
-		Concurrency: s.config.Concurrency, Queues: map[string]int{s.config.Queue: 1},
-		BaseContext:       func() context.Context { return workerContext },
-		TaskCheckInterval: s.config.PollInterval, DelayedTaskCheckInterval: s.config.PollInterval,
-		ShutdownTimeout: s.config.ShutdownTimeout, Logger: safeLogger{s.config.Logger}, LogLevel: asynq.ErrorLevel,
-		RetryDelayFunc: func(n int, _ error, _ *asynq.Task) time.Duration {
-			return min(time.Second*time.Duration(1<<min(n, 5)), 30*time.Second)
-		},
-	})
-	if err := server.Start(asynq.HandlerFunc(s.handle)); err != nil {
-		return errors.New("queue_start_failed")
+	if err := s.transport.Start(asynq.HandlerFunc(s.handle)); err != nil {
+		return err
 	}
 	s.running.Store(true)
 	var loops sync.WaitGroup
@@ -186,15 +172,11 @@ func (s *Service) Run(ctx context.Context) error {
 	}()
 	<-ctx.Done()
 	s.running.Store(false)
-	server.Stop()
+	s.transport.Stop()
 	loops.Wait()
-	server.Shutdown()
-	s.workersMu.Lock()
-	s.closing = true
-	cancelWorkers()
-	s.workersMu.Unlock()
-	// Asynq 退出可能早于 Handler 返回，必须等业务调用响应取消后才能关闭数据库。
-	s.workers.Wait()
+	if err := s.transport.Close(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -222,21 +204,6 @@ func (s *Service) loop(ctx context.Context, interval time.Duration, run func(con
 
 // handle 只接受受限引用。损坏消息不改合法意图；原始业务错误不进入 Redis 归档。
 func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
-	s.workersMu.Lock()
-	if s.closing {
-		s.workersMu.Unlock()
-		return errors.New("worker_stopping")
-	}
-	s.workers.Add(1)
-	s.workersMu.Unlock()
-	defer s.workers.Done()
-	// 在框架之前收束 panic，防止框架将任意 panic 内容写入日志或 Redis。
-	defer func() {
-		if recover() != nil {
-			s.executionErrors.Add(1)
-			result = errors.New("dispatch_handler_interrupted")
-		}
-	}()
 	var ref releaseoperation.DispatchRef
 	decoder := json.NewDecoder(bytes.NewReader(task.Payload()))
 	decoder.DisallowUnknownFields()
@@ -264,18 +231,3 @@ func (s *Service) handle(ctx context.Context, task *asynq.Task) (result error) {
 	s.config.Logger.InfoContext(ctx, "发布意图已处理", "release_operation_id", ref.ReleaseOperationID, "release_dispatch_id", ref.DispatchID, "sequence", ref.Sequence, "claim_outcome", outcome)
 	return nil
 }
-
-// safeLogger 不透传框架原始连接错误；业务关联信息由上面的受控日志单独记录。
-type safeLogger struct{ logger *slog.Logger }
-
-var redisLogOnce sync.Once
-
-type discardRedisLogger struct{}
-
-func (discardRedisLogger) Printf(context.Context, string, ...interface{}) {}
-
-func (l safeLogger) Debug(...interface{}) {}
-func (l safeLogger) Info(...interface{})  {}
-func (l safeLogger) Warn(...interface{})  { l.logger.Warn("Asynq 队列警告") }
-func (l safeLogger) Error(...interface{}) { l.logger.Error("Asynq 队列暂时不可用") }
-func (l safeLogger) Fatal(...interface{}) { l.logger.Error("Asynq 队列运行失败") }
