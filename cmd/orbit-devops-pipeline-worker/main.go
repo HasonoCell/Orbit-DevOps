@@ -16,6 +16,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
 	"github.com/HasonoCell/Orbit-DevOps/internal/githubsource"
 	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
 	platformdb "github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
@@ -48,6 +49,15 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer database.Close()
+	tracing, err := observability.NewTracing(ctx, config.Tracing, logger, "pipeline-worker")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := tracing.Shutdown(context.Background()); err != nil {
+			logger.Warn("Trace 退出刷新未完成", "error", err)
+		}
+	}()
 	authorizer := projectauth.New(database, nil)
 	buildOperations := buildoperation.New(database)
 	releaseOperations := releaseoperation.New(database)
@@ -76,6 +86,7 @@ func run(logger *slog.Logger) error {
 	}
 	mux := http.NewServeMux()
 	registry := prometheus.NewRegistry()
+	registry.MustRegister(tracing.ExportFailures)
 	registry.MustRegister(collectors.NewDBStatsCollector(database.DB, "pipeline-worker"))
 	registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}), service, metrics)
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))

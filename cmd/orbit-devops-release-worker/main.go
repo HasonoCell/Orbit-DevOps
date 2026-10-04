@@ -72,14 +72,16 @@ func run(logger *slog.Logger) error {
 	releases := delivery.New(db, releaseOperations, projectauth.New(db, nil))
 	metrics := observability.NewMetrics(releaseOperations.CountPending)
 	metrics.RegisterReleaseOperations(releaseOperations.ReadMetricsSnapshot)
-	tracing := observability.NewTracing(logger)
+	tracing, err := observability.NewTracing(ctx, config.Tracing, logger, "release-worker")
+	if err != nil {
+		return err
+	}
 	defer func() {
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := tracing.Shutdown(shutdownContext); err != nil {
-			logger.Error("关闭 Trace Provider 失败", "error", err)
+		if err := tracing.Shutdown(context.Background()); err != nil {
+			logger.Warn("Trace 退出刷新未完成", "error", err)
 		}
 	}()
+	metrics.RegisterCollector(tracing.ExportFailures)
 	adapter, err := kube.NewVerifiedLocalAdapter(
 		ctx,
 		config.Kubernetes.KubeconfigPath,

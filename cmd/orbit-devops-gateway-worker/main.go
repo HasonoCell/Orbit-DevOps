@@ -15,6 +15,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/accessworker"
 	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
 	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	platformdb "github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/Orbit-DevOps/internal/platform/process"
@@ -48,6 +49,15 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer database.Close()
+	tracing, err := observability.NewTracing(ctx, config.Tracing, logger, "gateway-worker")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := tracing.Shutdown(context.Background()); err != nil {
+			logger.Warn("Trace 退出刷新未完成", "error", err)
+		}
+	}()
 	adapter, err := kube.NewVerifiedLocalAdapter(ctx, config.Kubernetes.KubeconfigPath, config.Kubernetes.Context,
 		kube.Config{ClusterRef: config.Kubernetes.ClusterRef, Namespace: config.Kubernetes.Namespace,
 			FieldManager: config.Kubernetes.FieldManager, PollInterval: config.Kubernetes.PollInterval})
@@ -84,6 +94,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	registry := prometheus.NewRegistry()
+	registry.MustRegister(tracing.ExportFailures)
 	registry.MustRegister(collectors.NewDBStatsCollector(database.DB, "gateway-worker"))
 	registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}), service)
 	mux := http.NewServeMux()

@@ -15,6 +15,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/buildkube"
 	"github.com/HasonoCell/Orbit-DevOps/internal/buildoperation"
 	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	platformdb "github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/Orbit-DevOps/internal/platform/process"
@@ -45,6 +46,15 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer database.Close()
+	tracing, err := observability.NewTracing(ctx, config.Tracing, logger, "build-worker")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := tracing.Shutdown(context.Background()); err != nil {
+			logger.Warn("Trace 退出刷新未完成", "error", err)
+		}
+	}()
 	operations := buildoperation.New(database, buildoperation.WithAutomaticRetryPolicy(
 		config.MaximumAutomaticRetries, func(retryNumber int) time.Duration {
 			delay := config.RetryBaseDelay
@@ -86,6 +96,7 @@ func run(logger *slog.Logger) error {
 	}
 	mux := http.NewServeMux()
 	registry := prometheus.NewRegistry()
+	registry.MustRegister(tracing.ExportFailures)
 	registry.MustRegister(collectors.NewDBStatsCollector(database.DB, "build-worker"))
 	registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}), queue)
 	mux.Handle("/readyz", queue.ReadinessHandler())

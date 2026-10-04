@@ -43,15 +43,23 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	tracing := observability.NewTracing(logger)
+	var runtime *app.Runtime
+	tracing, err := observability.NewTracing(ctx, config.Tracing, logger, "api")
+	if err != nil {
+		return err
+	}
 	defer func() {
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := tracing.Shutdown(shutdownContext); err != nil {
-			logger.Error("关闭 Trace Provider 失败", "error", err)
+		if err := tracing.Shutdown(context.Background()); err != nil {
+			logger.Warn("Trace 退出刷新未完成", "error", err)
+		}
+		if runtime != nil {
+			if err := runtime.Close(); err != nil {
+				logger.Error("关闭 API 数据库连接失败", "error", err)
+			}
 		}
 	}()
 	metrics := observability.NewMetrics(nil)
+	metrics.RegisterCollector(tracing.ExportFailures)
 	adapter, err := kube.NewAPIAdapter(
 		ctx,
 		config.Kubernetes.KubeconfigPath,
@@ -86,7 +94,7 @@ func run(logger *slog.Logger) error {
 	for key, policy := range config.Access.IssuerPolicies {
 		issuerPolicies[key] = access.IssuerPolicy{Kind: policy.Kind, Name: policy.Name}
 	}
-	runtime, err := app.NewWithDependencies(ctx, app.Config{
+	runtime, err = app.NewWithDependencies(ctx, app.Config{
 		DatabasePool: config.DatabasePool,
 		DatabaseURL:  config.DatabaseURL,
 		BrowserSecurity: httpapi.BrowserSecurityConfig{
@@ -123,11 +131,6 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := runtime.Close(); err != nil {
-			logger.Error("关闭 API 数据库连接失败", "error", err)
-		}
-	}()
 
 	server := &http.Server{
 		Addr:              config.Address,

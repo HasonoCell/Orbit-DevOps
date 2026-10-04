@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -27,6 +28,7 @@ type Kubernetes struct {
 }
 
 type API struct {
+	Tracing       observability.TraceConfig
 	DatabasePool  database.PoolConfig
 	Address       string
 	DatabaseURL   string
@@ -52,6 +54,7 @@ type AccessIssuerPolicy struct {
 }
 
 type GatewayWorker struct {
+	Tracing             observability.TraceConfig
 	DatabasePool        database.PoolConfig
 	Address             string
 	DatabaseURL         string
@@ -102,6 +105,7 @@ type SourceBuild struct {
 }
 
 type ReleaseWorker struct {
+	Tracing                 observability.TraceConfig
 	DatabasePool            database.PoolConfig
 	Address                 string
 	DatabaseURL             string
@@ -117,6 +121,7 @@ type ReleaseWorker struct {
 
 // BuildWorker 将构建业务租约、队列运输和受限 Kubernetes Job 配置分开保存。
 type BuildWorker struct {
+	Tracing                 observability.TraceConfig
 	DatabasePool            database.PoolConfig
 	Address                 string
 	DatabaseURL             string
@@ -144,6 +149,7 @@ type BuildWorker struct {
 
 // PipelineWorker 只配置数据库、内部事件运输与 GitHub 出站访问，不包含集群或 Registry 凭据。
 type PipelineWorker struct {
+	Tracing              observability.TraceConfig
 	DatabasePool         database.PoolConfig
 	Address              string
 	DatabaseURL          string
@@ -214,6 +220,10 @@ func LoadAPI() (API, error) {
 	if err != nil {
 		return API{}, err
 	}
+	tracing, err := loadTracing()
+	if err != nil {
+		return API{}, err
+	}
 	kubernetes, err := loadKubernetes()
 	if err != nil {
 		return API{}, err
@@ -244,6 +254,7 @@ func LoadAPI() (API, error) {
 	}
 	return API{
 		DatabasePool:  pool,
+		Tracing:       tracing,
 		Address:       value("ORBIT_DEVOPS_API_ADDRESS", "127.0.0.1:8080"),
 		DatabaseURL:   value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
 		MigrateOnBoot: migrateOnBoot,
@@ -285,6 +296,10 @@ func LoadGatewayWorker() (GatewayWorker, error) {
 	if err != nil {
 		return GatewayWorker{}, err
 	}
+	tracing, err := loadTracing()
+	if err != nil {
+		return GatewayWorker{}, err
+	}
 	kubernetes, err := loadKubernetes()
 	if err != nil {
 		return GatewayWorker{}, err
@@ -315,7 +330,7 @@ func LoadGatewayWorker() (GatewayWorker, error) {
 	if lease >= queue.TaskTimeout {
 		return GatewayWorker{}, errors.New("gateway lease must be shorter than task timeout")
 	}
-	return GatewayWorker{DatabasePool: pool, Address: value("ORBIT_DEVOPS_GATEWAY_WORKER_ADDRESS", "127.0.0.1:9094"),
+	return GatewayWorker{DatabasePool: pool, Tracing: tracing, Address: value("ORBIT_DEVOPS_GATEWAY_WORKER_ADDRESS", "127.0.0.1:9094"),
 		DatabaseURL: value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL), Kubernetes: kubernetes,
 		Access: accessConfig, Queue: queue, PollInterval: poll, MaintenanceInterval: maintenance,
 		LeaseDuration: lease}, nil
@@ -378,6 +393,10 @@ func LoadPipelineWorker() (PipelineWorker, error) {
 	if err != nil {
 		return PipelineWorker{}, err
 	}
+	tracing, err := loadTracing()
+	if err != nil {
+		return PipelineWorker{}, err
+	}
 	poll, err := duration("ORBIT_DEVOPS_PIPELINE_WORKER_POLL_INTERVAL", 500*time.Millisecond)
 	if err != nil {
 		return PipelineWorker{}, err
@@ -403,9 +422,9 @@ func LoadPipelineWorker() (PipelineWorker, error) {
 		return PipelineWorker{}, err
 	}
 	return PipelineWorker{
-		DatabasePool: pool,
-		Address:      value("ORBIT_DEVOPS_PIPELINE_WORKER_ADDRESS", "127.0.0.1:9093"),
-		DatabaseURL:  value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL), PollInterval: poll,
+		DatabasePool: pool, Tracing: tracing,
+		Address:     value("ORBIT_DEVOPS_PIPELINE_WORKER_ADDRESS", "127.0.0.1:9093"),
+		DatabaseURL: value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL), PollInterval: poll,
 		MaintenanceInterval: maintenance, SourceRecoveryWindow: recoveryWindow,
 		SourceRetryBaseDelay: retryDelay, SourceBuild: loadSourceBuild(), Queue: queue,
 		GitHubSource: GitHubSource{APIBaseURL: value("ORBIT_DEVOPS_GITHUB_API_URL", "https://api.github.com"), Token: os.Getenv("ORBIT_DEVOPS_GITHUB_API_TOKEN"), Timeout: githubTimeout},
@@ -478,6 +497,10 @@ func LoadReleaseWorker() (ReleaseWorker, error) {
 	if err != nil {
 		return ReleaseWorker{}, err
 	}
+	tracing, err := loadTracing()
+	if err != nil {
+		return ReleaseWorker{}, err
+	}
 	kubernetes, err := loadKubernetes()
 	if err != nil {
 		return ReleaseWorker{}, err
@@ -515,6 +538,7 @@ func LoadReleaseWorker() (ReleaseWorker, error) {
 	}
 	return ReleaseWorker{
 		DatabasePool:            pool,
+		Tracing:                 tracing,
 		Address:                 value("ORBIT_DEVOPS_RELEASE_WORKER_ADDRESS", "127.0.0.1:9091"),
 		DatabaseURL:             value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
 		WorkerID:                value("ORBIT_DEVOPS_RELEASE_WORKER_ID", hostname),
@@ -531,6 +555,10 @@ func LoadReleaseWorker() (ReleaseWorker, error) {
 // LoadBuildWorker 拒绝未固定 Digest 的运行镜像，并让队列超时覆盖完整构建窗口。
 func LoadBuildWorker() (BuildWorker, error) {
 	pool, err := loadDatabasePool(8)
+	if err != nil {
+		return BuildWorker{}, err
+	}
+	tracing, err := loadTracing()
 	if err != nil {
 		return BuildWorker{}, err
 	}
@@ -575,8 +603,8 @@ func LoadBuildWorker() (BuildWorker, error) {
 		return BuildWorker{}, fmt.Errorf("read hostname: %w", err)
 	}
 	config := BuildWorker{
-		DatabasePool: pool,
-		Address:      value("ORBIT_DEVOPS_BUILD_WORKER_ADDRESS", "127.0.0.1:9092"), DatabaseURL: value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
+		DatabasePool: pool, Tracing: tracing,
+		Address: value("ORBIT_DEVOPS_BUILD_WORKER_ADDRESS", "127.0.0.1:9092"), DatabaseURL: value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
 		WorkerID: value("ORBIT_DEVOPS_BUILD_WORKER_ID", hostname), PollInterval: pollInterval, LeaseDuration: leaseDuration,
 		BuildOperationTimeout: buildTimeout, MaximumAutomaticRetries: maximumRetries, RetryBaseDelay: retryBaseDelay,
 		KubeconfigPath: value("ORBIT_DEVOPS_KUBECONFIG", clientcmd.RecommendedHomeFile), KubernetesContext: value("ORBIT_DEVOPS_KUBERNETES_CONTEXT", "kind-orbit-devops-s1"),
