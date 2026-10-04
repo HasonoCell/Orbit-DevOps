@@ -214,8 +214,8 @@ test("构建详情五分钟后暂停，手动刷新重启，终态停止轮询",
   await page.goto("/projects/p-1/applications/a-1/builds/b-1");
   await expect(page.getByText("执行中", { exact: true })).toBeVisible();
   await page.clock.fastForward(31_000);
-  await expect.poll(() => buildReads).toBeGreaterThan(1);
   await expect.poll(() => operationReads).toBeGreaterThan(1);
+  expect(buildReads).toBe(1);
   await page.clock.fastForward(5 * 60_000);
   const stoppedAt = [buildReads, operationReads];
   await page.clock.fastForward(60_000);
@@ -227,8 +227,8 @@ test("构建详情五分钟后暂停，手动刷新重启，终态停止轮询",
   await expect(page.getByRole("button", { name: "刷新状态" })).toBeEnabled();
   const refreshedAt = [buildReads, operationReads];
   await page.clock.fastForward(31_000);
-  await expect.poll(() => buildReads).toBeGreaterThan(refreshedAt[0]);
   await expect.poll(() => operationReads).toBeGreaterThan(refreshedAt[1]);
+  expect(buildReads).toBe(refreshedAt[0]);
 
   current = { ...operation, status: "succeeded" };
   await page.clock.fastForward(31_000);
@@ -236,6 +236,50 @@ test("构建详情五分钟后暂停，手动刷新重启，终态停止轮询",
   const finishedAt = [buildReads, operationReads];
   await page.clock.fastForward(60_000);
   expect([buildReads, operationReads]).toEqual(finishedAt);
+});
+
+test("执行不变只轮询 Operation，新 Attempt 和终态刷新详情及产物", async ({
+  page,
+}) => {
+  await page.clock.install();
+  let current = { ...operation, status: "running" };
+  let details = 0;
+  let reads = 0;
+  await page.route("**/api/v1/builds/b-1", (route) => {
+    details++;
+    return route.fulfill({
+      json: {
+        build,
+        buildOperation: current,
+        ...(current.status === "succeeded" ? { imageArtifact: artifact } : {}),
+      },
+    });
+  });
+  await page.route("**/api/v1/build-operations/bo-1", (route) => {
+    reads++;
+    return route.fulfill({ json: current });
+  });
+  await page.goto("/projects/p-1/applications/a-1/builds/b-1");
+  await expect(page.getByText("执行中", { exact: true })).toBeVisible();
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => reads).toBe(2);
+  expect(details).toBe(1);
+  current = {
+    ...current,
+    attemptCount: 2,
+    attempts: [
+      { ...operation.attempts[0], id: "ba-2", number: 2, status: "running" },
+    ],
+  };
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => details).toBe(2);
+  current = { ...current, status: "succeeded" };
+  await page.clock.fastForward(31_000);
+  await expect(page.getByText(artifact.digest, { exact: true })).toBeVisible();
+  expect(details).toBe(3);
+  const finished = reads;
+  await page.clock.fastForward(60_000);
+  expect(reads).toBe(finished);
 });
 
 test("构建执行查询失败后暂停自动请求，重试后恢复观察", async ({ page }) => {

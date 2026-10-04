@@ -30,6 +30,51 @@ const detail = {
   ],
 };
 
+test("发布仅轮询执行，终态刷新审计，运行诊断继续独立观察", async ({ page }) => {
+  await page.clock.install();
+  let current = { ...operation, status: "running" };
+  let detailReads = 0;
+  let operationReads = 0;
+  let diagnosticReads = 0;
+  await page.route("**/api/v1/releases/r-1", (route) => {
+    detailReads++;
+    return route.fulfill({
+      json: {
+        ...detail,
+        releaseOperation: current,
+        auditTimeline:
+          current.status === "succeeded"
+            ? [{ ...detail.auditTimeline[0], action: "release.succeeded" }]
+            : [],
+      },
+    });
+  });
+  await page.route("**/api/v1/release-operations/ro-1", (route) => {
+    operationReads++;
+    return route.fulfill({ json: current });
+  });
+  await page.route("**/api/v1/releases/r-1/diagnostics", (route) => {
+    diagnosticReads++;
+    return route.fulfill({ json: diagnostic() });
+  });
+  await page.goto("/projects/p-1/applications/a-1/releases/r-1");
+  await expect(page.getByText("执行中", { exact: true })).toBeVisible();
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => operationReads).toBe(2);
+  expect(detailReads).toBe(1);
+  current = { ...current, status: "succeeded" };
+  await page.clock.fastForward(31_000);
+  await expect(
+    page.getByText("release.succeeded · u-1", { exact: true }),
+  ).toBeVisible();
+  expect(detailReads).toBe(2);
+  const terminalReads = operationReads;
+  const lastDiagnostic = diagnosticReads;
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => diagnosticReads).toBeGreaterThan(lastDiagnostic);
+  expect(operationReads).toBe(terminalReads);
+});
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/v1/users/me", (route) =>
     route.fulfill({ json: principal }),

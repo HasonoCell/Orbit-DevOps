@@ -8,12 +8,15 @@ import {
 } from "@/shared/overview-status";
 import { Fact, QueryNotice, StatusPill, Timestamp } from "@/shared/OverviewUI";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
-import { useQuery } from "@tanstack/react-query";
+import { useObservationWindow } from "@/shared/use-observation-window";
+import { useOperationRefresh } from "@/shared/use-operation-refresh";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import { buildQueries } from "./api";
 import { BuildCommands } from "./BuildCommands";
+import { invalidateBuild } from "./mutations";
 
 type Attempt = components["schemas"]["BuildAttempt"];
 
@@ -39,7 +42,8 @@ function BuildContent({
   applicationId: string;
   buildId: string;
 }) {
-  const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
+  const { until, restart: restartObservation } = useObservationWindow(buildId);
+  const queryClient = useQueryClient();
   const application = useQuery({
     queryKey: ["application", applicationId],
     queryFn: () => getApplication(applicationId),
@@ -50,13 +54,6 @@ function BuildContent({
   });
   const build = useQuery({
     ...buildQueries.detail(buildId),
-    refetchInterval: (query) =>
-      pollInterval(
-        until,
-        query.state.error,
-        !!query.state.data &&
-          isActiveOperation(query.state.data.buildOperation.status),
-      ),
   });
   const operationId = build.data?.buildOperation.id ?? "";
   const operation = useQuery({
@@ -68,9 +65,19 @@ function BuildContent({
         query.state.error,
         !!query.state.data && isActiveOperation(query.state.data.status),
       ),
+    refetchIntervalInBackground: false,
   });
+  const refreshRelated = useCallback(() => {
+    invalidateBuild(queryClient, applicationId, buildId);
+  }, [queryClient, applicationId, buildId]);
+  useOperationRefresh(
+    operation.data,
+    build.data?.buildOperation,
+    operation.error,
+    refreshRelated,
+  );
   function refresh() {
-    setUntil(Date.now() + 5 * 60_000);
+    restartObservation();
     void build.refetch();
     if (operationId) void operation.refetch();
   }
@@ -239,7 +246,7 @@ function BuildContent({
           canResolveUnknown={permissions.data.allowed.includes(
             "resolve_unknown",
           )}
-          onAccepted={() => setUntil(Date.now() + 5 * 60_000)}
+          onAccepted={restartObservation}
         />
       )}
     </div>

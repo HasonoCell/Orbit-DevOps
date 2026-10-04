@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Fact, StatusPill, Timestamp } from "@/shared/OverviewUI";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
 import { isActiveRun, pollInterval, runStatus } from "@/shared/overview-status";
+import { useObservationWindow } from "@/shared/use-observation-window";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
@@ -47,7 +48,7 @@ function DeliveryRunContent({
   pipelineId: string;
   runId: string;
 }) {
-  const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
+  const { until, restart } = useObservationWindow(runId);
   const [confirm, setConfirm] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const application = useQuery({
@@ -63,6 +64,7 @@ function DeliveryRunContent({
   });
   const run = useQuery({
     ...pipelineQueries.run(runId),
+    refetchIntervalInBackground: false,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       // 重新对账的 202 可能仍是阻塞状态，需要短期观察后台推进，终态仍停止。
@@ -79,11 +81,11 @@ function DeliveryRunContent({
   const reconcile = useReconcileRun(pipelineId, runId, () => {
     setConfirm(false);
     setAccepted(true);
-    setUntil(Date.now() + 5 * 60_000);
+    restart();
   });
   function refresh() {
     setAccepted(false);
-    setUntil(Date.now() + 5 * 60_000);
+    restart();
     void run.refetch();
   }
   if (

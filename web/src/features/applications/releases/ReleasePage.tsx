@@ -20,11 +20,14 @@ import {
 } from "@/shared/overview-status";
 import { Fact, QueryNotice, StatusPill, Timestamp } from "@/shared/OverviewUI";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
-import { useQuery } from "@tanstack/react-query";
+import { useObservationWindow } from "@/shared/use-observation-window";
+import { useOperationRefresh } from "@/shared/use-operation-refresh";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { releaseQueries } from "./api";
+import { invalidateRelease } from "./mutations";
 import { ReleaseCommands } from "./ReleaseCommands";
 
 export function ReleasePage() {
@@ -48,7 +51,9 @@ function ReleaseContent({
   applicationId: string;
   releaseId: string;
 }) {
-  const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
+  const { until, restart: restartObservation } =
+    useObservationWindow(releaseId);
+  const queryClient = useQueryClient();
   const application = useQuery({
     queryKey: ["application", applicationId],
     queryFn: () => getApplication(applicationId),
@@ -59,13 +64,6 @@ function ReleaseContent({
   });
   const detail = useQuery({
     ...releaseQueries.detail(releaseId),
-    refetchInterval: (query) =>
-      pollInterval(
-        until,
-        query.state.error,
-        !!query.state.data &&
-          isActiveOperation(query.state.data.releaseOperation.status),
-      ),
   });
   const targetId = detail.data?.release.deploymentTargetId ?? "";
   const target = useQuery({
@@ -90,16 +88,23 @@ function ReleaseContent({
         query.state.error,
         !!query.state.data && isActiveOperation(query.state.data.status),
       ),
+    refetchIntervalInBackground: false,
   });
   const report = useQuery({
     ...releaseQueries.diagnostics(releaseId),
     enabled: !!detail.data && !detail.error,
     refetchInterval: (query) => pollInterval(until, query.state.error),
+    refetchIntervalInBackground: false,
   });
-  // 仅命令接纳或用户主动刷新重启观察，普通轮询不能延长五分钟上限。
-  function restartObservation() {
-    setUntil(Date.now() + 5 * 60_000);
-  }
+  const refreshRelated = useCallback(() => {
+    if (targetId) invalidateRelease(queryClient, targetId, releaseId);
+  }, [queryClient, targetId, releaseId]);
+  useOperationRefresh(
+    operation.data,
+    detail.data?.releaseOperation,
+    operation.error,
+    refreshRelated,
+  );
   function refresh() {
     restartObservation();
     void detail.refetch();

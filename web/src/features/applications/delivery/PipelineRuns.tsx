@@ -2,8 +2,8 @@ import { Button } from "@/components/ui/button";
 import { CursorPagination } from "@/shared/CursorPagination";
 import { QueryNotice, StatusPill, Timestamp } from "@/shared/OverviewUI";
 import { pollInterval, runStatus } from "@/shared/overview-status";
+import { useObservationWindow } from "@/shared/use-observation-window";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { DeliveryStages } from "./DeliveryStages";
 import { pipelineQueries } from "./pipeline-api";
@@ -18,7 +18,7 @@ export function PipelineRuns({
   pipelineId: string;
 }) {
   const [params, setParams] = useSearchParams();
-  const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
+  const { until, restart } = useObservationWindow(pipelineId);
   const cursor = params.get("runCursor") ?? undefined;
   const runs = useQuery({
     ...pipelineQueries.runs(pipelineId, cursor),
@@ -33,7 +33,7 @@ export function PipelineRuns({
           size="sm"
           variant="outline"
           onClick={() => {
-            setUntil(Date.now() + 5 * 60_000);
+            restart();
             void runs.refetch();
           }}
         >

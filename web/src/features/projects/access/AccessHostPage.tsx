@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectItem } from "@/components/ui/select";
 import { Fact, QueryNotice, Timestamp } from "@/shared/OverviewUI";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { useObservationWindow } from "@/shared/use-observation-window";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -340,9 +341,8 @@ function HostDetail({
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteAccepted, setDeleteAccepted] = useState(false);
-  const [observeUntil, setObserveUntil] = useState(
-    () => Date.now() + 5 * 60_000,
-  );
+  const { until: observeUntil, restart: restartObservation } =
+    useObservationWindow(host.id);
   const current = useQuery({
     ...accessQueries.host(projectId, host.id),
     initialData: host,
@@ -354,10 +354,6 @@ function HostDetail({
       !query.state.error && Date.now() < observeUntil ? 15_000 : false,
     refetchIntervalInBackground: false,
   });
-  // 入口写入接纳后，重新给异步调和与控制器观测五分钟；轮询本身不续期。
-  function restartObservation() {
-    setObserveUntil(Date.now() + 5 * 60_000);
-  }
   function refresh() {
     restartObservation();
     void current.refetch();

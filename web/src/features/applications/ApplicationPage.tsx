@@ -21,10 +21,11 @@ import { TargetCreateDialog } from "@/features/applications/targets/TargetCreate
 import { workbenchQueryKeys } from "@/features/projects/workbench/api";
 import { QueryNotice } from "@/shared/OverviewUI";
 import { EmptyState, ErrorPanel, LoadingPage } from "@/shared/PageState";
+import { useObservationWindow } from "@/shared/use-observation-window";
 import { ViewNavigation } from "@/shared/ViewNavigation";
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Link,
   useNavigate,
@@ -88,8 +89,9 @@ function ApplicationOverview({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const [until, setUntil] = useState(() => Date.now() + 5 * 60_000);
-  const [paused, setPaused] = useState(false);
+  const { until, paused, restart } = useObservationWindow(
+    application.id + ":" + (params.get("target") ?? ""),
+  );
   const [releaseOpen, setReleaseOpen] = useState(
     () => params.get("createRelease") === "1",
   );
@@ -123,21 +125,14 @@ function ApplicationOverview({
   const canDevelop =
     !permissions.error &&
     permissions.data?.allowed.includes("develop") === true;
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setPaused(true),
-      Math.max(0, until - Date.now()),
-    );
-    return () => window.clearTimeout(timer);
-  }, [until]);
   function refresh() {
-    setPaused(false);
-    setUntil(Date.now() + 5 * 60_000);
+    restart();
     void queryClient.invalidateQueries({
       predicate: overviewScope(queryClient, application.id),
     });
   }
   function changeTarget(value: string) {
+    restart();
     setAccepted("");
     setParams((previous) => {
       const next = new URLSearchParams(previous);
