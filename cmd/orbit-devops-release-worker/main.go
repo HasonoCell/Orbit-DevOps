@@ -13,6 +13,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/delivery"
 	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
 	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
+	platformdb "github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/Orbit-DevOps/internal/platform/process"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
@@ -20,7 +21,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
 func main() {
@@ -42,7 +43,7 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	db, err := sqlx.Open("pgx", config.DatabaseURL)
+	db, err := platformdb.Open(ctx, config.DatabaseURL, config.DatabasePool)
 	if err != nil {
 		return err
 	}
@@ -51,9 +52,6 @@ func run(logger *slog.Logger) error {
 			logger.Error("关闭 Release Worker 数据库连接失败", "error", err)
 		}
 	}()
-	if err := db.PingContext(ctx); err != nil {
-		return err
-	}
 	releaseOperations := releaseoperation.New(
 		db,
 		releaseoperation.WithAutomaticRetryPolicy(
@@ -123,6 +121,7 @@ func run(logger *slog.Logger) error {
 	}
 	mux := http.NewServeMux()
 	metrics.RegisterCollector(queue)
+	metrics.RegisterCollector(collectors.NewDBStatsCollector(db.DB, "release-worker"))
 	mux.Handle("/readyz", queue.ReadinessHandler())
 	mux.Handle("/metrics", metrics.Handler())
 	mux.HandleFunc("/healthz", func(response http.ResponseWriter, request *http.Request) {

@@ -87,7 +87,8 @@ func run(logger *slog.Logger) error {
 		issuerPolicies[key] = access.IssuerPolicy{Kind: policy.Kind, Name: policy.Name}
 	}
 	runtime, err := app.NewWithDependencies(ctx, app.Config{
-		DatabaseURL: config.DatabaseURL,
+		DatabasePool: config.DatabasePool,
+		DatabaseURL:  config.DatabaseURL,
 		BrowserSecurity: httpapi.BrowserSecurityConfig{
 			ExternalURL:         config.Browser.ExternalURL,
 			TrustedOrigins:      config.Browser.TrustedOrigins,

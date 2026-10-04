@@ -17,12 +17,12 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/githubsource"
 	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
 	"github.com/HasonoCell/Orbit-DevOps/internal/pipeline"
+	platformdb "github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/Orbit-DevOps/internal/platform/process"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseoperation"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -43,14 +43,11 @@ func run(logger *slog.Logger) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	database, err := sqlx.Open("pgx", config.DatabaseURL)
+	database, err := platformdb.Open(ctx, config.DatabaseURL, config.DatabasePool)
 	if err != nil {
 		return err
 	}
 	defer database.Close()
-	if err := database.PingContext(ctx); err != nil {
-		return err
-	}
 	authorizer := projectauth.New(database, nil)
 	buildOperations := buildoperation.New(database)
 	releaseOperations := releaseoperation.New(database)
@@ -79,6 +76,7 @@ func run(logger *slog.Logger) error {
 	}
 	mux := http.NewServeMux()
 	registry := prometheus.NewRegistry()
+	registry.MustRegister(collectors.NewDBStatsCollector(database.DB, "pipeline-worker"))
 	registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}), service, metrics)
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", func(response http.ResponseWriter, request *http.Request) {

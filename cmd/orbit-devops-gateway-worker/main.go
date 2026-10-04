@@ -15,11 +15,11 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/accessworker"
 	"github.com/HasonoCell/Orbit-DevOps/internal/internalevent"
 	"github.com/HasonoCell/Orbit-DevOps/internal/kube"
+	platformdb "github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
 	processruntime "github.com/HasonoCell/Orbit-DevOps/internal/platform/process"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -43,14 +43,11 @@ func run(logger *slog.Logger) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	database, err := sqlx.Open("pgx", config.DatabaseURL)
+	database, err := platformdb.Open(ctx, config.DatabaseURL, config.DatabasePool)
 	if err != nil {
 		return err
 	}
 	defer database.Close()
-	if err := database.PingContext(ctx); err != nil {
-		return err
-	}
 	adapter, err := kube.NewVerifiedLocalAdapter(ctx, config.Kubernetes.KubeconfigPath, config.Kubernetes.Context,
 		kube.Config{ClusterRef: config.Kubernetes.ClusterRef, Namespace: config.Kubernetes.Namespace,
 			FieldManager: config.Kubernetes.FieldManager, PollInterval: config.Kubernetes.PollInterval})
@@ -87,6 +84,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	registry := prometheus.NewRegistry()
+	registry.MustRegister(collectors.NewDBStatsCollector(database.DB, "gateway-worker"))
 	registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}), service)
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))

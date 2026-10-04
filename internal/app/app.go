@@ -31,12 +31,14 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	ginmiddleware "github.com/oapi-codegen/gin-middleware"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
 type Config struct {
+	DatabasePool         database.PoolConfig
 	DatabaseURL          string
 	BrowserSecurity      httpapi.BrowserSecurityConfig
 	OIDC                 *identity.OIDCConfig
@@ -95,13 +97,13 @@ func NewWithDependencies(
 		}
 	}
 
-	db, err := sqlx.Open("pgx", config.DatabaseURL)
+	pool := config.DatabasePool
+	if pool == (database.PoolConfig{}) {
+		pool = database.DefaultPool(20)
+	}
+	db, err := database.Open(ctx, config.DatabaseURL, pool)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
-	}
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
 	openAPISpec, err := api.GetSpec()
@@ -162,6 +164,7 @@ func NewWithDependencies(
 		metrics.RegisterReleaseOperationPending(releaseOperationModule.CountPending)
 	}
 	metrics.RegisterReleaseOperations(releaseOperationModule.ReadMetricsSnapshot)
+	metrics.RegisterCollector(collectors.NewDBStatsCollector(db.DB, "api"))
 	tracer := dependencies.Tracer
 	if tracer == nil {
 		tracer = otel.Tracer("github.com/HasonoCell/Orbit-DevOps/internal/app")

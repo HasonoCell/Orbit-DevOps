@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
 	"os"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ type Kubernetes struct {
 }
 
 type API struct {
+	DatabasePool  database.PoolConfig
 	Address       string
 	DatabaseURL   string
 	MigrateOnBoot bool
@@ -50,6 +52,7 @@ type AccessIssuerPolicy struct {
 }
 
 type GatewayWorker struct {
+	DatabasePool        database.PoolConfig
 	Address             string
 	DatabaseURL         string
 	Kubernetes          Kubernetes
@@ -99,6 +102,7 @@ type SourceBuild struct {
 }
 
 type ReleaseWorker struct {
+	DatabasePool            database.PoolConfig
 	Address                 string
 	DatabaseURL             string
 	WorkerID                string
@@ -113,6 +117,7 @@ type ReleaseWorker struct {
 
 // BuildWorker 将构建业务租约、队列运输和受限 Kubernetes Job 配置分开保存。
 type BuildWorker struct {
+	DatabasePool            database.PoolConfig
 	Address                 string
 	DatabaseURL             string
 	WorkerID                string
@@ -139,6 +144,7 @@ type BuildWorker struct {
 
 // PipelineWorker 只配置数据库、内部事件运输与 GitHub 出站访问，不包含集群或 Registry 凭据。
 type PipelineWorker struct {
+	DatabasePool         database.PoolConfig
 	Address              string
 	DatabaseURL          string
 	PollInterval         time.Duration
@@ -204,6 +210,10 @@ func loadReleaseQueue(releaseOperationTimeout time.Duration) (ReleaseQueue, erro
 }
 
 func LoadAPI() (API, error) {
+	pool, err := loadDatabasePool(20)
+	if err != nil {
+		return API{}, err
+	}
 	kubernetes, err := loadKubernetes()
 	if err != nil {
 		return API{}, err
@@ -233,6 +243,7 @@ func LoadAPI() (API, error) {
 		return API{}, err
 	}
 	return API{
+		DatabasePool:  pool,
 		Address:       value("ORBIT_DEVOPS_API_ADDRESS", "127.0.0.1:8080"),
 		DatabaseURL:   value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
 		MigrateOnBoot: migrateOnBoot,
@@ -270,6 +281,10 @@ func loadAccess() (Access, error) {
 
 // LoadGatewayWorker 分离入口写入进程，不把集群写权限授予 Pipeline Worker。
 func LoadGatewayWorker() (GatewayWorker, error) {
+	pool, err := loadDatabasePool(8)
+	if err != nil {
+		return GatewayWorker{}, err
+	}
 	kubernetes, err := loadKubernetes()
 	if err != nil {
 		return GatewayWorker{}, err
@@ -300,7 +315,7 @@ func LoadGatewayWorker() (GatewayWorker, error) {
 	if lease >= queue.TaskTimeout {
 		return GatewayWorker{}, errors.New("gateway lease must be shorter than task timeout")
 	}
-	return GatewayWorker{Address: value("ORBIT_DEVOPS_GATEWAY_WORKER_ADDRESS", "127.0.0.1:9094"),
+	return GatewayWorker{DatabasePool: pool, Address: value("ORBIT_DEVOPS_GATEWAY_WORKER_ADDRESS", "127.0.0.1:9094"),
 		DatabaseURL: value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL), Kubernetes: kubernetes,
 		Access: accessConfig, Queue: queue, PollInterval: poll, MaintenanceInterval: maintenance,
 		LeaseDuration: lease}, nil
@@ -359,6 +374,10 @@ func loadOIDC() (OIDC, error) {
 
 // LoadPipelineWorker 让自动编排进程与 Build/Release Worker 保持权限隔离。
 func LoadPipelineWorker() (PipelineWorker, error) {
+	pool, err := loadDatabasePool(12)
+	if err != nil {
+		return PipelineWorker{}, err
+	}
 	poll, err := duration("ORBIT_DEVOPS_PIPELINE_WORKER_POLL_INTERVAL", 500*time.Millisecond)
 	if err != nil {
 		return PipelineWorker{}, err
@@ -384,8 +403,9 @@ func LoadPipelineWorker() (PipelineWorker, error) {
 		return PipelineWorker{}, err
 	}
 	return PipelineWorker{
-		Address:     value("ORBIT_DEVOPS_PIPELINE_WORKER_ADDRESS", "127.0.0.1:9093"),
-		DatabaseURL: value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL), PollInterval: poll,
+		DatabasePool: pool,
+		Address:      value("ORBIT_DEVOPS_PIPELINE_WORKER_ADDRESS", "127.0.0.1:9093"),
+		DatabaseURL:  value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL), PollInterval: poll,
 		MaintenanceInterval: maintenance, SourceRecoveryWindow: recoveryWindow,
 		SourceRetryBaseDelay: retryDelay, SourceBuild: loadSourceBuild(), Queue: queue,
 		GitHubSource: GitHubSource{APIBaseURL: value("ORBIT_DEVOPS_GITHUB_API_URL", "https://api.github.com"), Token: os.Getenv("ORBIT_DEVOPS_GITHUB_API_TOKEN"), Timeout: githubTimeout},
@@ -454,6 +474,10 @@ func loadGitHubWebhook() (GitHubWebhook, error) {
 
 // LoadReleaseWorker 分开加载业务租约与运输参数，拒绝会提前截断业务执行的队列超时。
 func LoadReleaseWorker() (ReleaseWorker, error) {
+	pool, err := loadDatabasePool(12)
+	if err != nil {
+		return ReleaseWorker{}, err
+	}
 	kubernetes, err := loadKubernetes()
 	if err != nil {
 		return ReleaseWorker{}, err
@@ -490,6 +514,7 @@ func LoadReleaseWorker() (ReleaseWorker, error) {
 		return ReleaseWorker{}, fmt.Errorf("read hostname: %w", err)
 	}
 	return ReleaseWorker{
+		DatabasePool:            pool,
 		Address:                 value("ORBIT_DEVOPS_RELEASE_WORKER_ADDRESS", "127.0.0.1:9091"),
 		DatabaseURL:             value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
 		WorkerID:                value("ORBIT_DEVOPS_RELEASE_WORKER_ID", hostname),
@@ -505,6 +530,10 @@ func LoadReleaseWorker() (ReleaseWorker, error) {
 
 // LoadBuildWorker 拒绝未固定 Digest 的运行镜像，并让队列超时覆盖完整构建窗口。
 func LoadBuildWorker() (BuildWorker, error) {
+	pool, err := loadDatabasePool(8)
+	if err != nil {
+		return BuildWorker{}, err
+	}
 	pollInterval, err := duration("ORBIT_DEVOPS_BUILD_WORKER_POLL_INTERVAL", 500*time.Millisecond)
 	if err != nil {
 		return BuildWorker{}, err
@@ -546,7 +575,8 @@ func LoadBuildWorker() (BuildWorker, error) {
 		return BuildWorker{}, fmt.Errorf("read hostname: %w", err)
 	}
 	config := BuildWorker{
-		Address: value("ORBIT_DEVOPS_BUILD_WORKER_ADDRESS", "127.0.0.1:9092"), DatabaseURL: value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
+		DatabasePool: pool,
+		Address:      value("ORBIT_DEVOPS_BUILD_WORKER_ADDRESS", "127.0.0.1:9092"), DatabaseURL: value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
 		WorkerID: value("ORBIT_DEVOPS_BUILD_WORKER_ID", hostname), PollInterval: pollInterval, LeaseDuration: leaseDuration,
 		BuildOperationTimeout: buildTimeout, MaximumAutomaticRetries: maximumRetries, RetryBaseDelay: retryBaseDelay,
 		KubeconfigPath: value("ORBIT_DEVOPS_KUBECONFIG", clientcmd.RecommendedHomeFile), KubernetesContext: value("ORBIT_DEVOPS_KUBERNETES_CONTEXT", "kind-orbit-devops-s1"),
