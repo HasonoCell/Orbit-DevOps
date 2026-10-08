@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: orbit-migrate-bootstrap-v2, namespace: orbit-system}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 180
+  template:
+    spec:
+      serviceAccountName: orbit-maintenance
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: migrate
+          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          imagePullPolicy: Never
+          command: [/usr/local/bin/orbit-devops-migrate]
+          env:
+            - name: ORBIT_DEVOPS_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: orbit-database, key: url}
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}

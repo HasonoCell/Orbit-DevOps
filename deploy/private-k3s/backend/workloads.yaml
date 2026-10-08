@@ -1,0 +1,293 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: orbit-api, namespace: orbit-system}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: orbit-api}
+  template:
+    metadata:
+      labels: {app: orbit-api, app.kubernetes.io/part-of: orbit-devops}
+    spec:
+      serviceAccountName: orbit-api
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api
+          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          imagePullPolicy: Never
+          command: [/usr/local/bin/orbit-devops-api]
+          envFrom:
+            - configMapRef: {name: orbit-config}
+            - configMapRef: {name: orbit-cluster-identity}
+          env:
+            - {name: ORBIT_DEVOPS_API_ADDRESS, value: "0.0.0.0:8080"}
+            - name: ORBIT_DEVOPS_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: orbit-database, key: url}
+          ports: [{name: http, containerPort: 8080}]
+          resources:
+            requests: {cpu: 100m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+          # 不以数据库故障触发重启风暴；进程存活与依赖可用分别检查。
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 10
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: orbit-release-worker, namespace: orbit-system}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: orbit-release-worker}
+  template:
+    metadata:
+      labels: {app: orbit-release-worker, app.kubernetes.io/part-of: orbit-devops}
+    spec:
+      serviceAccountName: orbit-release-worker
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: release-worker
+          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          imagePullPolicy: Never
+          command: [/usr/local/bin/orbit-devops-release-worker]
+          envFrom:
+            - configMapRef: {name: orbit-config}
+            - configMapRef: {name: orbit-cluster-identity}
+          env:
+            - {name: ORBIT_DEVOPS_RELEASE_WORKER_ADDRESS, value: "0.0.0.0:9091"}
+            - name: ORBIT_DEVOPS_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: orbit-database, key: url}
+            - name: ORBIT_DEVOPS_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: orbit-redis, key: password}
+          ports: [{name: http, containerPort: 9091}]
+          resources:
+            requests: {cpu: 100m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+          # 不以数据库故障触发重启风暴；进程存活与依赖可用分别检查。
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 10
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: orbit-build-worker, namespace: orbit-system}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: orbit-build-worker}
+  template:
+    metadata:
+      labels: {app: orbit-build-worker, app.kubernetes.io/part-of: orbit-devops}
+    spec:
+      serviceAccountName: orbit-build-worker
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: build-worker
+          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          imagePullPolicy: Never
+          command: [/usr/local/bin/orbit-devops-build-worker]
+          envFrom:
+            - configMapRef: {name: orbit-config}
+            - configMapRef: {name: orbit-cluster-identity}
+          env:
+            - {name: ORBIT_DEVOPS_BUILD_WORKER_ADDRESS, value: "0.0.0.0:9092"}
+            - name: ORBIT_DEVOPS_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: orbit-database, key: url}
+            - name: ORBIT_DEVOPS_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: orbit-redis, key: password}
+          ports: [{name: http, containerPort: 9092}]
+          resources:
+            requests: {cpu: 100m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+          # 不以数据库故障触发重启风暴；进程存活与依赖可用分别检查。
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 10
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: orbit-pipeline-worker, namespace: orbit-system}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: orbit-pipeline-worker}
+  template:
+    metadata:
+      labels: {app: orbit-pipeline-worker, app.kubernetes.io/part-of: orbit-devops}
+    spec:
+      serviceAccountName: orbit-pipeline-worker
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: pipeline-worker
+          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          imagePullPolicy: Never
+          command: [/usr/local/bin/orbit-devops-pipeline-worker]
+          envFrom:
+            - configMapRef: {name: orbit-config}
+          env:
+            - {name: ORBIT_DEVOPS_PIPELINE_WORKER_ADDRESS, value: "0.0.0.0:9093"}
+            - name: ORBIT_DEVOPS_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: orbit-database, key: url}
+            - name: ORBIT_DEVOPS_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: orbit-redis, key: password}
+          ports: [{name: http, containerPort: 9093}]
+          resources:
+            requests: {cpu: 100m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+          # 不以数据库故障触发重启风暴；进程存活与依赖可用分别检查。
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 10
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: orbit-gateway-worker, namespace: orbit-system}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: orbit-gateway-worker}
+  template:
+    metadata:
+      labels: {app: orbit-gateway-worker, app.kubernetes.io/part-of: orbit-devops}
+    spec:
+      serviceAccountName: orbit-gateway-worker
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: gateway-worker
+          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          imagePullPolicy: Never
+          command: [/usr/local/bin/orbit-devops-gateway-worker]
+          envFrom:
+            - configMapRef: {name: orbit-config}
+            - configMapRef: {name: orbit-cluster-identity}
+          env:
+            - {name: ORBIT_DEVOPS_GATEWAY_WORKER_ADDRESS, value: "0.0.0.0:9094"}
+            - name: ORBIT_DEVOPS_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: orbit-database, key: url}
+            - name: ORBIT_DEVOPS_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: orbit-redis, key: password}
+          ports: [{name: http, containerPort: 9094}]
+          resources:
+            requests: {cpu: 100m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+          # 不以数据库故障触发重启风暴；进程存活与依赖可用分别检查。
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 10
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: orbit-api, namespace: orbit-system}
+spec:
+  type: ClusterIP
+  selector: {app: orbit-api}
+  ports: [{name: http, port: 8080, targetPort: http}]

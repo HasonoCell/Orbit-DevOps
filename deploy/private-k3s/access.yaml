@@ -1,0 +1,33 @@
+# 私有试运行只暴露 ClusterIP；自签 Issuer 供功能验收，不宣称公网浏览器信任。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata: {name: orbit-private, namespace: envoy-gateway-system}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: ClusterIP
+      envoyDeployment:
+        container:
+          image: envoyproxy/envoy:distroless-v1.39.1@sha256:eb2c01c13125d1629637cb4e4cce7207009fb7cc2c8027f9742758549d15b6f4
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata: {name: orbit-private}
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: orbit-private
+    namespace: envoy-gateway-system
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata: {name: orbit-private-selfsigned, namespace: orbit-apps}
+spec:
+  selfSigned: {}
