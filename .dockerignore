@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+web
+node_modules
+.husky
+build
+dist
+coverage
+*.log
