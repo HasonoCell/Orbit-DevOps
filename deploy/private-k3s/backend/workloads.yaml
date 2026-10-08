@@ -19,7 +19,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: api
-          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          image: orbit-devops/backend:password-policy-20261008-1@sha256:d22efa3d4dd8be0172f5760c8d677e745cff3210258c410965d71ba846e201ca
           imagePullPolicy: Never
           command: [/usr/local/bin/orbit-devops-api]
           envFrom:
@@ -74,7 +74,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: release-worker
-          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          image: orbit-devops/backend:password-policy-20261008-1@sha256:d22efa3d4dd8be0172f5760c8d677e745cff3210258c410965d71ba846e201ca
           imagePullPolicy: Never
           command: [/usr/local/bin/orbit-devops-release-worker]
           envFrom:
@@ -132,7 +132,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: build-worker
-          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          image: orbit-devops/backend:password-policy-20261008-1@sha256:d22efa3d4dd8be0172f5760c8d677e745cff3210258c410965d71ba846e201ca
           imagePullPolicy: Never
           command: [/usr/local/bin/orbit-devops-build-worker]
           envFrom:
@@ -190,7 +190,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: pipeline-worker
-          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          image: orbit-devops/backend:password-policy-20261008-1@sha256:d22efa3d4dd8be0172f5760c8d677e745cff3210258c410965d71ba846e201ca
           imagePullPolicy: Never
           command: [/usr/local/bin/orbit-devops-pipeline-worker]
           envFrom:
@@ -247,7 +247,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: gateway-worker
-          image: orbit-devops/backend:bootstrap-20261008-2@sha256:9d8d9e3d551ef2b8c164cd470647a64fdcfed6ae2215588609c0db16203c7ed4
+          image: orbit-devops/backend:password-policy-20261008-1@sha256:d22efa3d4dd8be0172f5760c8d677e745cff3210258c410965d71ba846e201ca
           imagePullPolicy: Never
           command: [/usr/local/bin/orbit-devops-gateway-worker]
           envFrom:

@@ -2421,7 +2421,7 @@ components:
       required: [newPassword]
       properties:
         currentPassword: {type: string, format: password, minLength: 1, maxLength: 512, writeOnly: true}
-        newPassword: {type: string, format: password, minLength: 15, maxLength: 128, writeOnly: true, description: "按 Unicode 字符计数；UTF-8 最多 512 字节，且不能是常见弱口令或单字符重复。"}
+        newPassword: {type: string, format: password, minLength: 12, maxLength: 128, writeOnly: true, description: "按 Unicode 字符计数；UTF-8 最多 512 字节，且不能是常见弱口令或单字符重复。"}
         loginName: {type: string, minLength: 3, maxLength: 128}
     CreateLocalUserRequest:
       type: object
@@ -2430,13 +2430,13 @@ components:
       properties:
         loginName: {type: string, minLength: 3, maxLength: 128}
         displayName: {type: string, minLength: 1, maxLength: 128}
-        temporaryPassword: {type: string, format: password, minLength: 15, maxLength: 128, writeOnly: true, description: "按 Unicode 字符计数；UTF-8 最多 512 字节，且不能是常见弱口令或单字符重复。"}
+        temporaryPassword: {type: string, format: password, minLength: 12, maxLength: 128, writeOnly: true, description: "按 Unicode 字符计数；UTF-8 最多 512 字节，且不能是常见弱口令或单字符重复。"}
     ResetLocalPasswordRequest:
       type: object
       additionalProperties: false
       required: [temporaryPassword]
       properties:
-        temporaryPassword: {type: string, format: password, minLength: 15, maxLength: 128, writeOnly: true, description: "按 Unicode 字符计数；UTF-8 最多 512 字节，且不能是常见弱口令或单字符重复。"}
+        temporaryPassword: {type: string, format: password, minLength: 12, maxLength: 128, writeOnly: true, description: "按 Unicode 字符计数；UTF-8 最多 512 字节，且不能是常见弱口令或单字符重复。"}
         loginName: {type: string, minLength: 3, maxLength: 128}
     ChangePlatformRoleRequest:
       type: object

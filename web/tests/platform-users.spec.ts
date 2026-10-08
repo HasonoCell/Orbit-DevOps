@@ -20,7 +20,7 @@ const newcomer = {
   status: "active",
   createdAt: timestamp,
 };
-const fixturePassword = "fixture-only-Temporary-2026!";
+const fixturePassword = "Fixture!1234";
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/v1/users/me", (route) =>
@@ -51,7 +51,7 @@ test("管理员创建本地用户、任命角色、停用并重置临时密码",
     const body = route.request().postDataJSON();
     expect(body.loginName).toBe("colleague");
     expect(body.displayName).toBe("新同事");
-    expect(body.temporaryPassword.length).toBeGreaterThanOrEqual(15);
+    expect(body.temporaryPassword).toBe(fixturePassword);
     users = [...users, newcomer];
     return route.fulfill({ status: 201, json: newcomer });
   });
@@ -70,9 +70,9 @@ test("管理员创建本地用户、任命角色、停用并重置临时密码",
     return route.fulfill({ json: current });
   });
   await page.route("**/api/v1/users/u-2/password/reset", (route) => {
-    expect(
-      route.request().postDataJSON().temporaryPassword.length,
-    ).toBeGreaterThanOrEqual(15);
+    expect(route.request().postDataJSON().temporaryPassword).toBe(
+      fixturePassword,
+    );
     resetAccepted = true;
     return route.fulfill({ status: 204 });
   });

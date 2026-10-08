@@ -34,10 +34,10 @@ const passwordSchema = z
     newPassword: z.string().superRefine((password, context) => {
       // 与后端按 Unicode 字符和 UTF-8 字节校验的边界保持一致；服务端仍是最终裁决。
       const characters = Array.from(password);
-      if (characters.length < 15 || characters.length > 128) {
+      if (characters.length < 12 || characters.length > 128) {
         context.addIssue({
           code: "custom",
-          message: "新密码需为 15–128 个字符",
+          message: "新密码需为 12–128 个字符",
         });
       } else if (new TextEncoder().encode(password).length > 512) {
         context.addIssue({
@@ -216,7 +216,7 @@ export function PasswordPage() {
               error={form.formState.errors.newPassword?.message}
             />
             <p className="text-xs text-muted-foreground">
-              需为 15–128 个字符，UTF-8 不超过 512
+              需为 12–128 个字符，UTF-8 不超过 512
               字节；请勿使用常见弱密码或全部由同一字符组成的密码。
             </p>
             <PasswordField

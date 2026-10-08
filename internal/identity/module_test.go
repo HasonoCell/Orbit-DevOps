@@ -56,18 +56,23 @@ func TestWeakPasswordDoesNotConsumeInitialization(t *testing.T) {
 	ctx := context.Background()
 	command := identity.InitializeAdminCommand{
 		LoginName: "fixture-admin", DisplayName: "测试管理员",
-		Password: "short", MaintenanceRef: "fixture-initialization",
+		Password: "Abcdef12345", MaintenanceRef: "fixture-initialization",
 	}
 	if _, err := module.InitializeAdmin(ctx, command); !errors.Is(err, identity.ErrInvalidPassword) {
 		t.Fatalf("weak password error = %v", err)
 	}
-	command.Password = fixturePassword
+	command.Password = "Abcdef123456"
 	user, err := module.InitializeAdmin(ctx, command)
 	if err != nil {
 		t.Fatalf("initialize after rejected password: %v", err)
 	}
 	if user.ID.String() == "00000000-0000-0000-0000-000000000000" || user.PlatformRole != identity.RolePlatformAdmin {
 		t.Fatalf("initial user must have a real UUID and platform admin role")
+	}
+	if _, err := module.LoginLocal(ctx, identity.LocalLoginCommand{
+		LoginName: command.LoginName, Password: command.Password, SourceIP: "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("login with minimum-length password: %v", err)
 	}
 	if _, err := module.InitializeAdmin(ctx, command); !errors.Is(err, identity.ErrAlreadyInitialized) {
 		t.Fatalf("second initialize error = %v", err)

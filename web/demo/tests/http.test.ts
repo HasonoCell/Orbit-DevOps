@@ -71,6 +71,51 @@ const image = {
   imageReference: "registry.example.test/payment@sha256:" + "c".repeat(64),
 };
 
+test("密码创建、重置和修改采用 12 字符下限", async (t) => {
+  const { request, login } = await environment(t);
+  const command = {
+    loginName: "policy-fixture",
+    displayName: "密码策略测试",
+    temporaryPassword: "Fixture!123",
+  };
+  assert.equal((await request("/api/v1/users", "POST", command)).status, 400);
+  const created = await request<Schema["User"]>("/api/v1/users", "POST", {
+    ...command,
+    temporaryPassword: "Fixture!1234",
+  });
+  assert.equal(created.status, 201);
+  const resetPath = `/api/v1/users/${created.data!.id}/password/reset`;
+  assert.equal(
+    (await request(resetPath, "POST", { temporaryPassword: "Reset!12345" }))
+      .status,
+    400,
+  );
+  assert.equal(
+    (await request(resetPath, "POST", { temporaryPassword: "Reset!123456" }))
+      .status,
+    204,
+  );
+  await login(command.loginName, "Reset!123456");
+  const change = {
+    currentPassword: "Reset!123456",
+    newPassword: "Change!1234",
+  };
+  assert.equal(
+    (await request("/api/v1/users/me/password", "PUT", change)).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request("/api/v1/users/me/password", "PUT", {
+        ...change,
+        newPassword: "Change!12345",
+      })
+    ).status,
+    204,
+  );
+  await login(command.loginName, "Change!12345");
+});
+
 test("资源写入、分页、幂等冲突和角色限制通过同一 HTTP 状态库呈现", async (t) => {
   const { request, login } = await environment(t);
   const projects = await request<Schema["ProjectPage"]>(

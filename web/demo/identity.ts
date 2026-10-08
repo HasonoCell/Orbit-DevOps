@@ -136,8 +136,8 @@ export const identityHandler: Handler = (ctx) => {
     if (credential && credential.password !== body.currentPassword)
       fail(401, "invalid_credentials", "当前密码错误");
     const password = text(body, "newPassword");
-    if ([...password].length < 15)
-      fail(400, "invalid_password", "密码至少 15 个字符");
+    if ([...password].length < 12)
+      fail(400, "invalid_password", "密码至少 12 个字符");
     const loginName = credential?.loginName ?? text(body, "loginName");
     if (
       [...s.credentials].some(
@@ -212,8 +212,8 @@ export const identityHandler: Handler = (ctx) => {
       if ([...s.credentials.values()].some((c) => c.loginName === loginName))
         fail(409, "login_name_conflict", "登录名已占用");
       const password = text(body, "temporaryPassword");
-      if ([...password].length < 15)
-        fail(400, "invalid_password", "密码至少 15 个字符");
+      if ([...password].length < 12)
+        fail(400, "invalid_password", "密码至少 12 个字符");
       const user: Schema["User"] = {
         id: id(),
         displayName: text(body, "displayName"),
@@ -245,8 +245,8 @@ export const identityHandler: Handler = (ctx) => {
     else if (action === "enable" && method === "POST") user.status = "active";
     else if (action === "password/reset" && method === "POST") {
       const password = text(body, "temporaryPassword");
-      if ([...password].length < 15)
-        fail(400, "invalid_password", "密码至少 15 个字符");
+      if ([...password].length < 12)
+        fail(400, "invalid_password", "密码至少 12 个字符");
       const loginName =
         s.credentials.get(user.id)?.loginName ?? text(body, "loginName");
       s.credentials.set(user.id, { loginName, password, temporary: true });

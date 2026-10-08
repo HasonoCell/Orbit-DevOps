@@ -55,7 +55,7 @@ export function UsersPanel() {
       return;
     }
     if (!temporaryPasswordValid(temporaryPassword)) {
-      setValidation("临时密码需为 15–128 个字符，UTF-8 不超过 512 字节。");
+      setValidation("临时密码需为 12–128 个字符，UTF-8 不超过 512 字节。");
       return;
     }
     setValidation("");

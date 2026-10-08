@@ -878,16 +878,16 @@ test("新密码表单按后端 Unicode 字符和弱口令规则校验", async ({
   const confirmPassword = page.getByLabel("确认新密码");
   const submit = page.getByRole("button", { name: "确认修改" });
 
-  await newPassword.fill("Abcdef123456");
-  await confirmPassword.fill("Abcdef123456");
+  await newPassword.fill("Abcdef12345");
+  await confirmPassword.fill("Abcdef12345");
   await submit.click();
-  await expect(page.getByText("新密码需为 15–128 个字符")).toBeVisible();
+  await expect(page.getByText("新密码需为 12–128 个字符")).toBeVisible();
   expect(submissions).toBe(0);
 
   await newPassword.fill("a".repeat(128) + "b");
   await confirmPassword.fill("a".repeat(128) + "b");
   await submit.click();
-  await expect(page.getByText("新密码需为 15–128 个字符")).toBeVisible();
+  await expect(page.getByText("新密码需为 12–128 个字符")).toBeVisible();
   expect(submissions).toBe(0);
 
   await newPassword.fill("passwordpassword");
@@ -903,11 +903,16 @@ test("新密码表单按后端 Unicode 字符和弱口令规则校验", async ({
   await expect(page.getByText("新密码不能与当前密码相同")).toBeVisible();
   expect(submissions).toBe(0);
 
-  const unicodePassword = "🔒".repeat(14) + "A";
+  await newPassword.fill("Abcdef123456");
+  await confirmPassword.fill("Abcdef123456");
+  await submit.click();
+  await expect.poll(() => submissions).toBe(1);
+
+  const unicodePassword = "🔒".repeat(11) + "A";
   await newPassword.fill(unicodePassword);
   await confirmPassword.fill(unicodePassword);
   await submit.click();
-  await expect.poll(() => submissions).toBe(1);
+  await expect.poll(() => submissions).toBe(2);
 });
 
 test("项目列表游标可以翻页并返回第一页", async ({ page }) => {

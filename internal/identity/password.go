@@ -86,7 +86,7 @@ func validPassword(password string) bool {
 		return false
 	}
 	count := utf8.RuneCountInString(password)
-	if count < 15 || count > 128 {
+	if count < 12 || count > 128 {
 		return false
 	}
 	// 拒绝常见样例弱口令及单字符重复；不能借弱口令检查 trim/截断实际密码。
