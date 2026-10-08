@@ -247,6 +247,11 @@ func TestBuildAttemptLogsRequireDevelopPermission(t *testing.T) {
 	}
 	operations := buildoperation.New(openTestDatabase(t, environment.databaseURL))
 	lease := claimBuildDispatch(t, operations, "build-log-worker")
+	if err := operations.RecordExecutorIdentity(context.Background(), lease, buildoperation.ExecutorIdentity{
+		Name: "build-log-job", UID: "build-log-job-uid",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	const sensitiveExcerpt = "build-secret-marker"
 	if _, err := operations.Fail(context.Background(), lease, buildoperation.Failure{
 		Code: "dockerfile_build_failed", Summary: "build failed", Disposition: buildoperation.NonRetryable,
@@ -263,6 +268,33 @@ func TestBuildAttemptLogsRequireDevelopPermission(t *testing.T) {
 	if err != nil || operationResponse.StatusCode != http.StatusOK || strings.Contains(string(operationBody), sensitiveExcerpt) {
 		t.Fatalf("viewer operation status=%d body=%s error=%v", operationResponse.StatusCode, operationBody, err)
 	}
+	// 页面通过授权 HTTP 接口读取尝试历史；仅检查不泄露日志会漏掉整个历史为空的问题。
+	var operation struct {
+		AttemptCount int `json:"attemptCount"`
+		Attempts     []struct {
+			ID           string `json:"id"`
+			Number       int    `json:"number"`
+			Status       string `json:"status"`
+			ExecutorName string `json:"executorName"`
+			ExecutorUID  string `json:"executorUid"`
+		} `json:"attempts"`
+	}
+	if err := json.Unmarshal(operationBody, &operation); err != nil {
+		t.Fatal(err)
+	}
+	if operation.AttemptCount != 1 || len(operation.Attempts) != 1 {
+		t.Fatalf("viewer build attempts: count=%d history=%d, want 1/1", operation.AttemptCount, len(operation.Attempts))
+	}
+	attempt := operation.Attempts[0]
+	if attempt.ID != lease.BuildAttemptID.String() || attempt.Number != 1 || attempt.Status != "failed" ||
+		attempt.ExecutorName != "build-log-job" || attempt.ExecutorUID != "build-log-job-uid" {
+		t.Fatalf("viewer build attempt metadata = %#v", attempt)
+	}
+	outsiderServer := environment.serverForActor(t, "build-log-outsider")
+	outsiderOperation := requestJSON(t, outsiderServer, http.MethodGet,
+		"/api/v1/build-operations/"+acceptance.BuildOperation.ID, "", "")
+	defer outsiderOperation.Body.Close()
+	assertError(t, outsiderOperation, http.StatusNotFound, "build_operation_not_found")
 
 	viewerLog := requestJSON(t, viewerServer, http.MethodGet,
 		"/api/v1/build-attempts/"+lease.BuildAttemptID.String()+"/log", "", "")

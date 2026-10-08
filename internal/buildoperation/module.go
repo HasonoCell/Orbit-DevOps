@@ -251,6 +251,14 @@ func (m *Module) GetAuthorized(ctx context.Context, id uuid.UUID, caller identit
 	if err != nil {
 		return Record{}, err
 	}
+	// 授权和历史读取共用事务；这里只返回元数据，日志摘录必须走独立的 develop 权限检查。
+	record.Attempts = []Attempt{}
+	if err := tx.SelectContext(ctx, &record.Attempts, `SELECT id, attempt_number, worker_id,
+	 status, recovered_from_attempt_id, executor_name, executor_uid, error_code, error_summary,
+	 retry_disposition, started_at, finished_at
+	 FROM build_attempts WHERE build_operation_id = $1 ORDER BY attempt_number`, id); err != nil {
+		return Record{}, fmt.Errorf("list authorized build attempts: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return Record{}, err
 	}

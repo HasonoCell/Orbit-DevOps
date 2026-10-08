@@ -77,6 +77,25 @@ func TestBuildOperationRetriesAndAtomicallyCreatesArtifact(t *testing.T) {
 		current.Attempts[1].Status != buildoperation.AttemptSucceeded {
 		t.Fatalf("completed build operation = %#v", current)
 	}
+	// 前端授权查询也必须按执行次序保留重试历史，而不是只返回最终状态和次数。
+	detail := environment.get(t, "/api/v1/build-operations/"+acceptance.BuildOperation.ID)
+	defer detail.Body.Close()
+	var history struct {
+		AttemptCount int `json:"attemptCount"`
+		Attempts     []struct {
+			ID     string `json:"id"`
+			Number int    `json:"number"`
+			Status string `json:"status"`
+		} `json:"attempts"`
+	}
+	if detail.StatusCode != http.StatusOK || json.NewDecoder(detail.Body).Decode(&history) != nil ||
+		history.AttemptCount != 2 || len(history.Attempts) != 2 {
+		t.Fatalf("authorized build history: status=%d document=%#v", detail.StatusCode, history)
+	}
+	if history.Attempts[0].ID != first.BuildAttemptID.String() || history.Attempts[0].Number != 1 || history.Attempts[0].Status != "failed" ||
+		history.Attempts[1].ID != second.BuildAttemptID.String() || history.Attempts[1].Number != 2 || history.Attempts[1].Status != "succeeded" {
+		t.Fatalf("authorized build attempts are not in execution order: %#v", history.Attempts)
+	}
 }
 
 // Lease 过期本身不改写历史；只有接管者取得新 Lease 时才把旧 Attempt 记为结果未知。
