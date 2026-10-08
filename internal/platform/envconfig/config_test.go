@@ -8,6 +8,33 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/envconfig"
 )
 
+func TestCloudConnectionIsExplicitAndSharedByClusterProcesses(t *testing.T) {
+	t.Setenv("ORBIT_DEVOPS_KUBERNETES_MODE", "in-cluster")
+	t.Setenv("ORBIT_DEVOPS_KUBERNETES_CLUSTER_UID", "")
+	if _, err := envconfig.LoadAPI(); err == nil {
+		t.Fatal("in-cluster mode accepted without pinned identity")
+	}
+	if _, err := envconfig.LoadBuildWorker(); err == nil {
+		t.Fatal("build worker accepted missing cluster identity")
+	}
+	t.Setenv("ORBIT_DEVOPS_KUBERNETES_CLUSTER_UID", "cluster-one")
+	api, err := envconfig.LoadAPI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	build, err := envconfig.LoadBuildWorker()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if api.Kubernetes.Connection.Mode != "in-cluster" || api.Kubernetes.Connection != build.KubernetesConnection {
+		t.Fatal("process connection identities differ")
+	}
+	t.Setenv("ORBIT_DEVOPS_KUBERNETES_MODE", "automatic")
+	if _, err := envconfig.LoadReleaseWorker(); err == nil {
+		t.Fatal("unknown mode accepted")
+	}
+}
+
 func TestReleaseQueueDefaultsReserveBusinessCompletionTime(t *testing.T) {
 	t.Setenv("ORBIT_DEVOPS_RELEASE_OPERATION_TIMEOUT", "3m")
 	t.Setenv("ORBIT_DEVOPS_REDIS_ADDRESS", "")
@@ -57,7 +84,7 @@ func TestLocalDefaultsBindProcessesAndKubernetesBoundary(t *testing.T) {
 	if workerConfig.Address != "127.0.0.1:9091" {
 		t.Errorf("ReleaseWorker address = %q, want loopback default", workerConfig.Address)
 	}
-	if apiConfig.Kubernetes.Context != "kind-orbit-devops-s1" ||
+	if apiConfig.Kubernetes.Connection.Context != "kind-orbit-devops-s1" ||
 		apiConfig.Kubernetes.ClusterRef != "kind-orbit-devops-s1" ||
 		apiConfig.Kubernetes.Namespace != "orbit-devops-s1" {
 		t.Errorf("API Kubernetes defaults = %#v, want S1 local boundary", apiConfig.Kubernetes)

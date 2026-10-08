@@ -64,7 +64,7 @@ func run(logger *slog.Logger) error {
 			return min(delay, time.Minute)
 		}))
 	builds := build.New(database, build.Config{}, operations, projectauth.New(database, nil))
-	adapter, err := buildkube.NewVerifiedLocalAdapter(ctx, config.KubeconfigPath, config.KubernetesContext, buildkube.Config{
+	adapter, err := buildkube.NewVerifiedAdapter(ctx, config.KubernetesConnection, buildkube.Config{
 		Namespace: config.Namespace, FieldManager: config.FieldManager, GitImage: config.GitImage,
 		BuildkitImage: config.BuildkitImage, RegistrySecretName: config.RegistrySecretName,
 		RegistryInsecure: config.RegistryInsecure, DockerHubMirror: config.DockerHubMirror,

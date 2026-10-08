@@ -1,4 +1,4 @@
-// orbit-devops-gateway-worker 独立持有受限 Kind 集群写权限，Pipeline Worker 无需 Kubernetes 凭据。
+// orbit-devops-gateway-worker 独立持有受限集群写权限，Pipeline Worker 无需 Kubernetes 凭据。
 package main
 
 import (
@@ -58,7 +58,7 @@ func run(logger *slog.Logger) error {
 			logger.Warn("Trace 退出刷新未完成", "error", err)
 		}
 	}()
-	adapter, err := kube.NewVerifiedLocalAdapter(ctx, config.Kubernetes.KubeconfigPath, config.Kubernetes.Context,
+	adapter, err := kube.NewVerifiedAdapter(ctx, config.Kubernetes.Connection,
 		kube.Config{ClusterRef: config.Kubernetes.ClusterRef, Namespace: config.Kubernetes.Namespace,
 			FieldManager: config.Kubernetes.FieldManager, PollInterval: config.Kubernetes.PollInterval})
 	if err != nil {

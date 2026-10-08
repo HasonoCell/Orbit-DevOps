@@ -82,10 +82,9 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 	metrics.RegisterCollector(tracing.ExportFailures)
-	adapter, err := kube.NewVerifiedLocalAdapter(
+	adapter, err := kube.NewVerifiedAdapter(
 		ctx,
-		config.Kubernetes.KubeconfigPath,
-		config.Kubernetes.Context,
+		config.Kubernetes.Connection,
 		kube.Config{
 			ClusterRef:          config.Kubernetes.ClusterRef,
 			Namespace:           config.Kubernetes.Namespace,

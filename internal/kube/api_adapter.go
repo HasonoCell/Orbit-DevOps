@@ -10,6 +10,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/access"
 	"github.com/HasonoCell/Orbit-DevOps/internal/diagnostics"
 	"github.com/HasonoCell/Orbit-DevOps/internal/identity"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/kubeconnection"
 	"github.com/HasonoCell/Orbit-DevOps/internal/releaseworker"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
@@ -20,23 +21,28 @@ const apiClusterReadTimeout = 5 * time.Second
 // APIAdapter 仅暴露 API 所需的读取与验证接口，不提供 Publish/Reconcile。
 // 配置与安全错误阻止启动；短暂不可达时保留数据库服务，后续请求有界重试且重新核验身份。
 type APIAdapter struct {
-	base            *Adapter
-	restConfig      *rest.Config
-	expectedContext string
-	gatewayClass    string
-	gate            chan struct{}
-	mu              sync.Mutex
-	verifiedUntil   time.Time
-	retryAfter      time.Time
-	gateway         *GatewayAdapter
+	base          *Adapter
+	restConfig    *rest.Config
+	connection    kubeconnection.Config
+	gatewayClass  string
+	gate          chan struct{}
+	mu            sync.Mutex
+	verifiedUntil time.Time
+	retryAfter    time.Time
+	gateway       *GatewayAdapter
 }
 
 func NewAPIAdapter(ctx context.Context, path, expectedContext string, config Config, gatewayClass string) (*APIAdapter, error) {
-	base, restConfig, err := newLocalAdapter(path, expectedContext, config)
+	return NewConfiguredAPIAdapter(ctx, kubeconnection.Config{KubeconfigPath: path, Context: expectedContext}, config, gatewayClass)
+}
+
+// NewConfiguredAPIAdapter 复用只读降级装配，但静态配置错误与在线身份不匹配仍阻止启动。
+func NewConfiguredAPIAdapter(ctx context.Context, connection kubeconnection.Config, config Config, gatewayClass string) (*APIAdapter, error) {
+	base, restConfig, err := newConnectedAdapter(connection, config)
 	if err != nil {
 		return nil, err
 	}
-	adapter := &APIAdapter{base: base, restConfig: restConfig, expectedContext: expectedContext,
+	adapter := &APIAdapter{base: base, restConfig: restConfig, connection: connection,
 		gatewayClass: gatewayClass, gate: make(chan struct{}, 1)}
 	checkContext, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -65,7 +71,7 @@ func (a *APIAdapter) verify(ctx context.Context) error {
 	if waiting {
 		return diagnostics.ErrKubernetesUnavailable
 	}
-	if err := verifyKindIdentity(ctx, a.base.client, a.expectedContext, a.base.config.Namespace); err != nil {
+	if err := a.connection.Verify(ctx, a.base.client, a.base.config.Namespace); err != nil {
 		a.invalidate()
 		return err
 	}

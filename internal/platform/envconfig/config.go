@@ -12,6 +12,7 @@ import (
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/observability"
 	"github.com/HasonoCell/Orbit-DevOps/internal/platform/database"
+	"github.com/HasonoCell/Orbit-DevOps/internal/platform/kubeconnection"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -19,12 +20,11 @@ import (
 const defaultDatabaseURL = "postgres://orbitdevops:orbitdevops@127.0.0.1:5432/orbitdevops?sslmode=disable"
 
 type Kubernetes struct {
-	KubeconfigPath string
-	Context        string
-	ClusterRef     string
-	Namespace      string
-	FieldManager   string
-	PollInterval   time.Duration
+	Connection   kubeconnection.Config
+	ClusterRef   string
+	Namespace    string
+	FieldManager string
+	PollInterval time.Duration
 }
 
 type API struct {
@@ -121,6 +121,7 @@ type ReleaseWorker struct {
 
 // BuildWorker 将构建业务租约、队列运输和受限 Kubernetes Job 配置分开保存。
 type BuildWorker struct {
+	KubernetesConnection    kubeconnection.Config
 	Tracing                 observability.TraceConfig
 	DatabasePool            database.PoolConfig
 	Address                 string
@@ -131,8 +132,6 @@ type BuildWorker struct {
 	BuildOperationTimeout   time.Duration
 	MaximumAutomaticRetries int
 	RetryBaseDelay          time.Duration
-	KubeconfigPath          string
-	KubernetesContext       string
 	Namespace               string
 	FieldManager            string
 	GitImage                string
@@ -554,6 +553,10 @@ func LoadReleaseWorker() (ReleaseWorker, error) {
 
 // LoadBuildWorker 拒绝未固定 Digest 的运行镜像，并让队列超时覆盖完整构建窗口。
 func LoadBuildWorker() (BuildWorker, error) {
+	connection, err := loadKubernetesConnection()
+	if err != nil {
+		return BuildWorker{}, err
+	}
 	pool, err := loadDatabasePool(8)
 	if err != nil {
 		return BuildWorker{}, err
@@ -603,11 +606,11 @@ func LoadBuildWorker() (BuildWorker, error) {
 		return BuildWorker{}, fmt.Errorf("read hostname: %w", err)
 	}
 	config := BuildWorker{
-		DatabasePool: pool, Tracing: tracing,
+		KubernetesConnection: connection,
+		DatabasePool:         pool, Tracing: tracing,
 		Address: value("ORBIT_DEVOPS_BUILD_WORKER_ADDRESS", "127.0.0.1:9092"), DatabaseURL: value("ORBIT_DEVOPS_DATABASE_URL", defaultDatabaseURL),
 		WorkerID: value("ORBIT_DEVOPS_BUILD_WORKER_ID", hostname), PollInterval: pollInterval, LeaseDuration: leaseDuration,
 		BuildOperationTimeout: buildTimeout, MaximumAutomaticRetries: maximumRetries, RetryBaseDelay: retryBaseDelay,
-		KubeconfigPath: value("ORBIT_DEVOPS_KUBECONFIG", clientcmd.RecommendedHomeFile), KubernetesContext: value("ORBIT_DEVOPS_KUBERNETES_CONTEXT", "kind-orbit-devops-s1"),
 		Namespace: value("ORBIT_DEVOPS_BUILD_NAMESPACE", "orbit-devops-s4-build"), FieldManager: value("ORBIT_DEVOPS_BUILD_FIELD_MANAGER", "orbit-devops-build-worker"),
 		GitImage:           value("ORBIT_DEVOPS_BUILD_GIT_IMAGE", "alpine/git:v2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26"),
 		BuildkitImage:      value("ORBIT_DEVOPS_BUILDKIT_IMAGE", "moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef"),
@@ -659,18 +662,32 @@ func loadBuildQueue(buildTimeout time.Duration) (ReleaseQueue, error) {
 }
 
 func loadKubernetes() (Kubernetes, error) {
+	connection, err := loadKubernetesConnection()
+	if err != nil {
+		return Kubernetes{}, err
+	}
 	pollInterval, err := duration("ORBIT_DEVOPS_KUBERNETES_POLL_INTERVAL", 500*time.Millisecond)
 	if err != nil {
 		return Kubernetes{}, err
 	}
 	return Kubernetes{
+		Connection:   connection,
+		ClusterRef:   value("ORBIT_DEVOPS_CLUSTER_REF", "kind-orbit-devops-s1"),
+		Namespace:    value("ORBIT_DEVOPS_NAMESPACE", "orbit-devops-s1"),
+		FieldManager: value("ORBIT_DEVOPS_FIELD_MANAGER", "orbit-devops-worker"),
+		PollInterval: pollInterval,
+	}, nil
+}
+
+// loadKubernetesConnection 不探测网络；部署模式错误及缺少云端身份锚点在启动装配前被拒绝。
+func loadKubernetesConnection() (kubeconnection.Config, error) {
+	config := kubeconnection.Config{
+		Mode:           value("ORBIT_DEVOPS_KUBERNETES_MODE", kubeconnection.LocalKind),
 		KubeconfigPath: value("ORBIT_DEVOPS_KUBECONFIG", clientcmd.RecommendedHomeFile),
 		Context:        value("ORBIT_DEVOPS_KUBERNETES_CONTEXT", "kind-orbit-devops-s1"),
-		ClusterRef:     value("ORBIT_DEVOPS_CLUSTER_REF", "kind-orbit-devops-s1"),
-		Namespace:      value("ORBIT_DEVOPS_NAMESPACE", "orbit-devops-s1"),
-		FieldManager:   value("ORBIT_DEVOPS_FIELD_MANAGER", "orbit-devops-worker"),
-		PollInterval:   pollInterval,
-	}, nil
+		ClusterUID:     os.Getenv("ORBIT_DEVOPS_KUBERNETES_CLUSTER_UID"),
+	}
+	return config, config.Validate()
 }
 
 func value(name string, fallback string) string {
@@ -737,9 +754,12 @@ func nonNegativeInteger(name string, fallback int) (int, error) {
 }
 
 func ValidateKubernetes(config Kubernetes) error {
-	if config.KubeconfigPath == "" || config.Context == "" || config.ClusterRef == "" ||
+	if config.ClusterRef == "" ||
 		config.Namespace == "" || config.FieldManager == "" {
 		return errors.New("Kubernetes configuration is incomplete")
+	}
+	if err := config.Connection.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
