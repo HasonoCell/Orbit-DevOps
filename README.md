@@ -1,8 +1,49 @@
 # Orbit-DevOps
 
-Orbit 是一个基于 Kubernetes 的应用交付平台。它把代码仓库、镜像构建、发布和运行诊断连在一起，提供一套管理界面来查看和操作交付过程。
+Orbit-DevOps 是一个基于 Kubernetes 的应用持续交付平台，将代码仓库、镜像构建、发布和运行诊断串联在了一起，并提供一套管理界面来查看和管理交付过程。
 
-项目仍在开发中。当前工作主要是完善部署、验证云端运行和 Orbit 自部署，之后会继续开发 CLI 和 Agent。
+## 项目架构
+
+```mermaid
+flowchart TB
+    web["管理前端<br/>React · TypeScript"]
+    github["GitHub"]
+
+    subgraph orbit["Orbit 后端"]
+        api["API<br/>登录授权 · 业务接口 · 运行诊断"]
+        subgraph workers["异步执行进程"]
+            pipeline["Pipeline Worker<br/>自动交付编排"]
+            build["Build Worker<br/>镜像构建"]
+            release["Release Worker<br/>发布与回退"]
+            gateway["Gateway Worker<br/>路由与证书"]
+        end
+    end
+
+    db[("PostgreSQL<br/>业务状态 · 执行记录<br/>Dispatch / Outbox · 审计")]
+    queue[("Redis / Asynq<br/>任务队列")]
+    registry["镜像 Registry"]
+
+    subgraph cluster["Kubernetes 集群"]
+        job["构建 Job<br/>Git 拉取 · BuildKit"]
+        workload["应用运行<br/>Deployment · Service · Pod"]
+        ingress["访问入口<br/>Gateway · HTTPRoute<br/>cert-manager · TLS Secret"]
+    end
+
+    web -->|HTTP API| api
+    github -->|Webhook| api
+    api <-->|读写| db
+    workers <-->|读写 / 领取待投递任务| db
+    workers <-->|投递 / 消费| queue
+    pipeline -->|查询源码信息| github
+    build -->|创建 / 观察| job
+    release -->|部署 / 观察| workload
+    gateway -->|同步 / 观察| ingress
+    api -.->|只读诊断| workload
+    api -.->|只读观测| ingress
+    job -->|推送镜像| registry
+    workload -->|拉取镜像| registry
+    ingress -->|路由到 Service| workload
+```
 
 ## 功能
 
@@ -50,7 +91,7 @@ PostgreSQL 保存业务状态、执行记录和待投递事件；Asynq / Redis �
 
 以下命令均在仓库根目录执行。
 
-### 先看界面
+### 前端界面
 
 需要 Node.js 24 和 Corepack，pnpm 版本由仓库的 `packageManager` 固定。
 
@@ -147,9 +188,3 @@ scripts/             本地环境和云端部署脚本
 test/                数据库集成测试、Kind 验收和 OIDC 测试配置
 web/                 管理前端、模拟 API 与 Playwright 测试
 ```
-
-## 当前限制
-
-源码构建目前使用匿名 HTTPS Git 拉取，支持公开仓库。部署面向一个受控集群；应用环境变量、通用 Secret 管理、多集群 Agent 和 CLI 尚未提供。
-
-TLS Secret 只用于证书托管或已登记的证书引用。云端部署和 Orbit 自部署仍在验收中，尚未完成生产高可用、备份恢复及升级流程的验证。
