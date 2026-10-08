@@ -48,7 +48,7 @@ func Open(ctx context.Context, databaseURL string, config PoolConfig) (*sqlx.DB,
 	db.SetConnMaxLifetime(config.ConnMaxLifetime)
 	check, cancel := context.WithTimeout(ctx, config.PingTimeout)
 	defer cancel()
-	if err := db.PingContext(check); err != nil {
+	if err := pingUntilReady(check, db.PingContext); err != nil {
 		_ = db.Close()
 		return nil, errors.Join(ErrUnavailable, check.Err())
 	}

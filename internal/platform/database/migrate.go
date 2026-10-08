@@ -1,10 +1,12 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	migratepostgres "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -26,6 +28,15 @@ func Migrate(databaseURL string) error {
 		return fmt.Errorf("open migration database: %w", err)
 	}
 
+	// 只在执行任何 SQL 迁移前等待连接；已经开始的迁移绝不自动重试或 force。
+	check, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = pingUntilReady(check, db.PingContext)
+	cancel()
+	if err != nil {
+		_ = source.Close()
+		_ = db.Close()
+		return fmt.Errorf("connect migration database: %w", err)
+	}
 	driver, err := migratepostgres.WithInstance(db, &migratepostgres.Config{})
 	if err != nil {
 		_ = db.Close()
