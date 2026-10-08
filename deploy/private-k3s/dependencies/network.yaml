@@ -1,0 +1,26 @@
+# 控制依赖只接受控制 Namespace 内的访问；宿主节点上的 SSH port-forward 仍可用于独立恢复。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: orbit-control-ingress, namespace: orbit-system}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+# Registry 仅接受受管的构建与应用 Namespace；服务不创建 NodePort/LoadBalancer。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: orbit-registry-ingress, namespace: orbit-builds}
+spec:
+  podSelector:
+    matchLabels: {app: orbit-registry}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: orbit-builds}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: orbit-apps}
+      ports: [{protocol: TCP, port: 5000}]

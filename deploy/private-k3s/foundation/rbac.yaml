@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: orbit-api, namespace: orbit-system}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: orbit-release-worker, namespace: orbit-system}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: orbit-build-worker, namespace: orbit-system}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: orbit-gateway-worker, namespace: orbit-system}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: orbit-pipeline-worker, namespace: orbit-system}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: orbit-maintenance, namespace: orbit-system}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: orbit-devops-build-executor, namespace: orbit-builds}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: orbit-private-identity-reader}
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    resourceNames: [kube-system, orbit-apps, orbit-builds]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: orbit-private-identity-reader}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: orbit-private-identity-reader}
+subjects:
+  - {kind: ServiceAccount, name: orbit-api, namespace: orbit-system}
+  - {kind: ServiceAccount, name: orbit-release-worker, namespace: orbit-system}
+  - {kind: ServiceAccount, name: orbit-build-worker, namespace: orbit-system}
+  - {kind: ServiceAccount, name: orbit-gateway-worker, namespace: orbit-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: orbit-api, namespace: orbit-apps}
+rules:
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, events]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [gateways, httproutes]
+    verbs: [get, list]
+  - apiGroups: [cert-manager.io]
+    resources: [certificates]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: orbit-api, namespace: orbit-apps}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: orbit-api}
+subjects:
+  - {kind: ServiceAccount, name: orbit-api, namespace: orbit-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: orbit-release-worker, namespace: orbit-apps}
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, patch]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list, watch, create, patch]
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: orbit-release-worker, namespace: orbit-apps}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: orbit-release-worker}
+subjects:
+  - {kind: ServiceAccount, name: orbit-release-worker, namespace: orbit-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: orbit-build-worker, namespace: orbit-builds}
+rules:
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, create, delete]
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: orbit-build-worker, namespace: orbit-builds}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: orbit-build-worker}
+subjects:
+  - {kind: ServiceAccount, name: orbit-build-worker, namespace: orbit-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: orbit-gateway-worker, namespace: orbit-apps}
+rules:
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [gateways, httproutes]
+    verbs: [get, list, create, patch, delete]
+  - apiGroups: [cert-manager.io]
+    resources: [certificates]
+    verbs: [get, list, create, patch, delete]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: orbit-gateway-worker, namespace: orbit-apps}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: orbit-gateway-worker}
+subjects:
+  - {kind: ServiceAccount, name: orbit-gateway-worker, namespace: orbit-system}

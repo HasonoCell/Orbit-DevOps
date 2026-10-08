@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: orbit-system
+  labels:
+    app.kubernetes.io/managed-by: orbit-devops
+    orbit-devops.dev/environment: private-test
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: orbit-apps
+  labels:
+    app.kubernetes.io/managed-by: orbit-devops
+    orbit-devops.dev/environment: private-test
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: orbit-builds
+  labels:
+    app.kubernetes.io/managed-by: orbit-devops
+    orbit-devops.dev/environment: private-test

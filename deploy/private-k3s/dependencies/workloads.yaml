@@ -1,0 +1,203 @@
+apiVersion: v1
+kind: Service
+metadata: {name: postgres, namespace: orbit-system}
+spec:
+  type: ClusterIP
+  selector: {app: orbit-postgres}
+  ports: [{name: service, port: 5432, targetPort: service}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: postgres, namespace: orbit-system}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: orbit-postgres}
+  template:
+    metadata:
+      labels: {app: orbit-postgres}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgres
+          image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: POSTGRES_USER, value: orbitdevops}
+            - {name: POSTGRES_DB, value: orbitdevops}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: orbit-database, key: password}
+          ports: [{name: service, containerPort: 5432}]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 1, memory: 768Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            exec: {command: [pg_isready, -U, orbitdevops, -d, orbitdevops]}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            exec: {command: [pg_isready, -U, orbitdevops, -d, orbitdevops]}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: service}
+            periodSeconds: 10
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: tmp, mountPath: /tmp}
+            - {name: socket, mountPath: /var/run/postgresql}
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+        - {name: socket, emptyDir: {sizeLimit: 16Mi}}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        storageClassName: local-path
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 8Gi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: redis, namespace: orbit-system}
+spec:
+  type: ClusterIP
+  selector: {app: orbit-redis}
+  ports: [{name: service, port: 6379, targetPort: service}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: redis, namespace: orbit-system}
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels: {app: orbit-redis}
+  template:
+    metadata:
+      labels: {app: orbit-redis}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: redis
+          image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              umask 077
+              printf 'appendonly yes\nmaxmemory 192mb\nmaxmemory-policy noeviction\ndir /data\nrequirepass %s\n' "$REDISCLI_AUTH" > /data/redis.conf
+              exec redis-server /data/redis.conf
+          env:
+            - name: REDISCLI_AUTH
+              valueFrom:
+                secretKeyRef: {name: orbit-redis, key: password}
+          ports: [{name: service, containerPort: 6379}]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            exec: {command: [redis-cli, ping]}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            exec: {command: [redis-cli, ping]}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: service}
+            periodSeconds: 10
+          volumeMounts:
+            - {name: data, mountPath: /data}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        storageClassName: local-path
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: registry, namespace: orbit-builds, labels: {app: orbit-registry}}
+spec:
+  type: ClusterIP
+  selector: {app: orbit-registry}
+  ports: [{name: service, port: 5000, targetPort: service}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: registry, namespace: orbit-builds}
+spec:
+  serviceName: registry
+  replicas: 1
+  selector:
+    matchLabels: {app: orbit-registry}
+  template:
+    metadata:
+      labels: {app: orbit-registry}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: registry
+          image: registry@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY, value: /var/lib/registry}
+          ports: [{name: service, containerPort: 5000}]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /v2/, port: service}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /v2/, port: service}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: service}
+            periodSeconds: 10
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/registry}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        storageClassName: local-path
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 20Gi}
