@@ -1,137 +1,155 @@
 # Orbit-DevOps
 
-Orbit-DevOps 是面向 Kubernetes 的应用交付控制平面。当前已经完成 S3 的后端运行时诊断闭环，并开始进入 S4。现有部署链路已经收敛为明确的 ReleaseOperation 领域：项目成员可以查询不可变发布历史，安全地重试、取消、重新检查和回滚；多个 Release Worker 在进程中断与结果未知时仍能保持目标队列有序，并从 Kubernetes 权威状态恢复或停止等待人工处理。S4 的 BuildOperation、Build Worker 和 OCI 制品链路尚未实现。
+Orbit 是一个基于 Kubernetes 的应用交付平台。它把代码仓库、镜像构建、发布和运行诊断连在一起，提供一套管理界面来查看和操作交付过程。
 
-## 当前能力
+项目仍在开发中。当前工作主要是完善部署、验证云端运行和 Orbit 自部署，之后会继续开发 CLI 和 Agent。
 
-- OpenAPI 3 定义 HTTP 契约，Go 与 TypeScript 代码均由契约生成或受其约束。
-- Gin API 支持创建与查询 Project、Application、Deployment Target，并可幂等更新 Deployment Target 的可变期望配置。
-- Project Member 提供 `owner`、`developer` 和 `viewer` 三类角色；创建者原子成为首个 owner，最后一个 owner 受到保护。
-- 发布接纳在单个 PostgreSQL 事务中保存 Release、`pending` ReleaseOperation、幂等记录、审计记录和持久化调度意图。
-- Release 历史支持稳定游标分页；详情同时展示不可变快照、当前目标差异、ReleaseOperation、ReleaseAttempt 和审计时间线。
-- 普通失败可以显式重试，瞬时失败可以按预算自动退避；运行中或排队中的 ReleaseOperation 均可受控取消。
-- 回滚从历史 Release 的完整快照创建新的 Release 与 ReleaseOperation，不修改旧发布或执行历史。
-- 独立 Release Worker 使用数据库租约和完成围栏领取 ReleaseOperation，同一 Deployment Target 串行、不同目标可以并行，并为每次执行保留不可变 ReleaseAttempt。
-- Release Worker 失联后先读取 Kubernetes 再决定补记成功、继续观察或重新 Apply；无法安全解释的结果进入 `attention_required`，不会盲目覆盖。
-- Kubernetes 适配器只连接经过核验的本地 Kind context 和 Orbit-DevOps 管理的 Namespace，使用固定 Field Manager 执行 Server-Side Apply。
-- 运行时诊断只从 PostgreSQL 与 Kubernetes 权威来源组合证据；观测失败会明确返回 `partial` 或 `unavailable`，诊断信号保持确定性。
-- Web 控制台保留 Project → Application → Deployment Target → Release 验证入口，并通过 `/api/v1/release-operations/{releaseOperationId}` 持续展示 ReleaseOperation 与 Kubernetes 观测。
-- API 与 Release Worker 提供 JSON 日志、W3C Trace Context、Prometheus Metrics 和健康检查。
+## 功能
 
-## 本地依赖
+- **项目与应用**：按项目组织应用，配置开发、生产部署目标，管理项目成员。
+- **镜像构建**：指定 Git Commit 和 Dockerfile，在 Kubernetes Job 中运行 BuildKit，将镜像推送到 Registry，保存 Digest。
+- **发布与回退**：选择构建产物或不可变镜像引用发布，查看执行记录，重试、取消或从历史发布回退。
+- **自动交付**：接收 GitHub Webhook，通过 Pipeline 串起源码解析、构建和部署。
+- **运行与入口**：查看 Deployment、Service、Pod 和事件，管理基于 Gateway API 的域名、路由和 TLS 证书。
+- **账号与权限**：本地密码登录、OIDC 登录，平台管理员和项目级 owner / developer / viewer 权限，操作审计。
 
-- Go 1.26+
-- Node.js 26 与 Corepack
-- Docker 与 Docker Compose
-- Kind 0.32.0
-- kubectl
-- ripgrep
+## 运行架构
 
-Kind 节点镜像和 PostgreSQL 镜像在仓库脚本与 Compose 文件中固定到 Digest。当前本地环境仍沿用 `kind-orbit-devops-s1` context 和 `orbit-devops-s1` Namespace 名称；它们是受控的测试边界，不代表当前产品阶段仍为 S1。启动脚本会把当前 kubeconfig context 切换到这个本地集群。
+一次自动交付的主要路径：
 
-## 启动
-
-首次准备环境：
-
-```bash
-make bootstrap
+```text
+GitHub push
+    │
+    ▼
+Webhook → Pipeline → Build → 镜像制品 → Release → Kubernetes
+                       │                   │
+                  BuildKit Job   Deployment / Service
 ```
 
-随后分别在三个终端启动：
+API 负责登录、授权、接纳请求和查询。耗时任务由四类独立 Worker 执行：
+
+| 进程            | 职责                                  |
+| --------------- | ------------------------------------- |
+| Pipeline Worker | 处理 Webhook 和内部事件，推进自动交付 |
+| Build Worker    | 创建和观察 BuildKit Job，记录镜像产物 |
+| Release Worker  | 应用发布配置，观察部署结果            |
+| Gateway Worker  | 同步 Gateway、HTTPRoute 和证书配置    |
+
+PostgreSQL 保存业务状态、执行记录和待投递事件；Asynq / Redis 负责异步任务的排队和分发。各 Worker 同时负责自己这类任务的投递与消费。请求接纳后先写入数据库，再投递到队列；执行状态和 Kubernetes 观测可以在控制台分别查看。
+
+## 技术栈
+
+- 后端：Go、Gin、sqlx、PostgreSQL。
+- 异步任务：Asynq、Redis。
+- 集群与构建：client-go、Kubernetes、BuildKit、OCI Registry。
+- 访问入口：Gateway API、cert-manager。
+- 前端：React、TypeScript、Vite、TanStack Query、Tailwind CSS、shadcn/ui。
+- 接口与观测：OpenAPI、OpenTelemetry、Prometheus。
+
+## 本地运行
+
+以下命令均在仓库根目录执行。
+
+### 先看界面
+
+需要 Node.js 24 和 Corepack，pnpm 版本由仓库的 `packageManager` 固定。
 
 ```bash
-make api
-make release-worker
+corepack pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com
+corepack pnpm demo
+```
+
+打开 <http://127.0.0.1:5173>。启动日志会显示 Demo 登录信息，场景控制页位于 <http://127.0.0.1:18090/__demo>，可以切换成功、失败和权限等场景。
+
+这是带模拟 API 的界面 Demo，数据保存在内存中，不会连接数据库或集群。正式 `dev` / `build` 不加载这套模拟服务。
+
+### 运行真实后端
+
+还需要 Go 1.26+、Docker / Docker Compose、Kind、kubectl 和 ripgrep。Docker 需要配置可用的镜像源，Kind 镜像可以通过下面的变量从国内镜像拉取。
+
+准备本地 Kind、Registry、PostgreSQL 和 Redis：
+
+```bash
+GOPROXY=https://goproxy.cn,direct go mod download
+ORBIT_DEVOPS_NAMESPACE=orbit-devops-s3 ORBIT_DEVOPS_KIND_IMAGE_MIRROR_PREFIX=docker.m.daocloud.io npm_config_registry=https://registry.npmmirror.com make bootstrap
+```
+
+脚本使用 `kind-orbit-devops-s1` context，会切换当前 kubeconfig。应用 Namespace 使用 `orbit-devops-s3`，构建 Namespace 使用 `orbit-devops-s4-build`。
+
+然后迁移数据库、初始化管理员。下面的连接串对应仓库 Compose 中的本地开发配置：
+
+```bash
+export ORBIT_DEVOPS_DATABASE_URL='postgres://orbitdevops:orbitdevops@127.0.0.1:5432/orbitdevops?sslmode=disable'
+go run ./cmd/orbit-devops-migrate
+go run ./cmd/orbit-devops-identity-admin initialize-admin --login-name admin --display-name Admin --maintenance-ref local-bootstrap
+```
+
+初始化命令会要求设置 Orbit 管理员的登录密码。密码至少 12 个字符，并需通过弱密码检查；同一个数据库只初始化一次。
+
+Apple Silicon 上运行构建时，先在 API、Build Worker 和 Pipeline Worker 的终端一致设置 `ORBIT_DEVOPS_BUILD_PLATFORM=linux/arm64`；默认构建平台为 `linux/amd64`。
+
+在不同终端分别运行下面各行：
+
+```bash
+ORBIT_DEVOPS_NAMESPACE=orbit-devops-s3 make api
+ORBIT_DEVOPS_NAMESPACE=orbit-devops-s3 make release-worker
+ORBIT_DEVOPS_BUILD_REGISTRY_INSECURE=true ORBIT_DEVOPS_BUILD_DOCKERHUB_MIRROR=docker.m.daocloud.io go run ./cmd/orbit-devops-build-worker
+make pipeline-worker
 make web
 ```
 
-打开 `http://127.0.0.1:5173`。API 默认监听 `127.0.0.1:8080`，Release Worker 健康与指标端口默认为 `127.0.0.1:9091`。
+前端默认在 <http://127.0.0.1:5173>，API 在 <http://127.0.0.1:8080>。登录后，先创建项目、应用和部署目标，再提交构建或发布。
 
-如果本机 Docker 使用非默认 Socket，在运行 Compose 或 Go 集成测试前显式设置 `DOCKER_HOST`。例如 OrbStack 可以使用：
+入口管理还需要 Gateway API 控制器和 cert-manager。安装控制器，并为 API 和 Gateway Worker 配置 GatewayClass 和 Issuer 策略后，再运行 `ORBIT_DEVOPS_NAMESPACE=orbit-devops-s3 go run ./cmd/orbit-devops-gateway-worker`。
+
+配置通过环境变量传入，具体变量和默认值见 [envconfig](internal/platform/envconfig/config.go)。本地 Vite 将 `/api` 代理到 API；需要修改代理地址时，设置 `ORBIT_DEVOPS_WEB_API_PROXY`。
+
+停止本地数据库和 Redis 使用 `make db-down`，数据卷会保留。
+
+## 集群部署
+
+[deploy/private-k3s](deploy/private-k3s/) 提供单节点 K3s 的后端部署样例，包括独立 API / Worker、PostgreSQL、Redis、Registry、ServiceAccount、NetworkPolicy 和迁移 Job。[scripts/cloud](scripts/cloud/) 包含安装、镜像导入和检查脚本。
+
+这些脚本面向新装的个人测试主机，入口默认只通过 SSH 隧道访问。使用前需准备后端镜像、数据库与 Redis 凭据，并阅读脚本里的前置检查。现有集群和有业务数据的主机需要单独制定部署方案。
+
+## 开发与测试
+
+修改接口契约后，重新生成 Go 和 TypeScript 代码：
 
 ```bash
-export DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock
+make generate
 ```
 
-本地 PostgreSQL 数据保存在 Compose 命名卷中。`make db-down` 只停止并移除容器，不删除数据卷。
-
-## 验证
-
-生成并检查后端与 Web：
+检查 Go、前端类型和构建：
 
 ```bash
 make check
 ```
 
-运行 Go 测试与 Playwright Web 验收：
+运行普通 Go 测试和 Web 验收。Web 验收需要先安装 Playwright Chromium，浏览器下载源可通过 `PLAYWRIGHT_DOWNLOAD_HOST` 配置：
 
 ```bash
-make test
+corepack pnpm --filter @orbit-devops/web exec playwright install chromium
+go test -p 1 -parallel 1 -timeout 20m ./... -count=1
+corepack pnpm web:test:e2e
 ```
 
-真实 Kind 测试默认关闭，避免意外触碰非测试集群。先执行 `make kind-up`，再次确认当前 context 后运行：
-
-```bash
-make test-kind
-```
-
-Kind 验收覆盖成功发布、镜像拉取失败、外部资源归属冲突、失联后自动调和、运行中取消和回滚，以及完整的 API → PostgreSQL → Release Worker → Kubernetes → Diagnostics 路径。真实 PostgreSQL 集成测试另外覆盖多 Release Worker、目标级调度、自动与显式重试、权限、幂等、审计、历史查询和独立进程中断恢复。
-
-## 运行接口
-
-| 进程 | 健康检查 | Metrics |
-| --- | --- | --- |
-| API | `http://127.0.0.1:8080/healthz` | `http://127.0.0.1:8080/metrics` |
-| Release Worker | `http://127.0.0.1:9091/healthz` | `http://127.0.0.1:9091/metrics` |
-
-Metrics 覆盖 HTTP 请求、各 ReleaseOperation 状态、ReleaseDispatch 队列、自动与显式重试、租约接管、结果未知、稳定错误代码、授权拒绝、幂等冲突、执行阶段耗时和 Kubernetes 回读失败。Release 接纳时会把规范化的 `traceparent` 和 `tracestate` 持久化到 ReleaseOperation，Release Worker 领取后恢复同一条 Trace；结构化日志使用 `release_operation_id`、`release_attempt_id` 和 `release_worker_id` 等领域限定标识。
-
-## 配置
-
-所有运行配置通过环境变量提供，默认值面向本地开发环境：
-
-| 变量 | 默认值 | 使用者 |
-| --- | --- | --- |
-| `ORBIT_DEVOPS_DATABASE_URL` | `postgres://orbitdevops:orbitdevops@127.0.0.1:5432/orbitdevops?sslmode=disable` | API、Release Worker |
-| `ORBIT_DEVOPS_API_ADDRESS` | `127.0.0.1:8080` | API |
-| `ORBIT_DEVOPS_RELEASE_WORKER_ADDRESS` | `127.0.0.1:9091` | Release Worker |
-| `ORBIT_DEVOPS_ACTOR_ID` | `local-developer` | API |
-| `ORBIT_DEVOPS_MIGRATE_ON_BOOT` | `true` | API |
-| `ORBIT_DEVOPS_RELEASE_WORKER_ID` | 当前主机名 | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_WORKER_POLL_INTERVAL` | `500ms` | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_WORKER_LEASE_DURATION` | `10s` | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_OPERATION_TIMEOUT` | `2m` | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_MAX_AUTOMATIC_RETRIES` | `2` | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_RETRY_BASE_DELAY` | `1s` | Release Worker |
-| `ORBIT_DEVOPS_REDIS_ADDRESS` | `127.0.0.1:6379` | Release Worker |
-| `ORBIT_DEVOPS_REDIS_USERNAME` | 空 | Release Worker |
-| `ORBIT_DEVOPS_REDIS_PASSWORD` | 空 | Release Worker |
-| `ORBIT_DEVOPS_REDIS_DB` | `0` | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_QUEUE_NAME` | `orbit-devops-release` | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_QUEUE_CONCURRENCY` | `4` | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_QUEUE_REPAIR_INTERVAL` | `5s` | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_QUEUE_CONSUMPTION_GRACE` | `30s` | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_QUEUE_TASK_TIMEOUT` | `2m30s` | Release Worker |
-| `ORBIT_DEVOPS_RELEASE_QUEUE_SHUTDOWN_TIMEOUT` | `15s` | Release Worker |
-| `ORBIT_DEVOPS_KUBERNETES_CONTEXT` | `kind-orbit-devops-s1` | API、Release Worker |
-| `ORBIT_DEVOPS_CLUSTER_REF` | `kind-orbit-devops-s1` | API、Release Worker |
-| `ORBIT_DEVOPS_NAMESPACE` | `orbit-devops-s1` | API、Release Worker |
-| `ORBIT_DEVOPS_KUBECONFIG` | 当前用户默认 kubeconfig | API、Release Worker |
-| `ORBIT_DEVOPS_FIELD_MANAGER` | `orbit-devops-worker` | API、Release Worker |
-| `ORBIT_DEVOPS_KUBERNETES_POLL_INTERVAL` | `500ms` | API、Release Worker |
-
-`ORBIT_DEVOPS_FIELD_MANAGER` 的默认值暂时保留为 `orbit-devops-worker`，用于兼容已有 Kubernetes ManagedFields 所有权；它不是当前进程名称。旧的 `ORBIT_DEVOPS_WORKER_*`、`ORBIT_DEVOPS_OPERATION_TIMEOUT` 和 `ORBIT_DEVOPS_QUEUE_*` 不会被新 Release Worker 静默读取。
-
-API 不接受客户端提供操作者、Cluster Ref、Namespace、kubeconfig、Secret 或任意 Kubernetes Manifest。当前已实现基于本地 Actor 的项目角色授权，但身份仍由服务端 `ORBIT_DEVOPS_ACTOR_ID` 明确配置；正式 OIDC、生产集群治理、Secret 管理、BuildOperation 和完整管理前端不属于当前范围。
+真实 Kind 构建、发布测试使用 `make test-kind`，会准备并操作本地测试集群。Gateway / TLS 测试需要另外准备控制器，并显式启用对应的环境开关。
 
 ## 目录
 
 ```text
-api/              OpenAPI 契约与 Go 生成配置
-cmd/              API、Release Worker 与离线 ReleaseDispatch 准备入口
-internal/         领域模块、传输层、适配器与平台装配
-scripts/          本地环境确定性脚本
-test/integration/ 真实 PostgreSQL 的控制平面与 Release Worker 测试
-test/kind/        受环境开关保护的真实 Kind 验收
-web/              React 控制台、生成客户端与 Playwright 测试
+api/                 OpenAPI 契约与生成配置
+cmd/                 API、Worker、身份管理和迁移入口
+internal/            领域模块、HTTP 适配层、Kubernetes 适配器与运行装配
+deploy/private-k3s/  单节点 K3s 部署样例
+scripts/             本地环境和云端部署脚本
+test/                数据库集成测试、Kind 验收和 OIDC 测试配置
+web/                 管理前端、模拟 API 与 Playwright 测试
 ```
+
+## 当前限制
+
+源码构建目前使用匿名 HTTPS Git 拉取，支持公开仓库。部署面向一个受控集群；应用环境变量、通用 Secret 管理、多集群 Agent 和 CLI 尚未提供。
+
+TLS Secret 只用于证书托管或已登记的证书引用。云端部署和 Orbit 自部署仍在验收中，尚未完成生产高可用、备份恢复及升级流程的验证。
