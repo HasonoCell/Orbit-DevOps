@@ -8,5 +8,5 @@
     }
   },
   "installCommand": "COREPACK_NPM_REGISTRY=https://registry.npmmirror.com HUSKY=0 pnpm install --frozen-lockfile --prod=false --registry=https://registry.npmmirror.com",
-  "buildCommand": "pnpm web:format:check && node --test scripts/cloud/test_vercel_output.mjs && pnpm web:build && node scripts/cloud/prepare-vercel-output.mjs"
+  "buildCommand": "pnpm format:check && node --test ../scripts/cloud/test_vercel_output.mjs && pnpm build && node ../scripts/cloud/prepare-vercel-output.mjs dist .vercel/output"
 }

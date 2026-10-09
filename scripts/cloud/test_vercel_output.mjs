@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import {
   mkdtemp,
   mkdir,
@@ -25,7 +26,7 @@ after(async () => {
 
 test("production Git deploys are restricted to main and run validation before packaging", async () => {
   const settings = JSON.parse(
-    await readFile(new URL("../../vercel.json", import.meta.url), "utf8"),
+    await readFile(new URL("../../web/vercel.json", import.meta.url), "utf8"),
   );
   // ** 覆盖带斜线的功能分支；main 的显式 true 规则只放行生产分支。
   assert.deepEqual(settings.git?.deploymentEnabled, {
@@ -34,10 +35,36 @@ test("production Git deploys are restricted to main and run validation before pa
   });
   assert.equal(
     settings.buildCommand,
-    "pnpm web:format:check && node --test scripts/cloud/test_vercel_output.mjs && pnpm web:build && node scripts/cloud/prepare-vercel-output.mjs",
+    "pnpm format:check && node --test ../scripts/cloud/test_vercel_output.mjs && pnpm build && node ../scripts/cloud/prepare-vercel-output.mjs dist .vercel/output",
   );
   assert.match(settings.installCommand, /--frozen-lockfile/);
   assert.match(settings.installCommand, /--prod=false/);
+});
+
+test("the frontend-root CLI resolves dist and output relative to the project directory", async () => {
+  const inputs = await fixture();
+  // Vercel 的项目根目录为 web，CLI 的输入和输出必须相对这个目录解析。
+  execFileSync(
+    process.execPath,
+    [
+      new URL("./prepare-vercel-output.mjs", import.meta.url).pathname,
+      "dist",
+      ".vercel/output",
+    ],
+    {
+      cwd: inputs.root,
+      env: {
+        ...process.env,
+        ORBIT_DEVOPS_API_ORIGIN: inputs.origin,
+        VITE_ORBIT_DEVOPS_API_URL: "",
+      },
+      stdio: "pipe",
+    },
+  );
+  assert.deepEqual(
+    JSON.parse(await readFile(join(inputs.output, "config.json"), "utf8")),
+    routingConfig(inputs.origin),
+  );
 });
 
 test("only public IPv4 HTTPS origins are accepted", () => {
