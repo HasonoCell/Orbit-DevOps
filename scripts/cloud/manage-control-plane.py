@@ -178,6 +178,7 @@ class Cluster:
         return generation
 
     def bind_state(self, state, path):
+        """绑定互斥 journal；中断的 patch 只接受相符的前/后 spec 与 generation，不猜测外部写入。"""
         self.state, self.path = state, path
         pending = state.get("pending_change")
         if pending:
@@ -287,6 +288,7 @@ class Cluster:
         return versions
 
     def change(self, saved, replicas, image=None):
+        """先持久化 patch 意图，再以 UID/generation CAS 修改；未完成记账可由 bind_state 解析。"""
         self.bind_state(self.state, self.path)
         current = self.get("deployment", saved["metadata"]["name"])
         if current["metadata"]["uid"] != saved["metadata"]["uid"]:
@@ -470,6 +472,12 @@ def accept_runtime(cluster, state, path, args):
 
 
 def operate(args, cluster):
+    """在独占锁内推进维护阶段，所有持久化点先于不可恢复的下一步。
+
+    freezing/draining 失败仅恢复接纳；stopping_workers 后才能替换镜像。
+    starting_candidate 失败独立恢复旧版；runtime_ready 尚待 accept 的业务验收。
+    进程被杀保留 journal，不把 KeyboardInterrupt 或未知外部修改当成可安全覆盖的失败。
+    """
     directory = protected_directory(args.state_dir)
     fd = os.open(directory / "lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as lock:

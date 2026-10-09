@@ -10,10 +10,12 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 import uuid
 
 
 SCRIPT = Path(__file__).with_name("backup-control-plane.py")
+TEMP_ROOT = Path(tempfile.gettempdir()).resolve()
 KNOWN_TABLES = (
     "access_hosts", "access_routes", "access_secret_bindings", "applications", "audit_records",
     "auth_providers", "auth_rate_limits", "auth_sessions", "build_attempts", "build_dispatches",
@@ -31,6 +33,28 @@ def load_script():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@contextlib.contextmanager
+def root_owned_file_boundary(backup, path, *, non_root=()):
+    """只把指定测试路径链的 stat owner 映射为生产 root，不替代被测边界。"""
+    real_lstat = os.lstat
+    path = Path(path).absolute()
+    owned = {path, *path.parents}
+    non_root = {Path(candidate).absolute() for candidate in non_root}
+
+    def lstat(candidate, *args, **kwargs):
+        result = real_lstat(candidate, *args, **kwargs)
+        candidate = Path(os.fsdecode(candidate)).absolute()
+        if candidate in owned and candidate not in non_root:
+            values = list(result)
+            values[4] = 0
+            return os.stat_result(values)
+        return result
+
+    with patch.object(backup.os, "lstat", side_effect=lstat), \
+            patch.object(backup.os, "geteuid", return_value=0):
+        yield
 
 
 class UnusedBoundary:
@@ -298,6 +322,85 @@ class ControlPlaneBackupTest(unittest.TestCase):
             "create",
             checkpoint_id,
         ]
+
+    def test_root_owned_group_writable_ancestor_rejects_before_checkpoint_or_dump(self):
+        backup = load_script()
+        with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as directory:
+            replaceable = Path(directory) / "replaceable"
+            replaceable.mkdir(mode=0o770)
+            replaceable.chmod(0o770)
+            trusted_parent = replaceable / "orbit-devops"
+            trusted_parent.mkdir(mode=0o700)
+            backup_root = trusted_parent / "backups"
+            boundary = backup.RealBoundary()
+            boundary.backup_root = backup_root
+            with root_owned_file_boundary(backup, backup_root), patch.object(
+                    subprocess, "run", side_effect=AssertionError("external command reached")) as external:
+                with self.assertRaisesRegex(backup.BackupError, "^unsafe_backup_root$"):
+                    backup.execute(self.argv(), boundary)
+            external.assert_not_called()
+            self.assertFalse((backup_root / "before_upgrade").exists())
+
+    def test_root_owned_world_writable_ancestor_rejects_before_checkpoint_or_dump(self):
+        backup = load_script()
+        with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as directory:
+            replaceable = Path(directory) / "replaceable"
+            replaceable.mkdir(mode=0o707)
+            replaceable.chmod(0o707)
+            trusted_parent = replaceable / "orbit-devops"
+            trusted_parent.mkdir(mode=0o700)
+            backup_root = trusted_parent / "backups"
+            boundary = backup.RealBoundary()
+            boundary.backup_root = backup_root
+            with root_owned_file_boundary(backup, backup_root), patch.object(subprocess, "run") as external:
+                with self.assertRaisesRegex(backup.BackupError, "^unsafe_backup_root$"):
+                    backup.execute(self.argv(), boundary)
+            external.assert_not_called()
+            self.assertFalse((backup_root / "before_upgrade").exists())
+
+    def test_non_root_or_symlink_ancestor_rejects_before_external_effects(self):
+        for case in ("non_root", "symlink"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory(dir=TEMP_ROOT) as directory:
+                backup = load_script()
+                base = Path(directory)
+                if case == "non_root":
+                    rejected = base / "unowned"
+                    rejected.mkdir(mode=0o700)
+                    trusted_parent = rejected / "orbit-devops"
+                    trusted_parent.mkdir(mode=0o700)
+                    boundary_context = root_owned_file_boundary(
+                        backup, trusted_parent / "backups", non_root=(rejected,)
+                    )
+                else:
+                    target = base / "target"
+                    trusted_parent = target / "orbit-devops"
+                    trusted_parent.mkdir(mode=0o700, parents=True)
+                    rejected = base / "linked-parent"
+                    rejected.symlink_to(target, target_is_directory=True)
+                    trusted_parent = rejected / "orbit-devops"
+                    boundary_context = root_owned_file_boundary(backup, trusted_parent / "backups")
+                backup_root = trusted_parent / "backups"
+                boundary = backup.RealBoundary()
+                boundary.backup_root = backup_root
+                with boundary_context, patch.object(subprocess, "run") as external:
+                    with self.assertRaisesRegex(backup.BackupError, "^unsafe_backup_root$"):
+                        backup.execute(self.argv(), boundary)
+                external.assert_not_called()
+                self.assertFalse((backup_root / "before_upgrade").exists())
+
+    def test_root_owned_sticky_ancestor_keeps_trusted_temporary_fixture_usable(self):
+        backup = load_script()
+        with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as directory:
+            sticky = Path(directory) / "sticky"
+            sticky.mkdir(mode=0o777)
+            sticky.chmod(0o1777)
+            trusted_parent = sticky / "orbit-devops"
+            trusted_parent.mkdir(mode=0o700)
+            backup_root = trusted_parent / "backups"
+            with root_owned_file_boundary(backup, backup_root):
+                backup.RealBoundary().validate_backup_root(backup_root)
+            self.assertTrue(backup_root.is_dir())
+            self.assertEqual(0o700, backup_root.stat().st_mode & 0o777)
 
     def test_invalid_checkpoint_id_is_rejected_without_external_effects(self):
         backup = load_script()

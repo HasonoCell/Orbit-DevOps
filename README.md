@@ -149,9 +149,16 @@ make web
 
 ## 集群部署
 
-[deploy/private-k3s](deploy/private-k3s/) 提供单节点 K3s 的后端部署样例，包括独立 API / Worker、PostgreSQL、Redis、Registry、ServiceAccount、NetworkPolicy 和迁移 Job。[scripts/cloud](scripts/cloud/) 包含安装、镜像导入和检查脚本。
+[deploy/private-k3s](deploy/private-k3s/) 提供个人单节点 K3s 部署样例，包括 API、四类 Worker、PostgreSQL、Redis、Registry 和访问控制。首次安装使用 [scripts/cloud](scripts/cloud/) 中的引导脚本，默认通过 SSH 隧道访问；公网前端可部署到 Vercel，通过服务端代理连接后端 HTTPS 入口。
 
-这些脚本面向新装的个人测试主机，入口默认只通过 SSH 隧道访问。使用前需准备后端镜像、数据库与 Redis 凭据，并阅读脚本里的前置检查。现有集群和有业务数据的主机需要单独制定部署方案。
+已运行的平台使用独立维护命令，不要重新套用首次安装清单：
+
+- [backup-control-plane.py](scripts/cloud/backup-control-plane.py)：在服务器受限目录备份数据库与运行配置，并在隔离数据库恢复验证。备份不离开服务器，也不包含 Registry 数据卷或 K3s 数据存储，不能替代整机灾难恢复。
+- [manage-control-plane.py](scripts/cloud/manage-control-plane.py)：提供 `upgrade`、`rollback`、`status` 和 `accept`。升级前校验集群身份、已验证备份、schema 与镜像，关闭 API 接纳并等待任务排空；超时恢复入口，失败恢复旧镜像。只支持既有个人 amd64 K3s、同 schema 升级，不更新数据库或迁移 schema。
+- [harden-ssh.py](scripts/cloud/harden-ssh.py)：确认 `ubuntu` 公钥登录可用后关闭 root 与密码 SSH；只新增受管配置，可独立撤销。
+- [production-health.yaml](.github/workflows/production-health.yaml)：每半小时检查公网页面、数据库访问、匿名认证边界与源站证书。配置仓库变量 `ORBIT_PUBLIC_URL` 和 `ORBIT_ORIGIN_IP`，并开启 GitHub Actions 失败邮件通知；手动运行可测试通知。它不检查每个 Worker 或备份状态。
+
+维护命令必须在目标服务器上由管理员执行。先查看各脚本 `--help`，核对 Cluster / Namespace UID；备份验证成功后，将检查点 ID 传给升级命令。五个进程就绪只记录为 `runtime_ready`；确认公网登录、权限和维护窗口 Webhook 补投，并完成一条新的自动构建与发布后，才运行 `accept`。
 
 ## 开发与测试
 

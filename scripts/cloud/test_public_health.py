@@ -323,6 +323,8 @@ class PublicHealthCommandTest(unittest.TestCase):
         for expected in [
             'cron: "17,47 * * * *"',
             "workflow_dispatch:",
+            "notification_test:",
+            "PUBLIC_HEALTH_NOTIFICATION_TEST",
             "contents: read",
             "if: github.ref == 'refs/heads/main'",
             "timeout-minutes: 5",

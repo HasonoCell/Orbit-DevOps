@@ -92,29 +92,17 @@ class PublicBoundary:
             raise NetworkFailure() from error
 
 
-def _request(boundary, path, check, sleeper):
+def _retry(operation, check, sleeper):
+    """只有瞬时网络错误可以重试；TLS 与响应协议错误立即归为固定检查失败。"""
     for attempt in range(3):
         try:
-            return boundary.request(path)
+            return operation()
         except NetworkFailure:
             if attempt == 2:
                 raise HealthFailure(check) from None
             sleeper(attempt + 1)
         except ProtocolFailure:
             raise HealthFailure(check) from None
-    raise AssertionError("unreachable")
-
-
-def _certificate_expiry(boundary, address, hostname, sleeper):
-    for attempt in range(3):
-        try:
-            return boundary.certificate_expiry(address, hostname)
-        except NetworkFailure:
-            if attempt == 2:
-                raise HealthFailure("origin_certificate") from None
-            sleeper(attempt + 1)
-        except ProtocolFailure:
-            raise HealthFailure("origin_certificate") from None
     raise AssertionError("unreachable")
 
 
@@ -128,12 +116,12 @@ def _execute(environ, boundary_factory, stdout, sleeper, now):
         raise HealthFailure("configuration")
     boundary = boundary_factory(origin)
 
-    login = _request(boundary, "/login", "login_html", sleeper)
+    login = _retry(lambda: boundary.request("/login"), "login_html", sleeper)
     if login.status != 200 or login.content_type != "text/html" or b"<html" not in login.body.lower():
         raise HealthFailure("login_html")
     _write(stdout, "PUBLIC_HEALTH_OK check=login_html")
 
-    providers = _request(boundary, "/api/v1/auth/providers", "providers_database", sleeper)
+    providers = _retry(lambda: boundary.request("/api/v1/auth/providers"), "providers_database", sleeper)
     try:
         provider_body = json.loads(providers.body)
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -142,7 +130,7 @@ def _execute(environ, boundary_factory, stdout, sleeper, now):
         raise HealthFailure("providers_database")
     _write(stdout, "PUBLIC_HEALTH_OK check=providers_database")
 
-    principal = _request(boundary, "/api/v1/users/me", "anonymous_auth", sleeper)
+    principal = _retry(lambda: boundary.request("/api/v1/users/me"), "anonymous_auth", sleeper)
     try:
         body = json.loads(principal.body)
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -160,7 +148,7 @@ def _execute(environ, boundary_factory, stdout, sleeper, now):
             raise HealthFailure("configuration") from None
         if parsed_address.version != 4 or not parsed_address.is_global or str(parsed_address) != address:
             raise HealthFailure("configuration")
-        expiry = _certificate_expiry(boundary, address, address, sleeper)
+        expiry = _retry(lambda: boundary.certificate_expiry(address, address), "origin_certificate", sleeper)
         current = now()
         if not isinstance(expiry, datetime) or expiry.tzinfo is None or current.tzinfo is None or \
                 expiry - current <= timedelta(hours=48):

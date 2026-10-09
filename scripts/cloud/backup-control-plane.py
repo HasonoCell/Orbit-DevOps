@@ -130,14 +130,24 @@ class RealBoundary:
         return str(uuid.uuid4())
 
     def validate_backup_root(self, path):
+        path = Path(path).absolute()
         parent = path.parent
+        # 先验证整条已存在路径，再创建叶目录；sticky 目录只允许其保护的 root-owned 子项。
+        for candidate in path.parents:
+            try:
+                info = candidate.lstat()
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or \
+                    (info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX):
+                raise BackupError("unsafe_backup_root")
         if not parent.exists():
             parent.mkdir(mode=0o700)
         if not path.exists():
             path.mkdir(mode=0o700)
         for candidate in (parent, path):
             info = candidate.lstat()
-            if not stat.S_ISDIR(info.st_mode) or candidate.is_symlink() or info.st_uid != 0:
+            if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or info.st_uid != 0:
                 raise BackupError("unsafe_backup_root")
         if stat.S_IMODE(path.lstat().st_mode) != 0o700:
             raise BackupError("unsafe_backup_root")

@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "17,47 * * * *"
   workflow_dispatch:
+    inputs:
+      notification_test:
+        description: "仅触发一次失败通知测试，不访问或修改线上服务"
+        required: false
+        default: false
+        type: boolean
 
 # 只读取仓库中的检查器；生产巡检不接收凭据，也不写仓库或云端。
 permissions:
@@ -18,6 +24,11 @@ jobs:
       ORBIT_PUBLIC_URL: ${{ vars.ORBIT_PUBLIC_URL }}
       ORBIT_ORIGIN_IP: ${{ vars.ORBIT_ORIGIN_IP }}
     steps:
+      - name: Controlled notification test
+        if: github.event_name == 'workflow_dispatch' && inputs.notification_test
+        run: |
+          echo "PUBLIC_HEALTH_NOTIFICATION_TEST" >&2
+          exit 1
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
