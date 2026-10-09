@@ -1,0 +1,155 @@
+# 管理 API 独立入口；不复用项目 GatewayClass，也不暴露数据库或 Worker。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: orbit-management
+  namespace: envoy-gateway-system
+  labels: {app.kubernetes.io/managed-by: orbit-devops}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: ClusterIP
+      envoyDeployment:
+        replicas: 1
+        # 单节点的 hostPort 无法同时被两个 Pod 占用，升级允许短暂入口中断。
+        strategy: {type: Recreate}
+        container:
+          image: envoyproxy/envoy:distroless-v1.39.1@sha256:eb2c01c13125d1629637cb4e4cce7207009fb7cc2c8027f9742758549d15b6f4
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+        pod:
+          nodeSelector: {orbit-devops.dev/environment: private-test}
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              template:
+                spec:
+                  containers:
+                    - name: envoy
+                      # Envoy Gateway 1.9 将低于 1024 的监听端口加 10000，容器仍非 root。
+                      ports:
+                        - {name: management-http, containerPort: 10080, hostPort: 80, protocol: TCP}
+                        - {name: management-tls, containerPort: 10443, hostPort: 443, protocol: TCP}
+                    - name: shutdown-manager
+                      image: envoyproxy/gateway:v1.9.1@sha256:0049bcb384c591c6a6dd043fe5c9929ef6e74f230e12dd678d2d3701df9b301e
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: orbit-management
+  labels: {app.kubernetes.io/managed-by: orbit-devops}
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: orbit-management
+    namespace: envoy-gateway-system
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: orbit-management
+  namespace: orbit-system
+  labels: {app.kubernetes.io/managed-by: orbit-devops}
+spec:
+  gatewayClassName: orbit-management
+  listeners:
+    # 明文入口仅接纳 cert-manager 创建的专用验证路由，无 API 与登录路由。
+    - name: acme-http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces: {from: Same}
+        kinds: [{group: gateway.networking.k8s.io, kind: HTTPRoute}]
+    - name: management-https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs: [{group: "", kind: Secret, name: orbit-management-tls}]
+      allowedRoutes:
+        namespaces: {from: Same}
+        kinds: [{group: gateway.networking.k8s.io, kind: HTTPRoute}]
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: orbit-management-origin
+  namespace: orbit-system
+  labels: {app.kubernetes.io/managed-by: orbit-devops}
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: orbit-management-api}
+  apiKeyAuth:
+    credentialRefs: [{group: "", kind: Secret, name: orbit-management-origin}]
+    extractFrom:
+      - headers: [X-Orbit-Origin-Secret]
+    # 源站凭据只用于这一跳，不转发到业务 API；Cookie、CSRF、RBAC 仍正常执行。
+    sanitize: true
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: orbit-management-api
+  namespace: orbit-system
+  labels: {app.kubernetes.io/managed-by: orbit-devops}
+spec:
+  parentRefs:
+    - {name: orbit-management, sectionName: management-https}
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /api}
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - {name: Cache-Control, value: "private, no-store"}
+      backendRefs: [{name: orbit-api, port: 8080}]
+      timeouts: {request: 60s, backendRequest: 60s}
+---
+# 默认控制 Namespace 隔离保持不变，只增加管理 Envoy 到 API 的 TCP 8080。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orbit-management-api-ingress
+  namespace: orbit-system
+  labels: {app.kubernetes.io/managed-by: orbit-devops}
+spec:
+  podSelector:
+    matchLabels: {app: orbit-api}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: envoy-gateway-system}
+          podSelector:
+            matchLabels:
+              gateway.envoyproxy.io/owning-gateway-name: orbit-management
+              gateway.envoyproxy.io/owning-gateway-namespace: orbit-system
+      ports: [{protocol: TCP, port: 8080}]
+---
+# 仅短暂验证 Pod 的 8089 接受同一管理 Envoy，其他控制进程不新增跨 Namespace 入口。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orbit-management-acme-ingress
+  namespace: orbit-system
+  labels: {app.kubernetes.io/managed-by: orbit-devops}
+spec:
+  podSelector:
+    matchLabels: {orbit-devops.dev/management-acme: "true"}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: envoy-gateway-system}
+          podSelector:
+            matchLabels:
+              gateway.envoyproxy.io/owning-gateway-name: orbit-management
+              gateway.envoyproxy.io/owning-gateway-namespace: orbit-system
+      ports: [{protocol: TCP, port: 8089}]
