@@ -1,0 +1,26 @@
+name: Production public health
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+# 只读取仓库中的检查器；生产巡检不接收凭据，也不写仓库或云端。
+permissions:
+  contents: read
+
+jobs:
+  public-health:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      ORBIT_PUBLIC_URL: ${{ vars.ORBIT_PUBLIC_URL }}
+      ORBIT_ORIGIN_IP: ${{ vars.ORBIT_ORIGIN_IP }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check anonymous public health
+        run: python3 scripts/cloud/check-public-health.py
