@@ -156,7 +156,14 @@ make web
 - [backup-control-plane.py](scripts/cloud/backup-control-plane.py)：在服务器受限目录备份数据库与运行配置，并在隔离数据库恢复验证。备份不离开服务器，也不包含 Registry 数据卷或 K3s 数据存储，不能替代整机灾难恢复。
 - [manage-control-plane.py](scripts/cloud/manage-control-plane.py)：提供 `upgrade`、`rollback`、`status` 和 `accept`。升级前校验集群身份、已验证备份、schema、资源余量与镜像，关闭 API 接纳并等待任务排空；超时恢复入口，失败恢复旧镜像。只支持既有个人 amd64 K3s、同 schema 升级，不更新数据库或迁移 schema。
 - [harden-ssh.py](scripts/cloud/harden-ssh.py)：确认 `ubuntu` 公钥登录可用后关闭 root 与密码 SSH；只新增受管配置，可独立撤销。应用后必须通过新的公钥连接执行 `confirm`，180 秒内未确认则自动回退。
-- [production-health.yaml](.github/workflows/production-health.yaml)：每半小时检查公网页面、数据库访问、匿名认证边界与源站证书。配置仓库变量 `ORBIT_PUBLIC_URL` 和 `ORBIT_ORIGIN_IP`，并开启 GitHub Actions 失败邮件通知；手动运行可测试通知。它不检查每个 Worker 或备份状态。
+- [check-host-health.py](scripts/cloud/check-host-health.py)：在服务器上以 root 执行固定只读巡检，依次检查环境身份、单节点状态、系统服务、API 与四类 Worker、依赖与 schema 26、已验证备份、磁盘与 inode 容量、任务积压、证书与续期控制器。只输出固定健康类别，不回显 Secret、业务数据或子进程日志。
+- [install-readonly-monitor.py](scripts/cloud/install-readonly-monitor.py)：管理员核对 Cluster / Namespace UID 后安装全新的专用 ed25519 巡检公钥，不复用个人 SSH 密钥。该公钥只能经固定命令执行无参数巡检，不授予任意 Shell、端口转发或发布权限；`remove` 按安装记录精确撤销。撤销结果为 `review` 时需人工复核，不能仅凭退出码判断完成。
+- [check-host-health-ssh.py](scripts/cloud/check-host-health-ssh.py)：供 GitHub Actions 连接固定主机巡检命令，校验服务器主机公钥和完整的健康类别协议，认证与远程诊断不进入输出。
+- [production-health.yaml](.github/workflows/production-health.yaml)：每半小时分别运行匿名公网检查与只读主机检查。配置仓库变量 `ORBIT_PUBLIC_URL`、`ORBIT_ORIGIN_IP`，以及专用巡检私钥 Secret `ORBIT_MONITOR_SSH_KEY` 和服务器 ed25519 主机公钥 Secret `ORBIT_MONITOR_HOST_KEY`；主机公钥必须经可信途径核对。开启 GitHub Actions 失败邮件通知后，手动运行 `notification_test` 可测试通知，不连接线上服务。
+
+主机巡检要求最新完整封存备份属于同一集群、schema 26，且恢复验证时间不超过 48 小时；备份文件摘要也必须匹配。根文件系统、K3s 与备份目录所在文件系统可用空间低于 20 GiB，或空间 / inode 使用率超过 80% 时告警；到期任务超过 30 分钟、任务隔离或需要人工恢复时也告警。巡检不会自动创建备份、删除制品或执行垃圾回收（GC）。
+
+在服务器上的仓库根目录执行 `sudo python3 scripts/cloud/install-readonly-monitor.py install --cluster-uid <cluster-uid> --namespace-uid <namespace-uid> --public-key-file <monitor-public-key-file>`，并确认输出 `phase` 为 `installed`；随后使用该专用密钥验证固定巡检命令及 SSH 权限限制，再核验 GitHub Actions 检查。GitHub Actions 所需私钥通过专用 Secret 提供，凭据内容不写入仓库、命令参数或文档；两项 SSH Secret 仅供主机检查步骤使用。
 
 维护命令必须在目标服务器上由管理员执行。先查看各脚本 `--help`，核对 Cluster / Namespace UID；备份验证成功后，将检查点 ID 传给升级命令。五个进程就绪只记录为 `runtime_ready`；确认公网登录、权限和维护窗口 Webhook 补投，并完成一条新的自动构建与发布后，才运行 `accept`。
 
@@ -169,6 +176,8 @@ sudo install -d -o root -g root -m 755 /usr/local/lib/orbit-devops && sudo insta
 保留当前 SSH 会话，确认另一条 `ubuntu` 公钥连接可用后，执行 `sudo python3 /usr/local/lib/orbit-devops/harden-ssh.py apply --confirm-ubuntu-key-login`。记下输出的 `operation_id`，再建立新的公钥连接，并在 180 秒内执行 `sudo python3 /usr/local/lib/orbit-devops/harden-ssh.py confirm --confirm-fresh-key-login --operation-id <本轮操作编号>`；需要撤销时，从保留的会话执行 `sudo python3 /usr/local/lib/orbit-devops/harden-ssh.py rollback`。不要从仓库目录直接执行 `apply`。
 
 构建默认限制源码工作区 1 GiB、BuildKit 状态 8 GiB、临时存储 10 GiB，由平台管理员配置。磁盘型临时存储超限由 kubelet 周期性检查并驱逐，不是瞬时硬配额。
+
+本方案是个人单节点部署，不提供高可用（HA），不承诺节点故障时持续服务；同主机备份也不能替代离机备份。未提供自动备份或 GC，管理员仍需持续创建并验证备份；巡检通过不替代应用验收或整机灾难恢复验证。
 
 ## 开发与测试
 

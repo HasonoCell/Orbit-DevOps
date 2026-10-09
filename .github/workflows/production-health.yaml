@@ -1,4 +1,4 @@
-name: Production public health
+name: Production health
 
 on:
   schedule:
@@ -11,7 +11,7 @@ on:
         default: false
         type: boolean
 
-# 只读取仓库中的检查器；生产巡检不接收凭据，也不写仓库或云端。
+# 巡检只读取状态，不写仓库或云端；SSH 凭据仅供固定只读命令使用。
 permissions:
   contents: read
 
@@ -35,3 +35,20 @@ jobs:
           persist-credentials: false
       - name: Check anonymous public health
         run: python3 scripts/cloud/check-public-health.py
+
+  host-health:
+    if: github.ref == 'refs/heads/main' && !(github.event_name == 'workflow_dispatch' && inputs.notification_test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check fixed read-only host health
+        # 仅检查步骤获得专用密钥；既不复用个人 SSH key，也不向 checkout 暴露它。
+        env:
+          ORBIT_ORIGIN_IP: ${{ vars.ORBIT_ORIGIN_IP }}
+          ORBIT_MONITOR_SSH_KEY: ${{ secrets.ORBIT_MONITOR_SSH_KEY }}
+          ORBIT_MONITOR_HOST_KEY: ${{ secrets.ORBIT_MONITOR_HOST_KEY }}
+        run: python3 scripts/cloud/check-host-health-ssh.py

@@ -334,7 +334,9 @@ class PublicHealthCommandTest(unittest.TestCase):
             "python3 scripts/cloud/check-public-health.py",
         ]:
             self.assertIn(expected, content)
-        self.assertNotIn("secrets.", content)
+        # 公网匿名检查继续不接收凭据；专用 SSH job 的独立密钥由其自身边界验证。
+        public_job = content.split("  host-health:\n", 1)[0]
+        self.assertNotIn("secrets.", public_job)
         self.assertNotIn("setup-python", content)
 
 
