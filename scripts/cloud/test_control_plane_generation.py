@@ -71,6 +71,10 @@ class GenerationFixture(BASE.KubernetesFixture):
 
 
 class GenerationFenceTest(unittest.TestCase):
+    def setUp(self):
+        # 与公开维护命令测试共用文件系统外部边界，不绕过真实资源门禁。
+        BASE.ControlPlaneCommandTest.setUp(self)
+
     def command(self, directory, operation):
         upgrade = load(SCRIPT, "control_plane_generation")
         return upgrade.main([

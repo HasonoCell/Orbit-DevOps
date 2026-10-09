@@ -3,6 +3,7 @@
 import argparse
 import copy
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
 import fcntl
 import hashlib
 import json
@@ -18,6 +19,40 @@ NAMES = ("orbit-api", "orbit-build-worker", "orbit-release-worker", "orbit-pipel
 WORKERS = NAMES[1:]
 TERMINAL = {"complete", "aborted", "rolled_back"}
 IMAGE = re.compile(r"[a-z0-9][a-z0-9.:/_-]*@sha256:[a-f0-9]{64}")
+
+
+def resource_quantity(value, resource):
+    """按 Kubernetes 量纲解析有限非负值；使用 Decimal，拒绝 NaN/Inf 和未知单位。"""
+    if not isinstance(value, str) or len(value) > 64:
+        raise RuntimeError("RESOURCE_BUDGET_REJECTED")
+    match = re.fullmatch(r"([+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))(n|u|m|[kKMGTPE]|[KMGTPE]i|[eE][+-]?[0-9]+)?", value)
+    if not match:
+        raise RuntimeError("RESOURCE_BUDGET_REJECTED")
+    number, suffix = match.groups()
+    suffix = suffix or ""
+    scales = {"": Decimal(1), "n": Decimal("1e-9"), "u": Decimal("1e-6"), "m": Decimal("1e-3")}
+    for exponent, unit in enumerate(("k", "M", "G", "T", "P", "E"), 1):
+        scales[unit] = Decimal(1000) ** exponent
+    scales["K"] = scales["k"]
+    for exponent, unit in enumerate(("Ki", "Mi", "Gi", "Ti", "Pi", "Ei"), 1):
+        scales[unit] = Decimal(1024) ** exponent
+    try:
+        if re.fullmatch(r"[eE][+-]?[0-9]+", suffix):
+            exponent = int(suffix[1:])
+            if not -18 <= exponent <= 18:
+                raise RuntimeError("RESOURCE_BUDGET_REJECTED")
+            multiplier = Decimal(10) ** exponent
+        else:
+            multiplier = scales[suffix]
+        quantity = Decimal(number) * multiplier
+        if not quantity.is_finite() or quantity < 0 or quantity > 2 ** 63 - 1:
+            raise RuntimeError("RESOURCE_BUDGET_REJECTED")
+        quantum = Decimal("0.001") if resource == "cpu" else Decimal(1)
+        if resource == "cpu" and quantity % quantum:
+            raise RuntimeError("RESOURCE_BUDGET_REJECTED")
+        return (quantity / quantum).to_integral_value(rounding=ROUND_CEILING) * quantum
+    except (ArithmeticError, InvalidOperation, KeyError):
+        raise RuntimeError("RESOURCE_BUDGET_REJECTED") from None
 
 # SQL 只作为运维只读协议，不修改状态、不取消任务；运输死记录宁可阻止维护，不能误判排空。
 DRAIN_SQL = """BEGIN READ ONLY;
@@ -287,6 +322,84 @@ class Cluster:
             raise RuntimeError("MIGRATION_CONFIGURATION_REJECTED")
         return versions
 
+    def resource_preflight(self, deployments):
+        """保守预留候选五角色，不依赖 Pod 标签扣减旧实例；只在 upgrade 冻结前执行。
+
+        维护会等全部旧 Pod Gone 后启动候选，因此不会使用 RollingUpdate 的 surge；
+        预检仍把当前非终态 Pod 与新五角色重复计入，宁可拒绝余量不足也不排除错误对象。
+        独立 rollback 不调用本门禁，避免节点紧张时反而阻断原版本恢复。
+        """
+        planned = {dimension: Decimal(0) for dimension in ("cpu", "memory", "ephemeral-storage")}
+        largest_limit = {dimension: Decimal(0) for dimension in ("cpu", "memory")}
+        for resource in deployments.values():
+            pod = resource["spec"]["template"]["spec"]
+            if pod.get("initContainers") or pod.get("resources"):
+                raise RuntimeError("RESOURCE_BUDGET_REJECTED")
+            budget = pod["containers"][0].get("resources", {})
+            requests, limits = budget.get("requests", {}), budget.get("limits", {})
+            for dimension in ("cpu", "memory"):
+                request = resource_quantity(requests.get(dimension), dimension)
+                limit = resource_quantity(limits.get(dimension), dimension)
+                if not 0 < request <= limit:
+                    raise RuntimeError("RESOURCE_BUDGET_REJECTED")
+                planned[dimension] += request
+                largest_limit[dimension] = max(largest_limit[dimension], limit)
+            if "ephemeral-storage" in requests:
+                planned["ephemeral-storage"] += resource_quantity(requests["ephemeral-storage"], "ephemeral-storage")
+        nodes = self.get("nodes", namespace=False)["items"]
+        if len(nodes) != 1:
+            raise RuntimeError("NODE_CAPACITY_REJECTED")
+        node = nodes[0]
+        conditions = {value["type"]: value["status"] for value in node["status"].get("conditions", [])}
+        if node.get("spec", {}).get("unschedulable") or any(conditions.get(key) != "False" for key in ("MemoryPressure", "DiskPressure", "PIDPressure")):
+            raise RuntimeError("NODE_CAPACITY_REJECTED")
+        allocatable = node["status"].get("allocatable", {})
+        capacity = {dimension: resource_quantity(allocatable.get(dimension), dimension) for dimension in ("cpu", "memory")}
+        if any(capacity[dimension] <= 0 or largest_limit[dimension] > capacity[dimension] for dimension in capacity):
+            raise RuntimeError("NODE_CAPACITY_REJECTED")
+        pods = [pod for pod in self.get("pods", namespace=False, extra=("-A",))["items"]
+                if pod.get("status", {}).get("phase") not in ("Succeeded", "Failed")]
+        try:
+            maximum_pods = int(allocatable["pods"])
+        except (KeyError, ValueError, TypeError):
+            raise RuntimeError("NODE_CAPACITY_REJECTED") from None
+        if maximum_pods < len(pods) + len(NAMES):
+            raise RuntimeError("NODE_CAPACITY_REJECTED")
+        for pod in pods:
+            specification = pod["spec"]
+            for dimension in planned:
+                # 所有 init（包括常驻 sidecar）一起求和是安全上界，不会低估调度需求。
+                for container in specification.get("containers", []) + specification.get("initContainers", []):
+                    budget = container.get("resources", {})
+                    quantity = budget.get("requests", {}).get(dimension, budget.get("limits", {}).get(dimension, "0"))
+                    planned[dimension] += resource_quantity(quantity, dimension)
+                planned[dimension] += resource_quantity(specification.get("overhead", {}).get(dimension, "0"), dimension)
+                planned[dimension] += resource_quantity(specification.get("resources", {}).get("requests", {}).get(dimension, "0"), dimension)
+        if planned["ephemeral-storage"]:
+            capacity["ephemeral-storage"] = resource_quantity(allocatable.get("ephemeral-storage"), "ephemeral-storage")
+        if any(planned[dimension] > capacity[dimension] for dimension in capacity):
+            raise RuntimeError("NODE_CAPACITY_REJECTED")
+
+    def disk_preflight(self, directory):
+        """生产保留 20Gi 恢复余量；本地 Kind 仅为私有 journal 保留 64Mi。
+
+        本地模式不导出 OCI 或真实备份；节点预算与压力仍独立核验，不能用
+        Mac 状态目录的占比冒充容器节点文件系统，也不能沿本地参数放宽生产门禁。
+        """
+        paths = (directory,) if self.args.local_context else (Path("/"), Path("/var/lib/rancher/k3s"), directory)
+        minimum_free = 64 * 1024 ** 2 if self.args.local_context else 20 * 1024 ** 3
+        for path in paths:
+            filesystem = os.statvfs(path)
+            values = [filesystem.f_blocks, filesystem.f_bfree, filesystem.f_bavail, filesystem.f_frsize,
+                      filesystem.f_files, filesystem.f_ffree]
+            if any(type(value) is not int or value < 0 for value in values) or \
+                    filesystem.f_blocks <= 0 or filesystem.f_frsize <= 0 or filesystem.f_files <= 0 or \
+                    not filesystem.f_bavail <= filesystem.f_bfree <= filesystem.f_blocks or filesystem.f_ffree > filesystem.f_files or \
+                    filesystem.f_bavail * filesystem.f_frsize < minimum_free or \
+                    (not self.args.local_context and ((filesystem.f_blocks - filesystem.f_bfree) * 100 > filesystem.f_blocks * 80 or \
+                     (filesystem.f_files - filesystem.f_ffree) * 100 > filesystem.f_files * 80)):
+                raise RuntimeError("MAINTENANCE_DISK_REJECTED")
+
     def change(self, saved, replicas, image=None):
         """先持久化 patch 意图，再以 UID/generation CAS 修改；未完成记账可由 bind_state 解析。"""
         self.bind_state(self.state, self.path)
@@ -551,6 +664,8 @@ def operate(args, cluster):
             raise RuntimeError("IMAGE_REPOSITORY_REJECTED")
         for name in NAMES:
             cluster.ready(name, args.ready_timeout)
+        cluster.resource_preflight(before)
+        cluster.disk_preflight(directory)
         backup_receipt(args)
         if not args.local_context:
             # 引导清单采用 Never；切换前预拉到唯一节点，保留原策略，不让停服窗口依赖网络。
@@ -562,6 +677,9 @@ def operate(args, cluster):
             write_state(directory / (state["operation_id"] + ".json"), state)
         operation_id = str(uuid.uuid4())
         archive = None if args.local_context else save_rollback_image(directory, operation_id, next(iter(images)))
+        # 拉取与 OCI 回退介质可能消耗空间；关闭入口前再次刷新预算，不把准备阶段当成静态快照。
+        cluster.resource_preflight(before)
+        cluster.disk_preflight(directory)
         state = {"version": 2, "operation_id": operation_id, "phase": "freezing", "image": args.image,
                  "cluster_uid": args.cluster_uid, "namespace_uid": args.namespace_uid,
                  "before": before, "configuration": config, "last_error": None,

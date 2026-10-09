@@ -70,7 +70,9 @@ func run(logger *slog.Logger) error {
 		RegistryInsecure: config.RegistryInsecure, DockerHubMirror: config.DockerHubMirror,
 		DockerHubMirrorInsecure: config.DockerHubMirrorInsecure,
 		ActiveDeadline:          config.BuildOperationTimeout, TTL: config.JobTTL, CPU: config.CPU,
-		Memory: config.Memory, PollInterval: config.PollInterval,
+		Memory: config.Memory, SourceStorageLimit: config.SourceStorageLimit,
+		BuildkitStorageLimit: config.BuildkitStorageLimit, EphemeralStorageRequest: config.EphemeralStorageRequest,
+		EphemeralStorageLimit: config.EphemeralStorageLimit, PollInterval: config.PollInterval,
 	})
 	if err != nil {
 		return err

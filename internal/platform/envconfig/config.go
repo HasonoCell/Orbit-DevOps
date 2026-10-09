@@ -143,6 +143,10 @@ type BuildWorker struct {
 	JobTTL                  time.Duration
 	CPU                     string
 	Memory                  string
+	SourceStorageLimit      string
+	BuildkitStorageLimit    string
+	EphemeralStorageRequest string
+	EphemeralStorageLimit   string
 	BuildQueue              ReleaseQueue
 }
 
@@ -616,7 +620,12 @@ func LoadBuildWorker() (BuildWorker, error) {
 		BuildkitImage:      value("ORBIT_DEVOPS_BUILDKIT_IMAGE", "moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef"),
 		RegistrySecretName: os.Getenv("ORBIT_DEVOPS_BUILD_REGISTRY_SECRET"), RegistryInsecure: registryInsecure, JobTTL: jobTTL,
 		DockerHubMirror: os.Getenv("ORBIT_DEVOPS_BUILD_DOCKERHUB_MIRROR"), DockerHubMirrorInsecure: dockerHubMirrorInsecure,
-		CPU: value("ORBIT_DEVOPS_BUILD_CPU", "1"), Memory: value("ORBIT_DEVOPS_BUILD_MEMORY", "1Gi"), BuildQueue: queue,
+		CPU: value("ORBIT_DEVOPS_BUILD_CPU", "1"), Memory: value("ORBIT_DEVOPS_BUILD_MEMORY", "1Gi"),
+		SourceStorageLimit:      value("ORBIT_DEVOPS_BUILD_SOURCE_STORAGE_LIMIT", "1Gi"),
+		BuildkitStorageLimit:    value("ORBIT_DEVOPS_BUILD_BUILDKIT_STORAGE_LIMIT", "8Gi"),
+		EphemeralStorageRequest: value("ORBIT_DEVOPS_BUILD_EPHEMERAL_STORAGE_REQUEST", "1Gi"),
+		EphemeralStorageLimit:   value("ORBIT_DEVOPS_BUILD_EPHEMERAL_STORAGE_LIMIT", "10Gi"),
+		BuildQueue:              queue,
 	}
 	for name, image := range map[string]string{"ORBIT_DEVOPS_BUILD_GIT_IMAGE": config.GitImage, "ORBIT_DEVOPS_BUILDKIT_IMAGE": config.BuildkitImage} {
 		parts := strings.Split(image, "@sha256:")

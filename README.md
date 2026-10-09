@@ -154,11 +154,21 @@ make web
 已运行的平台使用独立维护命令，不要重新套用首次安装清单：
 
 - [backup-control-plane.py](scripts/cloud/backup-control-plane.py)：在服务器受限目录备份数据库与运行配置，并在隔离数据库恢复验证。备份不离开服务器，也不包含 Registry 数据卷或 K3s 数据存储，不能替代整机灾难恢复。
-- [manage-control-plane.py](scripts/cloud/manage-control-plane.py)：提供 `upgrade`、`rollback`、`status` 和 `accept`。升级前校验集群身份、已验证备份、schema 与镜像，关闭 API 接纳并等待任务排空；超时恢复入口，失败恢复旧镜像。只支持既有个人 amd64 K3s、同 schema 升级，不更新数据库或迁移 schema。
-- [harden-ssh.py](scripts/cloud/harden-ssh.py)：确认 `ubuntu` 公钥登录可用后关闭 root 与密码 SSH；只新增受管配置，可独立撤销。
+- [manage-control-plane.py](scripts/cloud/manage-control-plane.py)：提供 `upgrade`、`rollback`、`status` 和 `accept`。升级前校验集群身份、已验证备份、schema、资源余量与镜像，关闭 API 接纳并等待任务排空；超时恢复入口，失败恢复旧镜像。只支持既有个人 amd64 K3s、同 schema 升级，不更新数据库或迁移 schema。
+- [harden-ssh.py](scripts/cloud/harden-ssh.py)：确认 `ubuntu` 公钥登录可用后关闭 root 与密码 SSH；只新增受管配置，可独立撤销。应用后必须通过新的公钥连接执行 `confirm`，180 秒内未确认则自动回退。
 - [production-health.yaml](.github/workflows/production-health.yaml)：每半小时检查公网页面、数据库访问、匿名认证边界与源站证书。配置仓库变量 `ORBIT_PUBLIC_URL` 和 `ORBIT_ORIGIN_IP`，并开启 GitHub Actions 失败邮件通知；手动运行可测试通知。它不检查每个 Worker 或备份状态。
 
 维护命令必须在目标服务器上由管理员执行。先查看各脚本 `--help`，核对 Cluster / Namespace UID；备份验证成功后，将检查点 ID 传给升级命令。五个进程就绪只记录为 `runtime_ready`；确认公网登录、权限和维护窗口 Webhook 补投，并完成一条新的自动构建与发布后，才运行 `accept`。
+
+SSH 加固脚本必须安装到固定的 root 管理路径，定时回退不能运行普通用户可修改的副本。在服务器上的仓库根目录执行：
+
+```bash
+sudo install -d -o root -g root -m 755 /usr/local/lib/orbit-devops && sudo install -o root -g root -m 755 scripts/cloud/harden-ssh.py /usr/local/lib/orbit-devops/harden-ssh.py
+```
+
+保留当前 SSH 会话，确认另一条 `ubuntu` 公钥连接可用后，执行 `sudo python3 /usr/local/lib/orbit-devops/harden-ssh.py apply --confirm-ubuntu-key-login`。记下输出的 `operation_id`，再建立新的公钥连接，并在 180 秒内执行 `sudo python3 /usr/local/lib/orbit-devops/harden-ssh.py confirm --confirm-fresh-key-login --operation-id <本轮操作编号>`；需要撤销时，从保留的会话执行 `sudo python3 /usr/local/lib/orbit-devops/harden-ssh.py rollback`。不要从仓库目录直接执行 `apply`。
+
+构建默认限制源码工作区 1 GiB、BuildKit 状态 8 GiB、临时存储 10 GiB，由平台管理员配置。磁盘型临时存储超限由 kubelet 周期性检查并驱逐，不是瞬时硬配额。
 
 ## 开发与测试
 

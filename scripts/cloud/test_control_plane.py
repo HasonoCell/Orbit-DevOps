@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name("manage-control-plane.py")
@@ -30,7 +31,10 @@ class KubernetesFixture:
                 "replicas": 1, "selector": {"matchLabels": {"app": name}}, "template": {"metadata": {"labels": {"app": name}}, "spec": {
                     "serviceAccountName": name, "containers": [{"name": role, "command": ["/usr/local/bin/orbit-devops-" + role],
                         "image": OLD_IMAGE, "imagePullPolicy": "Never", "envFrom": [{"configMapRef": {"name": "orbit-config"}}],
+                        "resources": {"requests": {"cpu": "100m", "memory": "96Mi"}, "limits": {"cpu": "500m", "memory": "384Mi"}},
                         "env": [{"name": "UNCHANGED", "value": "keep"}], "readinessProbe": {"httpGet": {"path": "/healthz", "port": 8080}}}]}}}}
+        self.allocatable = {"cpu": "4", "memory": "8Gi", "ephemeral-storage": "100Gi", "pods": "110"}
+        self.extra_pods = []
         self.calls = []
 
     def __call__(self, command, **kwargs):
@@ -43,7 +47,10 @@ class KubernetesFixture:
             kind = command[command.index("get") + 1]
             name = command[command.index("get") + 2]
             if kind == "nodes":
-                result = {"items": [{"metadata": {"name": "orbit-upgrade-20261009-control-plane"}, "status": {"conditions": [{"type": "Ready", "status": "True"}]}}]}
+                result = {"items": [{"metadata": {"name": "orbit-upgrade-20261009-control-plane"}, "status": {
+                    "allocatable": self.allocatable, "conditions": [{"type": "Ready", "status": "True"},
+                    {"type": "DiskPressure", "status": "False"}, {"type": "MemoryPressure", "status": "False"},
+                    {"type": "PIDPressure", "status": "False"}]}}]}
             elif kind == "namespace":
                 result = {"metadata": {"uid": "fixture-cluster" if name == "kube-system" else "fixture-namespace", "labels": {"app.kubernetes.io/managed-by": "orbit-devops"}}}
             elif kind == "deployment":
@@ -51,8 +58,13 @@ class KubernetesFixture:
             elif kind == "configmap":
                 result = {"metadata": {"uid": "fixture-config", "resourceVersion": getattr(self, "config_version", "1")}, "data": {"ORBIT_DEVOPS_MIGRATE_ON_BOOT": "false"}}
             elif kind == "pods":
-                name = command[command.index("-l") + 1].removeprefix("app=")
-                result = {"items": []} if self.deployments[name]["spec"]["replicas"] == 0 else {"items": [{"metadata": {"name": name}}]}
+                if "-A" in command:
+                    result = {"items": [{"metadata": {"name": name}, "spec": copy.deepcopy(resource["spec"]["template"]["spec"]),
+                                         "status": {"phase": "Running"}}
+                                        for name, resource in self.deployments.items() if resource["spec"]["replicas"] > 0] + self.extra_pods}
+                else:
+                    name = command[command.index("-l") + 1].removeprefix("app=")
+                    result = {"items": []} if self.deployments[name]["spec"]["replicas"] == 0 else {"items": [{"metadata": {"name": name}}]}
         elif verb == "exec":
             sql = kwargs.get("input", "")
             result = "26|f\n" if "schema_migrations" in sql else json.dumps({"active_total": self.active, "lease_total": 0, "categories": {"release": self.active}})
@@ -84,6 +96,14 @@ class KubernetesFixture:
 
 
 class ControlPlaneCommandTest(unittest.TestCase):
+    def setUp(self):
+        # 磁盘是获准的外部边界；机制测试不受运行机器私人磁盘占用影响。
+        filesystem = SimpleNamespace(f_blocks=100_000_000, f_bfree=50_000_000, f_bavail=50_000_000,
+                                     f_frsize=4096, f_files=100_000, f_ffree=90_000)
+        boundary = patch("os.statvfs", return_value=filesystem)
+        boundary.start()
+        self.addCleanup(boundary.stop)
+
     def command(self, directory, operation):
         spec = importlib.util.spec_from_file_location("upgrade", SCRIPT)
         upgrade = importlib.util.module_from_spec(spec)
@@ -91,6 +111,143 @@ class ControlPlaneCommandTest(unittest.TestCase):
         return upgrade.main(["--local-context", "kind-orbit-upgrade-20261009", "--namespace", "orbit-upgrade-20261009",
                              "--cluster-uid", "fixture-cluster", "--namespace-uid", "fixture-namespace", "--state-dir", directory,
                              "--confirm-private-upgrade"] + operation)
+
+    def test_missing_workload_resource_budget_is_rejected_before_admission_stops(self):
+        external = KubernetesFixture()
+        del external.deployments["orbit-build-worker"]["spec"]["template"]["spec"]["containers"][0]["resources"]
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "RESOURCE_BUDGET_REJECTED"):
+                self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertFalse(any("patch" in command for command in external.calls))
+            self.assertFalse((Path(directory) / "current.json").exists())
+
+    def test_insufficient_node_cpu_is_rejected_before_admission_stops(self):
+        external = KubernetesFixture()
+        external.allocatable["cpu"] = "800m"
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "NODE_CAPACITY_REJECTED"):
+                self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertFalse(any("patch" in command for command in external.calls))
+            self.assertFalse((Path(directory) / "current.json").exists())
+
+    def test_low_maintenance_disk_space_rejects_before_admission_stops(self):
+        external = KubernetesFixture()
+        filesystem = SimpleNamespace(f_blocks=100_000_000, f_bfree=50_000_000, f_bavail=8_000,
+                                     f_frsize=4096, f_files=100_000, f_ffree=90_000)
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), \
+                patch("os.statvfs", return_value=filesystem), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "MAINTENANCE_DISK_REJECTED"):
+                self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertFalse(any("patch" in command for command in external.calls))
+            self.assertFalse((Path(directory) / "current.json").exists())
+
+    def test_local_kind_does_not_treat_host_usage_ratio_as_node_pressure(self):
+        external = KubernetesFixture()
+        filesystem = SimpleNamespace(f_blocks=100_000_000, f_bfree=8_000_000, f_bavail=8_000_000,
+                                     f_frsize=4096, f_files=100_000, f_ffree=90_000)
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), \
+                patch("os.statvfs", return_value=filesystem), contextlib.redirect_stdout(io.StringIO()):
+            self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertEqual(json.loads((Path(directory) / "current.json").read_text())["phase"], "runtime_ready")
+
+    def test_local_journal_does_not_require_production_oci_archive_space(self):
+        external = KubernetesFixture()
+        filesystem = SimpleNamespace(f_blocks=100_000_000, f_bfree=131_072, f_bavail=131_072,
+                                     f_frsize=4096, f_files=100_000, f_ffree=90_000)
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), \
+                patch("os.statvfs", return_value=filesystem), contextlib.redirect_stdout(io.StringIO()):
+            self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertEqual(json.loads((Path(directory) / "current.json").read_text())["phase"], "runtime_ready")
+
+    def test_binary_ei_memory_limit_is_checked_against_node_capacity(self):
+        external = KubernetesFixture()
+        external.deployments["orbit-api"]["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"]["memory"] = "1Ei"
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "NODE_CAPACITY_REJECTED"):
+                self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertFalse(any("patch" in command for command in external.calls))
+
+    def test_sub_millicpu_precision_is_not_a_valid_budget(self):
+        external = KubernetesFixture()
+        external.deployments["orbit-api"]["spec"]["template"]["spec"]["containers"][0]["resources"]["requests"]["cpu"] = "0.5m"
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "RESOURCE_BUDGET_REJECTED"):
+                self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertFalse(any("patch" in command for command in external.calls))
+
+    def test_invalid_or_unbounded_cpu_memory_budgets_fail_before_writes(self):
+        cases = (("requests", "cpu", "NaN"), ("limits", "memory", "Infinity"),
+                 ("requests", "memory", "-1Mi"), ("limits", "memory", "1MB"),
+                 ("requests", "cpu", "0"), ("requests", "cpu", "600m"))
+        for group, dimension, value in cases:
+            with self.subTest(group=group, dimension=dimension, value=value):
+                external = KubernetesFixture()
+                external.deployments["orbit-api"]["spec"]["template"]["spec"]["containers"][0]["resources"][group][dimension] = value
+                with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaisesRegex(RuntimeError, "RESOURCE_BUDGET_REJECTED"):
+                        self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+                    self.assertFalse(any("patch" in command for command in external.calls))
+
+    def test_decimal_and_binary_units_preserve_budget_and_upgrade(self):
+        external = KubernetesFixture()
+        budget = external.deployments["orbit-api"]["spec"]["template"]["spec"]["containers"][0]["resources"]
+        budget["requests"] = {"cpu": "1e-1", "memory": "1e8"}
+        budget["limits"] = {"cpu": "0.5", "memory": "384Mi"}
+        external.allocatable["memory"] = "8388608Ki"
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), contextlib.redirect_stdout(io.StringIO()):
+            self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertEqual(external.deployments["orbit-api"]["spec"]["template"]["spec"]["containers"][0]["resources"], budget)
+
+    def test_other_pods_init_and_overhead_are_in_capacity_budget(self):
+        external = KubernetesFixture()
+        external.extra_pods = [{"spec": {"containers": [{"resources": {"requests": {"cpu": "100m", "memory": "256Mi"}}}],
+            "initContainers": [{"resources": {"requests": {"cpu": "100m", "memory": "7Gi"}}, "restartPolicy": "Always"}],
+            "overhead": {"memory": "512Mi"}}, "status": {"phase": "Running"}}]
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "NODE_CAPACITY_REJECTED"):
+                self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertFalse(any("patch" in command for command in external.calls))
+
+    def test_pod_slots_include_new_roles_and_ignore_completed_jobs(self):
+        external = KubernetesFixture()
+        external.allocatable["pods"] = "9"
+        external.extra_pods = [{"spec": {"containers": [{"resources": {"requests": {"cpu": "100", "memory": "1Ei"}}}]},
+                                "status": {"phase": "Succeeded"}}]
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "NODE_CAPACITY_REJECTED"):
+                self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertFalse(any("patch" in command for command in external.calls))
+            external.allocatable["pods"] = "10"
+            self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+
+    def test_capacity_is_refreshed_after_image_preparation_before_freeze(self):
+        external = KubernetesFixture()
+        snapshots = 0
+        def changed_capacity(command, **kwargs):
+            nonlocal snapshots
+            if "get" in command and "pods" in command and "-A" in command:
+                snapshots += 1
+                if snapshots == 2:
+                    external.extra_pods = [{"spec": {"containers": [{"resources": {"requests": {"cpu": "4", "memory": "1Gi"}}}]},
+                                            "status": {"phase": "Pending"}}]
+            return external(command, **kwargs)
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", changed_capacity), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "NODE_CAPACITY_REJECTED"):
+                self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            self.assertFalse(any("patch" in command for command in external.calls))
+            self.assertFalse((Path(directory) / "current.json").exists())
+
+    def test_resource_or_disk_pressure_does_not_block_independent_rollback(self):
+        external = KubernetesFixture()
+        original = copy.deepcopy(external.deployments)
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", external), contextlib.redirect_stdout(io.StringIO()):
+            self.command(directory, ["upgrade", "--image", NEW_IMAGE])
+            external.allocatable["cpu"] = "500m"
+            filesystem = SimpleNamespace(f_blocks=100_000_000, f_bfree=1_000_000, f_bavail=1_000_000,
+                                         f_frsize=4096, f_files=100_000, f_ffree=1000)
+            with patch("os.statvfs", return_value=filesystem):
+                self.command(directory, ["rollback"])
+            self.assertTrue(all(external.deployments[name]["spec"] == original[name]["spec"] for name in NAMES))
 
     def test_wrong_environment_is_rejected_before_workload_write(self):
         spec = importlib.util.spec_from_file_location("upgrade", SCRIPT)

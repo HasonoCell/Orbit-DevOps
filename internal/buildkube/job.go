@@ -18,15 +18,19 @@ import (
 )
 
 const (
-	ManagedByLabel        = "app.kubernetes.io/managed-by"
-	ManagedByValue        = "orbit-devops"
-	BuildIDLabel          = "orbit-devops.dev/build-id"
-	BuildOperationIDLabel = "orbit-devops.dev/build-operation-id"
-	BuildAttemptIDLabel   = "orbit-devops.dev/build-attempt-id"
-	ProjectIDLabel        = "orbit-devops.dev/project-id"
-	ApplicationIDLabel    = "orbit-devops.dev/application-id"
-	InputDigestAnnotation = "orbit-devops.dev/build-input-digest"
-	buildContainerName    = "buildkit"
+	ManagedByLabel          = "app.kubernetes.io/managed-by"
+	ManagedByValue          = "orbit-devops"
+	BuildIDLabel            = "orbit-devops.dev/build-id"
+	BuildOperationIDLabel   = "orbit-devops.dev/build-operation-id"
+	BuildAttemptIDLabel     = "orbit-devops.dev/build-attempt-id"
+	ProjectIDLabel          = "orbit-devops.dev/project-id"
+	ApplicationIDLabel      = "orbit-devops.dev/application-id"
+	InputDigestAnnotation   = "orbit-devops.dev/build-input-digest"
+	buildContainerName      = "buildkit"
+	defaultSourceStorage    = "1Gi"
+	defaultBuildkitStorage  = "8Gi"
+	defaultEphemeralRequest = "1Gi"
+	defaultEphemeralLimit   = "10Gi"
 )
 
 var pinnedImagePattern = regexp.MustCompile(`@sha256:[a-f0-9]{64}$`)
@@ -44,14 +48,22 @@ type Config struct {
 	TTL                     time.Duration
 	CPU                     string
 	Memory                  string
+	SourceStorageLimit      string
+	BuildkitStorageLimit    string
+	EphemeralStorageRequest string
+	EphemeralStorageLimit   string
 	PollInterval            time.Duration
 }
 
 type Adapter struct {
-	client kubernetes.Interface
-	config Config
-	cpu    resource.Quantity
-	memory resource.Quantity
+	client           kubernetes.Interface
+	config           Config
+	cpu              resource.Quantity
+	memory           resource.Quantity
+	sourceStorage    resource.Quantity
+	buildkitStorage  resource.Quantity
+	ephemeralRequest resource.Quantity
+	ephemeralLimit   resource.Quantity
 }
 
 func New(client kubernetes.Interface, config Config) (*Adapter, error) {
@@ -71,10 +83,52 @@ func New(client kubernetes.Interface, config Config) (*Adapter, error) {
 	if err != nil || memory.Sign() <= 0 {
 		return nil, errors.New("invalid build memory limit")
 	}
+	// 全空时采用受控默认值，保持内部调用方安全；部分配置不允许静默混用默认值。
+	if config.SourceStorageLimit == "" && config.BuildkitStorageLimit == "" &&
+		config.EphemeralStorageRequest == "" && config.EphemeralStorageLimit == "" {
+		config.SourceStorageLimit = defaultSourceStorage
+		config.BuildkitStorageLimit = defaultBuildkitStorage
+		config.EphemeralStorageRequest = defaultEphemeralRequest
+		config.EphemeralStorageLimit = defaultEphemeralLimit
+	} else if config.SourceStorageLimit == "" || config.BuildkitStorageLimit == "" ||
+		config.EphemeralStorageRequest == "" || config.EphemeralStorageLimit == "" {
+		return nil, errors.New("incomplete build disk budget")
+	}
+	sourceStorage, err := positiveQuantity(config.SourceStorageLimit)
+	if err != nil {
+		return nil, errors.New("invalid source storage limit")
+	}
+	buildkitStorage, err := positiveQuantity(config.BuildkitStorageLimit)
+	if err != nil {
+		return nil, errors.New("invalid BuildKit storage limit")
+	}
+	ephemeralRequest, err := positiveQuantity(config.EphemeralStorageRequest)
+	if err != nil {
+		return nil, errors.New("invalid ephemeral storage request")
+	}
+	ephemeralLimit, err := positiveQuantity(config.EphemeralStorageLimit)
+	if err != nil {
+		return nil, errors.New("invalid ephemeral storage limit")
+	}
+	volumeStorage := sourceStorage.DeepCopy()
+	volumeStorage.Add(buildkitStorage)
+	if ephemeralRequest.Cmp(ephemeralLimit) > 0 || volumeStorage.Cmp(ephemeralLimit) > 0 {
+		return nil, errors.New("build disk budget exceeds ephemeral storage limit")
+	}
 	if config.PollInterval <= 0 {
 		config.PollInterval = 500 * time.Millisecond
 	}
-	return &Adapter{client: client, config: config, cpu: cpu, memory: memory}, nil
+	return &Adapter{client: client, config: config, cpu: cpu, memory: memory,
+		sourceStorage: sourceStorage, buildkitStorage: buildkitStorage,
+		ephemeralRequest: ephemeralRequest, ephemeralLimit: ephemeralLimit}, nil
+}
+
+func positiveQuantity(raw string) (resource.Quantity, error) {
+	quantity, err := resource.ParseQuantity(raw)
+	if err != nil || quantity.Sign() <= 0 {
+		return resource.Quantity{}, errors.New("quantity must be positive")
+	}
+	return quantity, nil
 }
 
 // RenderJob 确定性生成一个 Attempt 对应的 Job；请求方不能覆盖镜像、资源或 Secret。
@@ -90,8 +144,10 @@ func (a *Adapter) RenderJob(execution buildworker.BuildExecution) *batchv1.Job {
 	readOnlyRoot := false
 	fsGroup := int64(1000)
 	resources := corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{corev1.ResourceCPU: a.cpu, corev1.ResourceMemory: a.memory},
-		Limits:   corev1.ResourceList{corev1.ResourceCPU: a.cpu, corev1.ResourceMemory: a.memory},
+		Requests: corev1.ResourceList{corev1.ResourceCPU: a.cpu, corev1.ResourceMemory: a.memory,
+			corev1.ResourceEphemeralStorage: a.ephemeralRequest},
+		Limits: corev1.ResourceList{corev1.ResourceCPU: a.cpu, corev1.ResourceMemory: a.memory,
+			corev1.ResourceEphemeralStorage: a.ephemeralLimit},
 	}
 	initContainer := corev1.Container{
 		Name: "source", Image: a.config.GitImage, ImagePullPolicy: corev1.PullIfNotPresent,
@@ -136,9 +192,11 @@ func (a *Adapter) RenderJob(execution buildworker.BuildExecution) *batchv1.Job {
 		},
 		TerminationMessagePath: "/dev/termination-log", TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 	}
+	sourceStorage := a.sourceStorage.DeepCopy()
+	buildkitStorage := a.buildkitStorage.DeepCopy()
 	volumes := []corev1.Volume{
-		{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		{Name: "buildkit-state", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &sourceStorage}}},
+		{Name: "buildkit-state", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &buildkitStorage}}},
 	}
 	if a.config.RegistrySecretName != "" {
 		mode := int32(0o400)
