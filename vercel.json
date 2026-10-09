@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "COREPACK_NPM_REGISTRY=https://registry.npmmirror.com HUSKY=0 pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com",
+  "buildCommand": "pnpm web:build && node scripts/cloud/prepare-vercel-output.mjs"
+}
