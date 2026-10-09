@@ -2,7 +2,10 @@
 """SSH 巡检客户端只测试公开入口和外部 SSH 边界，不使用真实凭据。"""
 import importlib.util
 import io
+import os
 from pathlib import Path
+import subprocess
+import tempfile
 from types import SimpleNamespace
 import unittest
 
@@ -39,6 +42,29 @@ def checker():
 
 
 class HostHealthSSHTests(unittest.TestCase):
+    def test_secret_without_final_newline_remains_a_readable_openssh_key(self):
+        # Secret 的传输可能去掉尾部换行；用临时生成的密钥和 OpenSSH 本身验证格式契约。
+        with tempfile.TemporaryDirectory(prefix="orbit-ssh-format-test-") as temporary:
+            key_path = Path(temporary) / "generated"
+            subprocess.run(["/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key_path)],
+                           check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            environment = dict(ENVIRONMENT, ORBIT_MONITOR_SSH_KEY=key_path.read_text().rstrip("\n"))
+
+            def openssh_boundary(address, key, host_key):
+                supplied_path = Path(temporary) / "supplied"
+                supplied_path.write_text(key)
+                os.chmod(supplied_path, 0o600)
+                parsed = subprocess.run(["/usr/bin/ssh-keygen", "-y", "-f", str(supplied_path)],
+                                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                return SSHAdapter(SUCCESS, 0 if parsed.returncode == 0 else 255)
+
+            output, error = io.StringIO(), io.StringIO()
+            result = checker().main(environ=environment, stdout=output, stderr=error,
+                                    boundary_factory=openssh_boundary)
+            self.assertEqual(result, 0)
+            self.assertEqual(output.getvalue(), SUCCESS)
+            self.assertEqual(error.getvalue(), "")
+
     def test_missing_configuration_fails_without_disclosing_environment(self):
         output, error = io.StringIO(), io.StringIO()
         result = checker().main(environ={"SECRET_MARKER": "never-print-me"}, stdout=output, stderr=error)

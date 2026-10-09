@@ -93,7 +93,9 @@ def configuration(environ):
             raise ValueError()
     except ValueError:
         raise SSHFailure("configuration") from None
-    return address, key, host_key
+    # Secret 传输不保证保留文件末尾换行，OpenSSH 解析私钥却要求它存在。
+    # 只补齐已经通过严格格式校验的结束行，不接受额外内容或改变密钥主体。
+    return address, key.rstrip("\n") + "\n", host_key
 
 
 def main(*, environ=None, stdout=None, stderr=None, boundary_factory=None):
