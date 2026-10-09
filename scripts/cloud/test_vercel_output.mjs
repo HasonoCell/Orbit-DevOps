@@ -23,6 +23,23 @@ after(async () => {
     await rm(directory, { recursive: true, force: true });
 });
 
+test("production Git deploys are restricted to main and run validation before packaging", async () => {
+  const settings = JSON.parse(
+    await readFile(new URL("../../vercel.json", import.meta.url), "utf8"),
+  );
+  // ** 覆盖带斜线的功能分支；main 的显式 true 规则只放行生产分支。
+  assert.deepEqual(settings.git?.deploymentEnabled, {
+    "**": false,
+    main: true,
+  });
+  assert.equal(
+    settings.buildCommand,
+    "pnpm web:format:check && node --test scripts/cloud/test_vercel_output.mjs && pnpm web:build && node scripts/cloud/prepare-vercel-output.mjs",
+  );
+  assert.match(settings.installCommand, /--frozen-lockfile/);
+  assert.match(settings.installCommand, /--prod=false/);
+});
+
 test("only public IPv4 HTTPS origins are accepted", () => {
   assert.equal(managementOrigin("https://8.8.8.8/"), "https://8.8.8.8");
   for (const value of [

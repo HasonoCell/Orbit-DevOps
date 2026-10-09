@@ -1,0 +1,66 @@
+name: Frontend CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "api/openapi.yaml"
+      - "scripts/cloud/*vercel*.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "vercel.json"
+      - ".github/workflows/frontend-ci.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "api/openapi.yaml"
+      - "scripts/cloud/*vercel*.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "vercel.json"
+      - ".github/workflows/frontend-ci.yaml"
+  workflow_dispatch:
+
+# PR 检查不需要云端或 Vercel 凭据，不能获取生产环境的来源密钥。
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      COREPACK_NPM_REGISTRY: https://registry.npmmirror.com
+      npm_config_registry: https://registry.npmmirror.com
+      HUSKY: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+      - name: Enable pinned pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prod=false --registry=https://registry.npmmirror.com
+      - name: Check formatting
+        run: pnpm web:format:check
+      - name: Verify deployment contract
+        run: node --test scripts/cloud/test_vercel_output.mjs
+      - name: Check demo types and unit tests
+        run: pnpm --filter @orbit-devops/web demo:check && pnpm --filter @orbit-devops/web demo:test
+      - name: Build production frontend
+        run: pnpm web:build
+      - name: Check generated API contract
+        run: git diff --exit-code -- web/src/api/schema.d.ts
