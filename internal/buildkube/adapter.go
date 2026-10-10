@@ -381,10 +381,13 @@ func (a *Adapter) readBuildLog(ctx context.Context, identity buildworker.Executi
 		// 两阶段分别保留预算，避免大量 Git 输出挤掉真正的 BuildKit 错误；预留标题和失败标记空间。
 		const stageMaximumBytes = 32*1024 - 128
 		limit := int64(stageMaximumBytes + 1)
+		// source 端点卡住时仍为 BuildKit 保留读取机会；两阶段都受外层总预算与调用方取消约束。
+		stageContext, cancelStage := context.WithTimeout(ctx, 500*time.Millisecond)
 		stream, err := a.client.CoreV1().Pods(a.config.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 			Container: container, LimitBytes: &limit,
-		}).Stream(ctx)
+		}).Stream(stageContext)
 		if err != nil {
+			cancelStage()
 			stage := stages[container]
 			parts = append(parts, unavailableStageLog(container, stage.excerpt))
 			anyTruncated = anyTruncated || stage.truncated
@@ -392,6 +395,7 @@ func (a *Adapter) readBuildLog(ctx context.Context, identity buildworker.Executi
 		}
 		payload, err := io.ReadAll(io.LimitReader(stream, limit))
 		_ = stream.Close()
+		cancelStage()
 		if err != nil {
 			stage := stages[container]
 			parts = append(parts, unavailableStageLog(container, stage.excerpt))

@@ -218,6 +218,7 @@ func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) (resu
 	observation := prepared.observation
 	var savedLog string
 	var savedLogTruncated bool
+	var nextLogSave time.Time
 	for {
 		if leaseContext.Err() != nil {
 			return leaseContext.Err()
@@ -238,15 +239,22 @@ func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) (resu
 			}
 			return r.finishObservation(ctx, lease, observation)
 		}
-		// 运行中只保存有变化的摘录；采集由 Executor 限频，心跳仍独立执行。
-		if observation.LogExcerpt != "" && (observation.LogExcerpt != savedLog || observation.LogTruncated != savedLogTruncated) {
+		// 摘录是非关键诊断：保存失败按周期重试，不停止 Job 观察或独立心跳；失权仍立即退出。
+		if observation.LogExcerpt != "" && time.Now().After(nextLogSave) &&
+			(observation.LogExcerpt != savedLog || observation.LogTruncated != savedLogTruncated) {
+			nextLogSave = time.Now().Add(5 * time.Second)
 			logContext, cancelLog := context.WithTimeout(leaseContext, r.renewInterval())
 			err := r.operations.RecordProgressLog(logContext, lease, observation.LogExcerpt, observation.LogTruncated)
 			cancelLog()
-			if err != nil {
+			if errors.Is(err, buildoperation.ErrLeaseLost) {
 				return err
 			}
-			savedLog, savedLogTruncated = observation.LogExcerpt, observation.LogTruncated
+			if err == nil {
+				savedLog, savedLogTruncated = observation.LogExcerpt, observation.LogTruncated
+			} else {
+				// 不把数据库错误正文写入诊断，避免泄露连接材料或日志内容。
+				span.AddEvent("build progress log persistence deferred")
+			}
 		}
 		select {
 		case <-workContext.Done():

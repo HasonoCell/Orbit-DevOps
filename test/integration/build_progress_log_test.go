@@ -17,6 +17,7 @@ import (
 	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
 	"github.com/HasonoCell/Orbit-DevOps/internal/projectauth"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,48 +30,15 @@ func TestBuildWorkerPublishesRunningSourceLogThroughAuthorizedQuery(t *testing.T
 	environment := newTestEnvironment(t)
 	project := createProject(t, environment, "progress-log-project")
 	application := createApplication(t, environment, project.ID, "progress-log-app")
-	response := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/builds", "progress-log-build",
-		`{"repositoryUrl":"https://github.com/example/demo.git","sourceCommit":"`+strings.Repeat("a", 40)+`"}`)
-	var acceptance buildAcceptanceDocument
-	if response.StatusCode != http.StatusCreated || json.NewDecoder(response.Body).Decode(&acceptance) != nil {
-		response.Body.Close()
-		t.Fatal("create progress-log build")
-	}
-	response.Body.Close()
+	acceptance := createBuildForArtifact(t, environment, application.ID, "progress-log-build", "a")
 	db := openTestDatabase(t, environment.databaseURL)
 	operations := buildoperation.New(db, buildoperation.WithAutomaticRetryPolicy(0, nil))
-	fixture := newProgressLogKubernetes(t)
-	// HTTP fixture 实现 Kubernetes 的 JSON 协议，不接受 client-go 默认优先发送的 Protobuf。
-	client, err := kubernetes.NewForConfig(&rest.Config{Host: fixture.server.URL,
-		ContentConfig: rest.ContentConfig{ContentType: "application/json"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	adapter, err := buildkube.New(client, buildkube.Config{
-		Namespace: "orbit-build-log-fixture", FieldManager: "progress-log-test",
-		GitImage: "git:fixture@sha256:" + strings.Repeat("a", 64), BuildkitImage: "buildkit:fixture@sha256:" + strings.Repeat("b", 64),
-		ActiveDeadline: time.Minute, TTL: time.Hour, CPU: "1", Memory: "1Gi", PollInterval: time.Millisecond,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner, err := buildworker.New(buildworker.Config{WorkerID: "progress-log-worker", LeaseDuration: time.Second,
-		BuildTimeout: 15 * time.Second, PollInterval: 20 * time.Millisecond}, operations,
-		build.New(db, build.Config{}, operations, projectauth.New(db, nil)), adapter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	items, err := operations.ReserveDispatches(context.Background(), 10, time.Minute)
-	if err != nil || len(items) != 1 {
-		t.Fatalf("reserve progress-log build: %v", err)
-	}
-	if err := operations.ConfirmDispatch(context.Background(), items[0], "", time.Second); err != nil {
-		t.Fatal(err)
-	}
+	runner, fixture := newProgressLogRunner(t, db, operations, "progress-log-worker")
+	ref := reserveBuildWorkerDispatch(t, operations)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := runner.RunDispatch(ctx, items[0].DispatchRef)
+		_, err := runner.RunDispatch(ctx, ref)
 		done <- err
 		close(done)
 	}()
@@ -134,14 +102,7 @@ func TestBuildProgressLogSurvivesTerminalFailureWithoutNewLog(t *testing.T) {
 	environment := newTestEnvironment(t)
 	project := createProject(t, environment, "retained-log-project")
 	application := createApplication(t, environment, project.ID, "retained-log-app")
-	response := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/builds", "retained-log-build",
-		`{"repositoryUrl":"https://github.com/example/demo.git","sourceCommit":"`+strings.Repeat("a", 40)+`"}`)
-	var acceptance buildAcceptanceDocument
-	if response.StatusCode != http.StatusCreated || json.NewDecoder(response.Body).Decode(&acceptance) != nil {
-		response.Body.Close()
-		t.Fatal("create retained-log build")
-	}
-	response.Body.Close()
+	createBuildForArtifact(t, environment, application.ID, "retained-log-build", "a")
 	operations := buildoperation.New(openTestDatabase(t, environment.databaseURL))
 	lease := claimBuildDispatch(t, operations, "retained-log-worker")
 	if err := operations.RecordProgressLog(context.Background(), lease, "source cloned; waiting for compiler", true); err != nil {
@@ -172,14 +133,7 @@ func TestBuildProgressLogFencesExpiredAndReplacedWorkers(t *testing.T) {
 	environment := newTestEnvironment(t)
 	project := createProject(t, environment, "fenced-log-project")
 	application := createApplication(t, environment, project.ID, "fenced-log-app")
-	response := environment.postJSON(t, "/api/v1/applications/"+application.ID+"/builds", "fenced-log-build",
-		`{"repositoryUrl":"https://github.com/example/demo.git","sourceCommit":"`+strings.Repeat("a", 40)+`"}`)
-	var acceptance buildAcceptanceDocument
-	if response.StatusCode != http.StatusCreated || json.NewDecoder(response.Body).Decode(&acceptance) != nil {
-		response.Body.Close()
-		t.Fatal("create fenced-log build")
-	}
-	response.Body.Close()
+	acceptance := createBuildForArtifact(t, environment, application.ID, "fenced-log-build", "a")
 	now := acceptance.Build.CreatedAt.Add(time.Second)
 	operations := buildoperation.New(openTestDatabase(t, environment.databaseURL),
 		buildoperation.WithClock(func() time.Time { return now }))
@@ -246,11 +200,97 @@ func TestBuildProgressLogFencesExpiredAndReplacedWorkers(t *testing.T) {
 	}
 }
 
+// PostgreSQL 日志列的非关键写入故障，不得提前结束正在执行的 Job 或停止租约续租。
+func TestBuildWorkerContinuesWhenProgressLogPersistenceFails(t *testing.T) {
+	environment := newTestEnvironment(t)
+	project := createProject(t, environment, "unavailable-log-project")
+	application := createApplication(t, environment, project.ID, "unavailable-log-app")
+	acceptance := createBuildForArtifact(t, environment, application.ID, "unavailable-log-build", "a")
+	db := openTestDatabase(t, environment.databaseURL)
+	// 仅在外部数据库边界注入运行中日志写故障，其他业务/心跳 SQL 和终态写入照常执行。
+	if _, err := db.Exec(`CREATE FUNCTION fixture_reject_progress_log() RETURNS trigger LANGUAGE plpgsql AS $$
+	 BEGIN IF NEW.status='running' AND NEW.log_excerpt<>OLD.log_excerpt THEN
+	 RAISE EXCEPTION 'fixture progress log unavailable'; END IF; RETURN NEW; END $$;
+	 CREATE TRIGGER fixture_reject_progress_log BEFORE UPDATE OF log_excerpt ON build_attempts
+	 FOR EACH ROW EXECUTE FUNCTION fixture_reject_progress_log()`); err != nil {
+		t.Fatal(err)
+	}
+	operations := buildoperation.New(db, buildoperation.WithAutomaticRetryPolicy(0, nil))
+	runner, fixture := newProgressLogRunner(t, db, operations, "unavailable-log-worker")
+	ref := reserveBuildWorkerDispatch(t, operations)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { _, err := runner.RunDispatch(ctx, ref); done <- err; close(done) }()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Error("progress-log worker did not stop")
+		}
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("diagnostic persistence interrupted build execution: %v", err)
+	case <-time.After(1500 * time.Millisecond):
+	}
+	fixture.mu.Lock()
+	fixture.failed = true
+	fixture.job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
+	fixture.mu.Unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not observe the real terminal state after diagnostic persistence failed")
+	}
+	current, err := operations.Get(context.Background(), uuid.MustParse(acceptance.BuildOperation.ID))
+	if err != nil || current.Status != buildoperation.StatusFailed || len(current.Attempts) != 1 {
+		t.Fatalf("diagnostic failure changed build outcome: status=%s error=%v", current.Status, err)
+	}
+	logResponse := environment.get(t, "/api/v1/build-attempts/"+current.Attempts[0].ID.String()+"/log")
+	defer logResponse.Body.Close()
+	var log struct{ Excerpt string }
+	if json.NewDecoder(logResponse.Body).Decode(&log) != nil || !strings.Contains(log.Excerpt, "Cloning repository") {
+		t.Fatal("terminal persistence did not recover log evidence")
+	}
+}
+
+// 两个 Worker 场景共用真实构造入口，差别只在外部数据库和 Kubernetes 的响应。
+func newProgressLogRunner(t *testing.T, db *sqlx.DB, operations *buildoperation.Module, workerID string) (*buildworker.Runner, *progressLogKubernetes) {
+	t.Helper()
+	fixture := newProgressLogKubernetes(t)
+	// HTTP fixture 实现 Kubernetes 的 JSON 协议，不接受 client-go 默认优先发送的 Protobuf。
+	client, err := kubernetes.NewForConfig(&rest.Config{Host: fixture.server.URL,
+		ContentConfig: rest.ContentConfig{ContentType: "application/json"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := buildkube.New(client, buildkube.Config{
+		Namespace: "orbit-build-log-fixture", FieldManager: "progress-log-test",
+		GitImage: "git:fixture@sha256:" + strings.Repeat("a", 64), BuildkitImage: "buildkit:fixture@sha256:" + strings.Repeat("b", 64),
+		ActiveDeadline: time.Minute, TTL: time.Hour, CPU: "1", Memory: "1Gi", PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner, err := buildworker.New(buildworker.Config{WorkerID: workerID, LeaseDuration: time.Second,
+		BuildTimeout: 15 * time.Second, PollInterval: 20 * time.Millisecond}, operations,
+		build.New(db, build.Config{}, operations, projectauth.New(db, nil)), adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return runner, fixture
+}
+
 type progressLogKubernetes struct {
 	server    *httptest.Server
 	mu        sync.Mutex
 	job       *batchv1.Job
 	sourceLog string
+	failed    bool
 }
 
 func newProgressLogKubernetes(t *testing.T) *progressLogKubernetes {
@@ -290,6 +330,10 @@ func newProgressLogKubernetes(t *testing.T) *progressLogKubernetes {
 					Kind: "Job", Name: fixture.job.Name, UID: fixture.job.UID, Controller: &controller}}},
 				Status: corev1.PodStatus{Phase: corev1.PodPending, InitContainerStatuses: []corev1.ContainerStatus{{Name: "source",
 					State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}}}}
+			if fixture.failed {
+				pod.Status.Phase = corev1.PodFailed
+				pod.Status.InitContainerStatuses[0].State = corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 128}}
+			}
 			writeProgressLogJSON(w, &corev1.PodList{Items: []corev1.Pod{pod}})
 		case strings.Contains(r.URL.Path, "/jobs/"):
 			if fixture.job == nil {

@@ -118,6 +118,30 @@ func TestBuildAdapterSlowLogEndpointDoesNotBlockStateObservation(t *testing.T) {
 	}
 }
 
+func TestBuildAdapterSlowSourceLogCannotConsumeBuildkitLogBudget(t *testing.T) {
+	fixture := newBuildLogFixture(t)
+	fixture.job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}}
+	fixture.pods[0].Status.InitContainerStatuses = []corev1.ContainerStatus{{Name: "source", State: corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{ExitCode: 0},
+	}}}
+	fixture.pods[0].Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "buildkit", State: corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{ExitCode: 0,
+			Message: `{"repository":"` + fixture.execution.DestinationRepository + `","digest":"sha256:` + strings.Repeat("e", 64) + `"}`},
+	}}}
+	fixture.logs["source"] = logResponse{delay: 3 * time.Second, body: "delayed source output"}
+	fixture.logs["buildkit"] = logResponse{body: "#12 exporting image completed\n"}
+	started := time.Now()
+	observation, err := fixture.observe(context.Background())
+	if err != nil || observation.Phase != buildworker.PhaseSucceeded ||
+		!strings.Contains(observation.LogExcerpt, "[source]\n[log unavailable]") ||
+		!strings.Contains(observation.LogExcerpt, "[buildkit]\n#12 exporting image completed") {
+		t.Fatalf("slow source consumed the completed BuildKit log budget: %#v, %v", observation, err)
+	}
+	if elapsed := time.Since(started); elapsed > 1300*time.Millisecond {
+		t.Fatalf("independent stage budgets exceeded total observation budget: %s", elapsed)
+	}
+}
+
 func TestBuildAdapterFrequentPollingRetainsSnapshotAndTerminalForcesFreshLogs(t *testing.T) {
 	fixture := newBuildLogFixture(t)
 	fixture.pods[0].Status.InitContainerStatuses = []corev1.ContainerStatus{{Name: "source", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}}
