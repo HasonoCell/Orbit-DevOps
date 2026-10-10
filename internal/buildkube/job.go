@@ -6,6 +6,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/HasonoCell/Orbit-DevOps/internal/buildworker"
@@ -64,6 +65,8 @@ type Adapter struct {
 	buildkitStorage  resource.Quantity
 	ephemeralRequest resource.Quantity
 	ephemeralLimit   resource.Quantity
+	logMu            sync.Mutex
+	logSnapshots     map[string]buildLogSnapshot
 }
 
 func New(client kubernetes.Interface, config Config) (*Adapter, error) {

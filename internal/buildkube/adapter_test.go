@@ -56,6 +56,7 @@ func TestBuildAdapterReadsOnlyValidatedTerminationResult(t *testing.T) {
 			ExitCode: 0, Message: `{"repository":"` + execution.DestinationRepository + `","digest":"sha256:` + strings.Repeat("e", 64) + `"}`,
 		}},
 	}}}}
+	assignPodOwnership(pod, job)
 	client := fake.NewClientset(job, pod)
 	observation, err := newAdapter(t, client).Observe(context.Background(), execution,
 		buildworker.ExecutionIdentity{Name: job.Name, UID: string(job.UID)})
@@ -143,6 +144,7 @@ func TestBuildAdapterTranslatesPlatformControlledFailures(t *testing.T) {
 			job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded"}}
 			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "failed-pod", Namespace: job.Namespace,
 				Labels: map[string]string{"job-name": job.Name}}}
+			assignPodOwnership(pod, job)
 			test.mutate(pod)
 			observation, err := newAdapter(t, fake.NewClientset(job, pod)).Observe(
 				context.Background(), execution, buildworker.ExecutionIdentity{Name: job.Name, UID: string(job.UID)})
@@ -152,6 +154,14 @@ func TestBuildAdapterTranslatesPlatformControlledFailures(t *testing.T) {
 			}
 		})
 	}
+}
+
+func assignPodOwnership(pod *corev1.Pod, job *batchv1.Job) {
+	pod.Labels = job.Spec.Template.DeepCopy().Labels
+	pod.Labels["job-name"] = job.Name
+	pod.Annotations = job.Spec.Template.DeepCopy().Annotations
+	controller := true
+	pod.OwnerReferences = []metav1.OwnerReference{{APIVersion: "batch/v1", Kind: "Job", Name: job.Name, UID: job.UID, Controller: &controller}}
 }
 
 func TestBuildAdapterCancellationUsesJobUID(t *testing.T) {

@@ -216,6 +216,8 @@ func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) (resu
 		}
 	}
 	observation := prepared.observation
+	var savedLog string
+	var savedLogTruncated bool
 	for {
 		if leaseContext.Err() != nil {
 			return leaseContext.Err()
@@ -235,6 +237,16 @@ func (r *Runner) runLease(ctx context.Context, lease buildoperation.Lease) (resu
 				return r.cancelExecution(executionContext, lease, execution, prepared)
 			}
 			return r.finishObservation(ctx, lease, observation)
+		}
+		// 运行中只保存有变化的摘录；采集由 Executor 限频，心跳仍独立执行。
+		if observation.LogExcerpt != "" && (observation.LogExcerpt != savedLog || observation.LogTruncated != savedLogTruncated) {
+			logContext, cancelLog := context.WithTimeout(leaseContext, r.renewInterval())
+			err := r.operations.RecordProgressLog(logContext, lease, observation.LogExcerpt, observation.LogTruncated)
+			cancelLog()
+			if err != nil {
+				return err
+			}
+			savedLog, savedLogTruncated = observation.LogExcerpt, observation.LogTruncated
 		}
 		select {
 		case <-workContext.Done():

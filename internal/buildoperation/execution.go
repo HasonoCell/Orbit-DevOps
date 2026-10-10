@@ -308,8 +308,11 @@ func completeAttempt(ctx context.Context, tx *sqlx.Tx, lease Lease, status Attem
 	if status == AttemptFailed || status == AttemptOutcomeUnknown {
 		code, summary, disposition = &failure.Code, &failure.Summary, &failure.Disposition
 	}
+	// 超时或观测中断可能没有新的日志证据，不能抹掉运行期间已保存的摘录。
 	result, err := tx.ExecContext(ctx, `UPDATE build_attempts SET status = $1, error_code = $2,
-	 error_summary = $3, retry_disposition = $4, log_excerpt = $5, log_truncated = $6, finished_at = $7
+	 error_summary = $3, retry_disposition = $4,
+	 log_excerpt = CASE WHEN $5 = '' THEN log_excerpt ELSE $5 END,
+	 log_truncated = CASE WHEN $5 = '' THEN log_truncated ELSE $6 END, finished_at = $7
 	 WHERE id = $8 AND build_operation_id = $9 AND status = 'running'`, status, code, summary, disposition,
 		failure.LogExcerpt, failure.LogTruncated, now, lease.BuildAttemptID, lease.BuildOperationID)
 	if err != nil {

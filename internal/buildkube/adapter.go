@@ -97,11 +97,12 @@ func (a *Adapter) Observe(ctx context.Context, execution buildworker.BuildExecut
 		return buildworker.ExecutionObservation{}, buildworker.NewUnknownOutcome(
 			"build_pod_read_failed", "Kubernetes build pod state could not be read", true, err)
 	}
+	pods.Items = ownedBuildPods(pods.Items, job, want)
 	logExcerpt, truncated := podTerminationExcerpt(pods.Items)
-	if jobCondition(job, batchv1.JobComplete) != nil || jobCondition(job, batchv1.JobFailed) != nil {
-		if buildLog, buildLogTruncated := a.readBuildLog(ctx, pods.Items); buildLog != "" {
-			logExcerpt, truncated = combineLogs(logExcerpt, buildLog, truncated || buildLogTruncated)
-		}
+	terminal := (jobCondition(job, batchv1.JobComplete) != nil && jobCondition(job, batchv1.JobComplete).Status == corev1.ConditionTrue) ||
+		(jobCondition(job, batchv1.JobFailed) != nil && jobCondition(job, batchv1.JobFailed).Status == corev1.ConditionTrue)
+	if buildLog, buildLogTruncated := a.readBuildLog(ctx, identity, pods.Items, terminal); buildLog != "" {
+		logExcerpt, truncated = combineLogs(logExcerpt, buildLog, truncated || buildLogTruncated)
 	}
 	if condition := jobCondition(job, batchv1.JobComplete); condition != nil && condition.Status == corev1.ConditionTrue {
 		result, ok := successfulResult(pods.Items)
@@ -135,6 +136,29 @@ func (a *Adapter) Observe(ctx context.Context, execution buildworker.BuildExecut
 	}
 	return buildworker.ExecutionObservation{Phase: buildworker.PhaseRunning, Identity: identity,
 		LogExcerpt: logExcerpt, LogTruncated: truncated}, nil
+}
+
+// Pod 的 job-name 只是检索索引；诊断、日志和结果均须匹配当前 Job UID 与完整 Attempt 输入。
+func ownedBuildPods(pods []corev1.Pod, job, want *batchv1.Job) []corev1.Pod {
+	owned := make([]corev1.Pod, 0, len(pods))
+	for _, pod := range pods {
+		if pod.Namespace != want.Namespace || pod.Annotations[InputDigestAnnotation] != want.Annotations[InputDigestAnnotation] {
+			continue
+		}
+		matches := true
+		for key, value := range want.Labels {
+			if pod.Labels[key] != value {
+				matches = false
+				break
+			}
+		}
+		controller := metav1.GetControllerOf(&pod)
+		if matches && controller != nil && controller.APIVersion == "batch/v1" && controller.Kind == "Job" &&
+			controller.Name == job.Name && controller.UID == job.UID {
+			owned = append(owned, pod)
+		}
+	}
+	return owned
 }
 
 func ownershipConflictObservation(identity buildworker.ExecutionIdentity, summary string) buildworker.ExecutionObservation {
@@ -280,30 +304,126 @@ func podTerminationExcerpt(pods []corev1.Pod) (string, bool) {
 		}
 	}
 	value := strings.Join(parts, "\n")
-	if len(value) <= 64*1024 {
-		return value, false
-	}
-	return value[:32*1024] + "\n... truncated ...\n" + value[len(value)-32*1024:], true
+	return diagnostics.SanitizeRuntimeLog(value, 64*1024)
 }
 
-func (a *Adapter) readBuildLog(ctx context.Context, pods []corev1.Pod) (string, bool) {
+type buildLogSnapshot struct {
+	readAt    time.Time
+	excerpt   string
+	truncated bool
+	stages    map[string]buildStageLog
+}
+
+type buildStageLog struct {
+	excerpt   string
+	truncated bool
+}
+
+func (a *Adapter) readBuildLog(ctx context.Context, identity buildworker.ExecutionIdentity, pods []corev1.Pod, terminal bool) (string, bool) {
 	if len(pods) == 0 {
 		return "", false
 	}
+	key := identity.Name + "/" + identity.UID
+	now := time.Now()
+	a.logMu.Lock()
+	if a.logSnapshots == nil {
+		a.logSnapshots = make(map[string]buildLogSnapshot)
+	}
+	previous := a.logSnapshots[key]
+	if !terminal && !previous.readAt.IsZero() && now.Sub(previous.readAt) < 5*time.Second {
+		a.logMu.Unlock()
+		return previous.excerpt, previous.truncated
+	}
+	// 周期快照限制 API 请求频率；缓存只容纳最近的有限 Attempt，不随历史构建无限增长。
+	for cachedKey, snapshot := range a.logSnapshots {
+		if now.Sub(snapshot.readAt) > 10*time.Minute {
+			delete(a.logSnapshots, cachedKey)
+		}
+	}
+	if len(a.logSnapshots) >= 128 {
+		var oldestKey string
+		var oldest time.Time
+		for cachedKey, snapshot := range a.logSnapshots {
+			if oldestKey == "" || snapshot.readAt.Before(oldest) {
+				oldestKey, oldest = cachedKey, snapshot.readAt
+			}
+		}
+		delete(a.logSnapshots, oldestKey)
+	}
+	previous.readAt = now
+	a.logSnapshots[key] = previous
+	a.logMu.Unlock()
+	// 日志只提供诊断，不得把续租、取消和 Job 状态观察拖入无限等待。
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
 	sort.SliceStable(pods, func(i, j int) bool { return pods[i].CreationTimestamp.Time.Before(pods[j].CreationTimestamp.Time) })
-	limit := int64(64*1024 + 1)
-	stream, err := a.client.CoreV1().Pods(a.config.Namespace).GetLogs(pods[len(pods)-1].Name, &corev1.PodLogOptions{
-		Container: buildContainerName, LimitBytes: &limit,
-	}).Stream(ctx)
-	if err != nil {
-		return "", false
+	pod := pods[len(pods)-1]
+	parts := make([]string, 0, 2)
+	stages := make(map[string]buildStageLog, 2)
+	for container, stage := range previous.stages {
+		stages[container] = stage
 	}
-	defer stream.Close()
-	payload, err := io.ReadAll(io.LimitReader(stream, limit))
-	if err != nil {
-		return "", false
+	anyTruncated := false
+	for _, container := range []string{"source", buildContainerName} {
+		statuses := pod.Status.ContainerStatuses
+		if container == "source" {
+			statuses = pod.Status.InitContainerStatuses
+		}
+		started := false
+		for _, status := range statuses {
+			if status.Name == container && (status.State.Running != nil || status.State.Terminated != nil) {
+				started = true
+			}
+		}
+		if !started {
+			continue
+		}
+		// 两阶段分别保留预算，避免大量 Git 输出挤掉真正的 BuildKit 错误；预留标题和失败标记空间。
+		const stageMaximumBytes = 32*1024 - 128
+		limit := int64(stageMaximumBytes + 1)
+		stream, err := a.client.CoreV1().Pods(a.config.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+			Container: container, LimitBytes: &limit,
+		}).Stream(ctx)
+		if err != nil {
+			stage := stages[container]
+			parts = append(parts, unavailableStageLog(container, stage.excerpt))
+			anyTruncated = anyTruncated || stage.truncated
+			continue
+		}
+		payload, err := io.ReadAll(io.LimitReader(stream, limit))
+		_ = stream.Close()
+		if err != nil {
+			stage := stages[container]
+			parts = append(parts, unavailableStageLog(container, stage.excerpt))
+			anyTruncated = anyTruncated || stage.truncated
+			continue
+		}
+		if len(payload) != 0 {
+			stageLog, stageTruncated := diagnostics.SanitizeRuntimeLog(string(payload), stageMaximumBytes)
+			stages[container] = buildStageLog{excerpt: stageLog, truncated: stageTruncated}
+		}
+		stage := stages[container]
+		if stage.excerpt != "" {
+			parts = append(parts, "["+container+"]\n"+stage.excerpt)
+		}
+		anyTruncated = anyTruncated || stage.truncated
 	}
-	return diagnostics.SanitizeRuntimeLog(string(payload), 64*1024)
+	excerpt, truncated := diagnostics.SanitizeRuntimeLog(strings.Join(parts, "\n"), 64*1024)
+	truncated = truncated || anyTruncated
+	a.logMu.Lock()
+	// 后开始的观测拥有快照更新权，防止较慢的旧读取覆盖终态刷新。
+	if snapshot := a.logSnapshots[key]; snapshot.readAt == now {
+		a.logSnapshots[key] = buildLogSnapshot{readAt: now, excerpt: excerpt, truncated: truncated, stages: stages}
+	}
+	a.logMu.Unlock()
+	return excerpt, truncated
+}
+
+func unavailableStageLog(container, previous string) string {
+	if previous != "" {
+		previous += "\n"
+	}
+	return "[" + container + "]\n" + previous + "[log unavailable]"
 }
 
 func combineLogs(diagnostic, buildLog string, truncated bool) (string, bool) {
