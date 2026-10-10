@@ -13,10 +13,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectItem } from "@/components/ui/select";
 import { QueryNotice } from "@/shared/OverviewUI";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { buildQueries } from "../builds/api";
 import { releaseQueries } from "./api";
+import { ArtifactPicker } from "./ArtifactPicker";
 import { useCreateRelease } from "./mutations";
 
 type ImageArtifact = components["schemas"]["ImageArtifact"];
@@ -42,10 +43,7 @@ export function ReleaseCreateDialog({
   const [source, setSource] = useState(
     initialSource?.kind === "release" ? "reference" : "artifact",
   );
-  const [pageCursors, setPageCursors] = useState<Array<string | undefined>>([
-    undefined,
-  ]);
-  // 产物不可变：草稿保存选中快照，加载更多或后台刷新不撤销用户的选择。
+  // 产物不可变：草稿保存选中快照，翻页或后台刷新不撤销用户的选择。
   const [selected, setSelected] = useState<ImageArtifact>();
   const [reference, setReference] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -85,52 +83,6 @@ export function ReleaseCreateDialog({
       setPrefillDone(true);
     }
   }, [prefillDone, suggestedArtifact, suggestedRelease, selected, reference]);
-  // 只订阅用户已加载的游标页，与概览共用同一缓存，构建完成后同步看到产物。
-  const builds = useQueries({
-    queries: pageCursors.map((cursor) => ({
-      ...buildQueries.list(application.id, cursor),
-      enabled: open && source === "artifact",
-    })),
-  });
-  // 首批更新可能改变后续游标：只展示仍连贯的页，下一次加载从新游标继续。
-  // 已选产物另存于草稿，不受页链重建影响，也不自动扫描新的历史页。
-  let pageCount = 1;
-  while (
-    pageCount < pageCursors.length &&
-    builds[pageCount - 1].data?.nextCursor === pageCursors[pageCount]
-  ) {
-    pageCount += 1;
-  }
-  const pages = builds.slice(0, pageCount);
-  const firstPage = pages[0];
-  const lastPage = pages[pages.length - 1];
-  const failedPage = pages.find((page) => page.error);
-  const fetching = pages.some((page) => page.isFetching);
-  const loadingMore = pages.length > 1 && lastPage.isPending;
-  const nextCursor = lastPage.data?.nextCursor;
-  const hasMore =
-    nextCursor && !pageCursors.slice(0, pageCount).includes(nextCursor);
-  const loadedArtifacts = pages
-    .flatMap((page) => page.data?.items ?? [])
-    .flatMap((item) =>
-      item.build.projectId === application.projectId &&
-      item.build.applicationId === application.id &&
-      item.buildOperation.status === "succeeded" &&
-      item.imageArtifact?.projectId === application.projectId &&
-      item.imageArtifact.applicationId === application.id
-        ? [item.imageArtifact]
-        : [],
-    );
-  // 游标页可能重叠，来源产物也可能已在列表中；每个产物只展示一次。
-  const artifacts = [
-    ...new Map(
-      [
-        ...(suggestedArtifact ? [suggestedArtifact] : []),
-        ...(selected ? [selected] : []),
-        ...loadedArtifacts,
-      ].map((artifact) => [artifact.id, artifact]),
-    ).values(),
-  ];
   const mutation = useCreateRelease(target.id, (result) => {
     setReference("");
     setSelected(undefined);
@@ -177,203 +129,156 @@ export function ReleaseCreateDialog({
     >
       <DialogContent
         aria-describedby={undefined}
-        className="max-h-[90dvh] overflow-y-auto sm:max-w-xl"
+        className="flex max-h-[90dvh] flex-col overflow-hidden sm:max-w-xl"
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle>新建发布</DialogTitle>
         </DialogHeader>
-        <form onSubmit={submit} className="space-y-5">
-          <div className="rounded border bg-muted/50 p-3 text-sm">
-            <strong>
-              {target.stage === "production" ? "生产目标" : "开发目标"}
-            </strong>
-            <p className="mt-1 break-all text-xs text-muted-foreground">
-              {target.clusterRef} / {target.namespace}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              期望 {target.replicas} 个副本，容器端口 {target.containerPort}
-            </p>
-          </div>
-          {initialSource && (
-            <div className="rounded border p-3 text-sm">
-              <p className="font-medium">
-                来源：{initialSource.kind === "build" ? "构建" : "历史发布"}{" "}
-                {initialSource.id}
+        <form onSubmit={submit} className="flex min-h-0 flex-col gap-5">
+          {/* 仅表单内容滚动，避免窄屏或长镜像引用把确认操作推出弹窗。 */}
+          <div className="-mx-1 min-h-0 space-y-5 overflow-y-auto px-1 py-1">
+            <div className="rounded border bg-muted/50 p-3 text-sm">
+              <strong>
+                {target.stage === "production" ? "生产目标" : "开发目标"}
+              </strong>
+              <p className="mt-1 break-all text-xs text-muted-foreground">
+                {target.clusterRef} / {target.namespace}
               </p>
-              {(sourceBuild.error || sourceRelease.error) && (
-                <QueryNotice
-                  error={sourceBuild.error ?? sourceRelease.error}
-                  retry={() =>
-                    void (initialSource.kind === "build"
-                      ? sourceBuild.refetch()
-                      : sourceRelease.refetch())
-                  }
-                />
-              )}
-              {initialSource.kind === "build" &&
-                !sourceBuild.isPending &&
-                !sourceBuild.error &&
-                !suggestedArtifact && (
-                  <p role="alert" className="mt-2 text-destructive">
-                    此构建没有属于当前应用的成功产物，请重新选择。
-                  </p>
-                )}
-              {initialSource.kind === "release" &&
-                !sourceRelease.isPending &&
-                !sourceRelease.error &&
-                !suggestedRelease && (
-                  <p role="alert" className="mt-2 text-destructive">
-                    此发布不属于当前应用，请重新选择镜像。
-                  </p>
-                )}
-              {suggestedRelease &&
-                target.stage === "production" &&
-                suggestedRelease.targetSnapshot.stage === "development" && (
-                  <p className="mt-2 text-amber-800">
-                    将开发发布的镜像晋级生产。
-                  </p>
-                )}
+              <p className="mt-1 text-xs text-muted-foreground">
+                期望 {target.replicas} 个副本，容器端口 {target.containerPort}
+              </p>
             </div>
-          )}
-          <fieldset disabled={mutation.isPending} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="release-source">镜像来源</Label>
-              <Select
-                id="release-source"
-                className="w-full"
-                value={source}
-                onValueChange={(value) => {
-                  setSource(value);
-                  setPrefillDone(true);
-                  setConfirmed(false);
-                  setValidation("");
-                }}
-              >
-                {<SelectItem value="artifact">成功构建产物</SelectItem>}
-                <SelectItem value="reference">
-                  不可变镜像引用（高级）
-                </SelectItem>
-              </Select>
-            </div>
-            {source === "artifact" ? (
-              <>
-                {firstPage.isPending && !suggestedArtifact && <QueryNotice />}
-                {failedPage && (
+            {initialSource && (
+              <div className="rounded border p-3 text-sm">
+                <p className="font-medium">
+                  来源：{initialSource.kind === "build" ? "构建" : "历史发布"}{" "}
+                  {initialSource.id}
+                </p>
+                {(sourceBuild.error || sourceRelease.error) && (
                   <QueryNotice
-                    error={failedPage.error}
-                    retry={() => {
-                      if (fetching || mutation.isPending) return;
-                      void failedPage.refetch({ cancelRefetch: false });
-                    }}
+                    error={sourceBuild.error ?? sourceRelease.error}
+                    retry={() =>
+                      void (initialSource.kind === "build"
+                        ? sourceBuild.refetch()
+                        : sourceRelease.refetch())
+                    }
                   />
                 )}
-                {(firstPage.data || suggestedArtifact || selected) && (
-                  <>
-                    <Label htmlFor="release-artifact">选择产物</Label>
-                    <Select
-                      id="release-artifact"
-                      className="w-full"
-                      value={selected?.id ?? ""}
-                      placeholder={
-                        artifacts.length ? "选择构建产物" : "暂无产物"
-                      }
-                      emptyValueAsPlaceholder
-                      disabled={mutation.isPending || artifacts.length === 0}
-                      onValueChange={(value) => {
-                        setSelected(
-                          artifacts.find((artifact) => artifact.id === value),
-                        );
-                        setPrefillDone(true);
-                        setConfirmed(false);
-                        setValidation("");
-                      }}
-                    >
-                      {artifacts.map((artifact) => (
-                        <SelectItem key={artifact.id} value={artifact.id}>
-                          {artifact.buildId.slice(0, 8)} /{" "}
-                          {artifact.digest.slice(0, 19)}
-                        </SelectItem>
-                      ))}
-                    </Select>
-                    {(hasMore || loadingMore) && !failedPage && (
-                      <div className="flex justify-end">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={fetching || mutation.isPending}
-                          onClick={() => {
-                            if (!nextCursor || fetching) return;
-                            setPageCursors((current) => [
-                              ...current.slice(0, pageCount),
-                              nextCursor,
-                            ]);
-                          }}
-                        >
-                          {loadingMore ? "加载中…" : "加载更多"}
-                        </Button>
-                      </div>
-                    )}
-                  </>
-                )}
-                {selected && (
-                  <p className="runtime-code">{selected.imageReference}</p>
-                )}
-              </>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="release-reference">镜像引用</Label>
-                <Input
-                  id="release-reference"
-                  value={reference}
-                  onChange={(event) => {
-                    setReference(event.target.value);
-                    setPrefillDone(true);
-                    setConfirmed(false);
-                  }}
-                  placeholder="registry.example.com/app@sha256:…"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  aria-describedby={
-                    validation ? "release-validation" : undefined
-                  }
-                />
+                {initialSource.kind === "build" &&
+                  !sourceBuild.isPending &&
+                  !sourceBuild.error &&
+                  !suggestedArtifact && (
+                    <p role="alert" className="mt-2 text-destructive">
+                      此构建没有属于当前应用的成功产物，请重新选择。
+                    </p>
+                  )}
+                {initialSource.kind === "release" &&
+                  !sourceRelease.isPending &&
+                  !sourceRelease.error &&
+                  !suggestedRelease && (
+                    <p role="alert" className="mt-2 text-destructive">
+                      此发布不属于当前应用，请重新选择镜像。
+                    </p>
+                  )}
+                {suggestedRelease &&
+                  target.stage === "production" &&
+                  suggestedRelease.targetSnapshot.stage === "development" && (
+                    <p className="mt-2 text-amber-800">
+                      将开发发布的镜像晋级生产。
+                    </p>
+                  )}
               </div>
             )}
-            <label
-              htmlFor="release-confirmation"
-              className="flex items-start gap-3 rounded border p-3 text-sm leading-6"
-            >
-              <Checkbox
-                id="release-confirmation"
-                className="mt-1"
-                checked={confirmed}
-                disabled={mutation.isPending}
-                onCheckedChange={(checked) => setConfirmed(checked === true)}
-              />
-              我确认发布到{target.stage === "production" ? "生产" : "开发"}
-              环境，这可能替换该目标当前运行的版本。
-            </label>
-          </fieldset>
-          {validation && (
-            <p
-              id="release-validation"
-              role="alert"
-              className="text-sm text-destructive"
-            >
-              {validation}
-            </p>
-          )}
-          {mutation.error && (
-            <div
-              role="alert"
-              className="rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-            >
-              <p>{errorText(mutation.error)}</p>
-              <p className="mt-2 text-xs">接纳结果未确认，请保持原输入重试。</p>
-            </div>
-          )}
-          <DialogFooter>
+            <fieldset disabled={mutation.isPending} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="release-source">镜像来源</Label>
+                <Select
+                  id="release-source"
+                  className="w-full"
+                  value={source}
+                  onValueChange={(value) => {
+                    setSource(value);
+                    setPrefillDone(true);
+                    setConfirmed(false);
+                    setValidation("");
+                  }}
+                >
+                  {<SelectItem value="artifact">成功构建产物</SelectItem>}
+                  <SelectItem value="reference">
+                    不可变镜像引用（高级）
+                  </SelectItem>
+                </Select>
+              </div>
+              {source === "artifact" ? (
+                <ArtifactPicker
+                  application={application}
+                  selected={selected}
+                  open={open}
+                  disabled={mutation.isPending}
+                  onSelect={(artifact) => {
+                    setSelected(artifact);
+                    setPrefillDone(true);
+                    setConfirmed(false);
+                    setValidation("");
+                  }}
+                />
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="release-reference">镜像引用</Label>
+                  <Input
+                    id="release-reference"
+                    value={reference}
+                    onChange={(event) => {
+                      setReference(event.target.value);
+                      setPrefillDone(true);
+                      setConfirmed(false);
+                    }}
+                    placeholder="registry.example.com/app@sha256:…"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    aria-describedby={
+                      validation ? "release-validation" : undefined
+                    }
+                  />
+                </div>
+              )}
+              <label
+                htmlFor="release-confirmation"
+                className="flex items-start gap-3 rounded border p-3 text-sm leading-6"
+              >
+                <Checkbox
+                  id="release-confirmation"
+                  className="mt-1"
+                  checked={confirmed}
+                  disabled={mutation.isPending}
+                  onCheckedChange={(checked) => setConfirmed(checked === true)}
+                />
+                我确认发布到{target.stage === "production" ? "生产" : "开发"}
+                环境，这可能替换该目标当前运行的版本。
+              </label>
+            </fieldset>
+            {validation && (
+              <p
+                id="release-validation"
+                role="alert"
+                className="text-sm text-destructive"
+              >
+                {validation}
+              </p>
+            )}
+            {mutation.error && (
+              <div
+                role="alert"
+                className="rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+              >
+                <p>{errorText(mutation.error)}</p>
+                <p className="mt-2 text-xs">
+                  接纳结果未确认，请保持原输入重试。
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="shrink-0">
             <Button
               type="button"
               variant="outline"

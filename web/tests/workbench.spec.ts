@@ -264,7 +264,10 @@ test("发布重试与关闭重开复用命令键，成功后显示接纳而非�
   );
   await page.goto(appURL);
   await page.getByRole("button", { name: "新建发布" }).click();
-  await chooseOption(page.getByLabel("选择产物"), "i-1");
+  await page
+    .getByRole("dialog")
+    .getByRole("radio", { name: /^b-1 \/ sha256:/ })
+    .check();
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "确认发布到生产环境" }).click();
   await expect(
@@ -278,10 +281,9 @@ test("发布重试与关闭重开复用命令键，成功后显示接纳而非�
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.getByRole("button", { name: "新建发布" }).click();
-  await expect(page.getByLabel("选择产物")).toHaveAttribute(
-    "data-value",
-    "i-1",
-  );
+  await expect(
+    page.getByRole("dialog").getByRole("radio", { name: /^b-1 \/ sha256:/ }),
+  ).toBeChecked();
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "确认发布到生产环境" }).click();
   await expect(page).toHaveURL(/\/releases\/r-1$/);
