@@ -15,12 +15,20 @@ export function CursorPagination({
   return (
     <div className={`flex justify-end gap-2 ${className}`}>
       {cursor && (
-        <Button variant="outline" onClick={() => onChange(undefined)}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onChange(undefined)}
+        >
           返回第一页
         </Button>
       )}
       {nextCursor && (
-        <Button variant="outline" onClick={() => onChange(nextCursor)}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onChange(nextCursor)}
+        >
           下一页
         </Button>
       )}

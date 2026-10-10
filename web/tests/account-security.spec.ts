@@ -68,6 +68,9 @@ test("账号页分页显示有效会话并确认退出全部", async ({ page }) 
     return route.fulfill({ status: 204 });
   });
   await page.goto("/account");
+  await expect(page.getByRole("heading", { name: "账号信息" })).toBeVisible();
+  await expect(page.getByText("个人账号", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/可以修改已有的本地密码/)).toHaveCount(0);
   await expect(page.getByText("当前会话")).toBeVisible();
   await expect(page.getByText("演示身份")).toBeVisible();
   await page.getByRole("button", { name: "退出全部会话" }).click();
@@ -135,7 +138,7 @@ test("最后一个登录方式拒绝解绑，近期认证成功后仍需手动�
   await expect(page.getByRole("group", { name: "近期认证" })).toBeVisible();
   await page.getByLabel("当前密码").fill("test-password");
   await page.getByRole("button", { name: "用密码验证" }).click();
-  await expect(page.getByText(/再次点击原操作按钮/)).toBeVisible();
+  await expect(page.getByText("身份已验证，请重新提交。")).toBeVisible();
   expect(attempts).toBe(1);
   expect(proof).toBe(1);
   await page.getByRole("button", { name: "确认解除" }).click();
@@ -174,6 +177,6 @@ test("OIDC 近期认证在弹窗中完成，原命令保持待确认", async ({ 
   await page.getByRole("button", { name: "用 企业登录 验证" }).click();
   const popup = await popupEvent;
   await popup.waitForEvent("close");
-  await expect(page.getByText(/身份已验证，请检查原操作/)).toBeVisible();
+  await expect(page.getByText("身份已验证，请重新提交。")).toBeVisible();
   expect(attempts).toBe(1);
 });

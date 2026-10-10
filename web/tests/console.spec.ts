@@ -606,7 +606,7 @@ test("会话失效后换账号不会展示旧账号的项目缓存", async ({ pa
   await page.getByLabel("登录名").fill("bob");
   await page.getByLabel("密码", { exact: true }).fill("secret");
   await page.getByRole("button", { name: "登录", exact: true }).click();
-  await page.getByRole("link", { name: /Orbit DevOps/ }).click();
+  await page.getByRole("link", { name: "Orbit", exact: true }).click();
   await expect(page).toHaveURL(/\/projects$/);
   await expect.poll(() => bobProjectsRequested).toBe(1);
   const oldProjectVisible = await page

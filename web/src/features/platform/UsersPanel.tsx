@@ -39,9 +39,7 @@ export function UsersPanel() {
     onSuccess(user) {
       setTemporaryPassword("");
       setValidation("");
-      setNotice(
-        `已创建 ${user.displayName}。临时密码不会再次显示，用户首次登录后需改密。`,
-      );
+      setNotice(`已创建 ${user.displayName}。首次登录需修改密码。`);
       void queryClient.invalidateQueries({ queryKey: ["platform-users"] });
     },
   });
@@ -101,9 +99,6 @@ export function UsersPanel() {
               onChange={(event) => setTemporaryPassword(event.target.value)}
               required
             />
-            <p className="text-xs text-muted-foreground">
-              提交前请通过安全渠道保存临时密码；成功后不再显示。
-            </p>
           </div>
           {validation && (
             <p role="alert" className="sm:col-span-2 text-destructive">

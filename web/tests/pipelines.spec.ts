@@ -68,7 +68,7 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-test("默认仅构建，创建后只显示 Orbit 接入状态及配置前提", async ({ page }) => {
+test("默认仅构建，创建后显示 Orbit 状态和 Webhook 地址", async ({ page }) => {
   let created = false;
   await page.route("**/api/v1/applications/a-1/delivery-pipelines", (route) => {
     expect(route.request().postDataJSON()).toEqual({
@@ -97,7 +97,8 @@ test("默认仅构建，创建后只显示 Orbit 接入状态及配置前提", a
   await expect(page).toHaveURL(/\/pipelines\/pl-1$/);
   await expect(page.getByText("Orbit 已停用")).toBeVisible();
   await expect(page.getByText(/api\/v1\/webhooks\/github\/demo/)).toBeVisible();
-  await expect(page.getByText(/不表示 GitHub 已连接/)).toBeVisible();
+  await expect(page.getByText("当前 Revision", { exact: true })).toBeVisible();
+  await expect(page.getByText(/不表示 GitHub 已连接/)).toHaveCount(0);
   expect(created).toBe(true);
 });
 

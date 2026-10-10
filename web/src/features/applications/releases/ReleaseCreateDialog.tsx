@@ -1,10 +1,10 @@
 import { errorText, type Application, type DeploymentTarget } from "@/api/http";
+import type { components } from "@/api/schema";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -12,13 +12,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectItem } from "@/components/ui/select";
-import { CursorPagination } from "@/shared/CursorPagination";
 import { QueryNotice } from "@/shared/OverviewUI";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { buildQueries } from "../builds/api";
 import { releaseQueries } from "./api";
 import { useCreateRelease } from "./mutations";
+
+type ImageArtifact = components["schemas"]["ImageArtifact"];
 
 /** 发布必须显式选择产物/不可变引用并确认目标。失败与关闭后保留草稿及幂等键，
  * 避免网络结果未知时重新打开对话框，重复接纳相同的发布；编辑载荷才形成新命令。
@@ -41,8 +42,11 @@ export function ReleaseCreateDialog({
   const [source, setSource] = useState(
     initialSource?.kind === "release" ? "reference" : "artifact",
   );
-  const [cursor, setCursor] = useState<string>();
-  const [artifactId, setArtifactId] = useState("");
+  const [pageCursors, setPageCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ]);
+  // 产物不可变：草稿保存选中快照，加载更多或后台刷新不撤销用户的选择。
+  const [selected, setSelected] = useState<ImageArtifact>();
   const [reference, setReference] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [validation, setValidation] = useState("");
@@ -73,19 +77,41 @@ export function ReleaseCreateDialog({
       : undefined;
   useEffect(() => {
     if (prefillDone) return;
-    if (suggestedArtifact && !artifactId) {
-      setArtifactId(suggestedArtifact.id);
+    if (suggestedArtifact && !selected) {
+      setSelected(suggestedArtifact);
       setPrefillDone(true);
     } else if (suggestedRelease && !reference) {
       setReference(suggestedRelease.imageReference);
       setPrefillDone(true);
     }
-  }, [prefillDone, suggestedArtifact, suggestedRelease, artifactId, reference]);
-  const builds = useQuery({
-    ...buildQueries.list(application.id, cursor),
-    enabled: open,
+  }, [prefillDone, suggestedArtifact, suggestedRelease, selected, reference]);
+  // 只订阅用户已加载的游标页，与概览共用同一缓存，构建完成后同步看到产物。
+  const builds = useQueries({
+    queries: pageCursors.map((cursor) => ({
+      ...buildQueries.list(application.id, cursor),
+      enabled: open && source === "artifact",
+    })),
   });
-  const artifacts = (builds.data?.items ?? [])
+  // 首批更新可能改变后续游标：只展示仍连贯的页，下一次加载从新游标继续。
+  // 已选产物另存于草稿，不受页链重建影响，也不自动扫描新的历史页。
+  let pageCount = 1;
+  while (
+    pageCount < pageCursors.length &&
+    builds[pageCount - 1].data?.nextCursor === pageCursors[pageCount]
+  ) {
+    pageCount += 1;
+  }
+  const pages = builds.slice(0, pageCount);
+  const firstPage = pages[0];
+  const lastPage = pages[pages.length - 1];
+  const failedPage = pages.find((page) => page.error);
+  const fetching = pages.some((page) => page.isFetching);
+  const loadingMore = pages.length > 1 && lastPage.isPending;
+  const nextCursor = lastPage.data?.nextCursor;
+  const hasMore =
+    nextCursor && !pageCursors.slice(0, pageCount).includes(nextCursor);
+  const loadedArtifacts = pages
+    .flatMap((page) => page.data?.items ?? [])
     .flatMap((item) =>
       item.build.projectId === application.projectId &&
       item.build.applicationId === application.id &&
@@ -94,13 +120,20 @@ export function ReleaseCreateDialog({
       item.imageArtifact.applicationId === application.id
         ? [item.imageArtifact]
         : [],
-    )
-    .filter((artifact) => artifact.id !== suggestedArtifact?.id);
-  if (suggestedArtifact) artifacts.unshift(suggestedArtifact);
-  const selected = artifacts.find((artifact) => artifact.id === artifactId);
+    );
+  // 游标页可能重叠，来源产物也可能已在列表中；每个产物只展示一次。
+  const artifacts = [
+    ...new Map(
+      [
+        ...(suggestedArtifact ? [suggestedArtifact] : []),
+        ...(selected ? [selected] : []),
+        ...loadedArtifacts,
+      ].map((artifact) => [artifact.id, artifact]),
+    ).values(),
+  ];
   const mutation = useCreateRelease(target.id, (result) => {
     setReference("");
-    setArtifactId("");
+    setSelected(undefined);
     setConfirmed(false);
     setValidation("");
     onOpenChange(false);
@@ -142,13 +175,12 @@ export function ReleaseCreateDialog({
         }
       }}
     >
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[90dvh] overflow-y-auto sm:max-w-xl"
+      >
         <DialogHeader>
           <DialogTitle>新建发布</DialogTitle>
-          <DialogDescription>
-            为 {application.name} 创建一条新的发布。接纳后由 Worker
-            执行，不会立即变更为“部署成功”。
-          </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-5">
           <div className="rounded border bg-muted/50 p-3 text-sm">
@@ -198,8 +230,7 @@ export function ReleaseCreateDialog({
                 target.stage === "production" &&
                 suggestedRelease.targetSnapshot.stage === "development" && (
                   <p className="mt-2 text-amber-800">
-                    将开发发布的镜像晋级生产。生产 Target
-                    配置会形成新的发布快照。
+                    将开发发布的镜像晋级生产。
                   </p>
                 )}
             </div>
@@ -226,27 +257,37 @@ export function ReleaseCreateDialog({
             </div>
             {source === "artifact" ? (
               <>
-                {builds.isPending && !suggestedArtifact && <QueryNotice />}
-                {builds.error && (
+                {firstPage.isPending && !suggestedArtifact && <QueryNotice />}
+                {failedPage && (
                   <QueryNotice
-                    error={builds.error}
-                    retry={() => void builds.refetch()}
+                    error={failedPage.error}
+                    retry={() => {
+                      if (fetching || mutation.isPending) return;
+                      void failedPage.refetch({ cancelRefetch: false });
+                    }}
                   />
                 )}
-                {(builds.data || suggestedArtifact) && (
+                {(firstPage.data || suggestedArtifact || selected) && (
                   <>
                     <Label htmlFor="release-artifact">选择产物</Label>
                     <Select
                       id="release-artifact"
                       className="w-full"
-                      value={artifactId}
+                      value={selected?.id ?? ""}
+                      placeholder={
+                        artifacts.length ? "选择构建产物" : "暂无产物"
+                      }
+                      emptyValueAsPlaceholder
+                      disabled={mutation.isPending || artifacts.length === 0}
                       onValueChange={(value) => {
-                        setArtifactId(value);
+                        setSelected(
+                          artifacts.find((artifact) => artifact.id === value),
+                        );
                         setPrefillDone(true);
                         setConfirmed(false);
+                        setValidation("");
                       }}
                     >
-                      <SelectItem value="">请选择本页成功构建的产物</SelectItem>
                       {artifacts.map((artifact) => (
                         <SelectItem key={artifact.id} value={artifact.id}>
                           {artifact.buildId.slice(0, 8)} /{" "}
@@ -254,22 +295,24 @@ export function ReleaseCreateDialog({
                         </SelectItem>
                       ))}
                     </Select>
-                    {artifacts.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        本页构建没有可选产物，可继续翻页或使用高级引用。
-                      </p>
-                    )}
-                    {builds.data && (
-                      <CursorPagination
-                        cursor={cursor}
-                        nextCursor={builds.data.nextCursor}
-                        onChange={(next) => {
-                          setCursor(next);
-                          setArtifactId("");
-                          setPrefillDone(true);
-                          setConfirmed(false);
-                        }}
-                      />
+                    {(hasMore || loadingMore) && !failedPage && (
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={fetching || mutation.isPending}
+                          onClick={() => {
+                            if (!nextCursor || fetching) return;
+                            setPageCursors((current) => [
+                              ...current.slice(0, pageCount),
+                              nextCursor,
+                            ]);
+                          }}
+                        >
+                          {loadingMore ? "加载中…" : "加载更多"}
+                        </Button>
+                      </div>
                     )}
                   </>
                 )}
@@ -291,11 +334,10 @@ export function ReleaseCreateDialog({
                   placeholder="registry.example.com/app@sha256:…"
                   autoCapitalize="none"
                   spellCheck={false}
-                  aria-describedby="release-validation"
+                  aria-describedby={
+                    validation ? "release-validation" : undefined
+                  }
                 />
-                <p className="text-xs text-muted-foreground">
-                  不接受可变 tag。服务端会再次校验引用、应用归属和权限。
-                </p>
               </div>
             )}
             <label
@@ -328,9 +370,7 @@ export function ReleaseCreateDialog({
               className="rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
             >
               <p>{errorText(mutation.error)}</p>
-              <p className="mt-2 text-xs">
-                未确认接纳结果。保持相同输入重试会复用幂等键；关闭窗口不会清除此草稿。
-              </p>
+              <p className="mt-2 text-xs">接纳结果未确认，请保持原输入重试。</p>
             </div>
           )}
           <DialogFooter>

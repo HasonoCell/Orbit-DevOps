@@ -44,7 +44,7 @@ export function RecentAuthPrompt({ error }: { error: unknown }) {
           principalQueryKey,
           await getCurrentPrincipal(),
         );
-        setMessage("身份已验证，请检查原操作后再次点击提交。");
+        setMessage("身份已验证，请重新提交。");
         setFailure("");
       } catch (requestError) {
         setFailure(errorText(requestError));
@@ -66,7 +66,7 @@ export function RecentAuthPrompt({ error }: { error: unknown }) {
       const result = await reauthenticateLocal(password);
       setPassword("");
       queryClient.setQueryData(principalQueryKey, result);
-      setMessage("身份已验证，请检查原操作后再次点击提交。");
+      setMessage("身份已验证，请重新提交。");
     } catch (requestError) {
       setPassword("");
       setFailure(
@@ -116,7 +116,6 @@ export function RecentAuthPrompt({ error }: { error: unknown }) {
       aria-label="近期认证"
     >
       <p className="font-medium text-amber-950">此操作需要重新验证身份</p>
-      <p className="text-amber-900">验证完成后，请再次点击原操作按钮。</p>
       {localAvailable && (
         <form onSubmit={local} className="flex flex-wrap items-end gap-2">
           <div className="space-y-1">

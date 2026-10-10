@@ -238,7 +238,7 @@ function ApplicationOverview({
           role="status"
           className="mb-4 rounded border border-primary/20 bg-accent p-3 text-sm"
         >
-          发布已接纳：{accepted}。部署进度请查看执行状态。
+          发布已接纳：{accepted}
         </p>
       )}
       {targets.data && !targets.error && (
@@ -247,12 +247,7 @@ function ApplicationOverview({
           aria-label="部署目标配置"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold">部署目标</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                每个环境独立配置，发布时记录配置快照。
-              </p>
-            </div>
+            <h2 className="text-sm font-semibold">部署目标</h2>
             <div className="flex flex-wrap gap-2">
               {(["development", "production"] as const).map((stage) => {
                 const existing = targets.data.find(
@@ -299,11 +294,9 @@ function ApplicationOverview({
           })
         }
       />
-      <p className="my-4 text-xs text-muted-foreground">
-        {paused
-          ? "自动刷新已暂停，点击刷新查看最新状态"
-          : "活动记录与运行观测每 30 秒刷新 · 持续 5 分钟"}
-      </p>
+      {paused && (
+        <p className="my-4 text-xs text-muted-foreground">自动刷新已暂停</p>
+      )}
       {targets.isPending || targets.error ? (
         <QueryNotice
           error={targets.error}
@@ -312,7 +305,6 @@ function ApplicationOverview({
       ) : requestedTarget && !target ? (
         <EmptyState
           title="部署目标不属于该应用或已不可用"
-          description="不会按 URL 中未校验的目标读取诊断。请选择有效目标。"
           action={
             <Button variant="outline" onClick={() => changeTarget("")}>
               选择默认目标
@@ -320,10 +312,7 @@ function ApplicationOverview({
           }
         />
       ) : !target ? (
-        <EmptyState
-          title="还没有部署目标"
-          description="部署目标将应用关联到集群、命名空间和运行环境。"
-        />
+        <EmptyState title="暂无部署目标" />
       ) : (
         <TargetRuntime
           key={`runtime-${target.id}`}

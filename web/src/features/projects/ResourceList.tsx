@@ -96,7 +96,7 @@ export function ResourceList({
         ))}
         {visible.length === 0 && (
           <div className="px-5 py-12 text-center text-sm text-muted-foreground">
-            <p>{filter ? "当前页没有匹配的结果" : "这一页没有资源"}</p>
+            <p>{filter ? "本页无匹配结果" : `本页暂无${kind}`}</p>
             {filter && (
               <Button variant="link" onClick={() => update("q")}>
                 清除筛选

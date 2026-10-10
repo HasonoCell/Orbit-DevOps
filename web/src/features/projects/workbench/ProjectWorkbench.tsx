@@ -69,9 +69,8 @@ export function ProjectWorkbench({
           本页应用 <strong>{page.items.length}</strong>
         </span>
         <span>
-          待处理应用 <strong>{issues.length}</strong>
+          本页待处理 <strong>{issues.length}</strong>
         </span>
-        <span className="text-xs text-muted-foreground">仅当前页</span>
         <Button
           className="ml-auto"
           variant="outline"
@@ -87,7 +86,6 @@ export function ProjectWorkbench({
         <section className="workbench-panel min-w-0">
           <header className="panel-heading">
             <h2>{delivery ? "本页自动交付" : "应用"}</h2>
-            <span className="text-xs text-muted-foreground">数据库记录</span>
           </header>
           {delivery ? (
             <DeliveryFeed rows={rows} href={href} />
@@ -212,7 +210,7 @@ export function ProjectWorkbench({
               </table>
               {visible.length === 0 && (
                 <p className="p-8 text-center text-sm text-muted-foreground">
-                  当前页没有匹配的结果
+                  本页无匹配结果
                 </p>
               )}
             </>

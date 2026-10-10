@@ -32,7 +32,6 @@ export function ProjectsPage() {
   );
   return (
     <div className="space-y-7">
-      <p className="text-xs text-muted-foreground">工作区 / 项目</p>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-[26px] font-semibold tracking-tight">项目</h1>
         {createButton}
@@ -51,11 +50,7 @@ export function ProjectsPage() {
           onRetry={() => void projects.refetch()}
         />
       ) : projects.data.items.length === 0 && !cursor ? (
-        <EmptyState
-          title="还没有项目"
-          description="创建一个项目，将相关应用和部署目标组织到同一工作区。"
-          action={createButton}
-        />
+        <EmptyState title="还没有项目" action={createButton} />
       ) : (
         <ResourceList
           items={projects.data.items}

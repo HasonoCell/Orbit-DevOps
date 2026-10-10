@@ -55,7 +55,9 @@ test("项目摘要仅请求当前页，刷新失败后不显示旧摘要", async
   await expect(
     page.getByRole("link", { name: /Payment Service/ }),
   ).toBeVisible();
-  await expect(page.getByText("仅当前页", { exact: true })).toBeVisible();
+  await expect(page.locator(".workbench-summary")).toContainText("本页应用 1");
+  await expect(page.getByText("仅当前页", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("数据库记录", { exact: true })).toHaveCount(0);
   expect(summaryRequests).toHaveLength(1);
   expect(detailRequests).toEqual([]);
   await page.route("**/api/v1/projects/p-1/application-workbench?*", (route) =>
@@ -127,9 +129,7 @@ test("目标深链验证归属，切换目标只观察选中目标并能刷新�
   await expect(page.getByText("部署目标不属于该应用或已不可用")).toBeVisible();
   expect(requests).toEqual([]);
   await chooseOption(page.getByLabel("部署目标", { exact: true }), "t-2");
-  await expect(
-    page.getByText("尚无发布记录。运行状态暂不可判断。"),
-  ).toBeVisible();
+  await expect(page.getByText("暂无发布，运行状态未知")).toBeVisible();
   expect(requests.some((url) => url.includes("/t-1/"))).toBe(false);
   await page.reload();
   await expect(page.getByLabel("部署目标", { exact: true })).toHaveAttribute(

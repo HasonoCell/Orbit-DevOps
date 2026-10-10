@@ -64,12 +64,7 @@ export function TargetPage() {
     application.data.projectId !== projectId ||
     target.data.applicationId !== applicationId
   ) {
-    return (
-      <EmptyState
-        title="部署目标不属于当前应用"
-        description="请从目标所属的应用重新进入。"
-      />
-    );
+    return <EmptyState title="部署目标不属于当前应用" />;
   }
   return (
     <TargetContent
@@ -151,9 +146,6 @@ function TargetContent({
               <dd className="mt-1 break-all font-medium">{target.namespace}</dd>
             </div>
           </dl>
-          <p className="text-sm text-muted-foreground">
-            修改副本或容器端口只会保存期望配置，将在下一次发布中应用。
-          </p>
           {canDevelop ? (
             <form
               className="space-y-5"
@@ -188,10 +180,6 @@ function TargetContent({
       {canDevelop && (
         <div className="mt-5 max-w-3xl rounded-lg border bg-card p-5 text-sm">
           <h2 className="font-semibold">应用新配置</h2>
-          <p className="mt-2 text-muted-foreground">
-            保存配置不会修改集群。选择镜像并创建新的发布后，Worker
-            才会按新快照执行。
-          </p>
           <Button className="mt-4" asChild>
             <Link
               to={`/projects/${projectId}/applications/${applicationId}?view=delivery&target=${targetId}&createRelease=1`}

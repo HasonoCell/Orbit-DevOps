@@ -129,13 +129,6 @@
   line-height: 1;
   margin-bottom: 30px;
 }
-.console-brand small {
-  display: block;
-  font-size: 10px;
-  font-weight: 400;
-  color: #b8c4d6;
-  margin-top: 8px;
-}
 .console-project {
   display: flex;
   gap: 10px;
@@ -166,11 +159,6 @@
   overflow-wrap: anywhere;
   font-size: 13px;
   color: white;
-}
-.console-project small {
-  display: block;
-  margin-top: 4px;
-  font-size: 11px;
 }
 .console-nav {
   display: flex;

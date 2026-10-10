@@ -112,11 +112,6 @@ export function HostCreate({
             />
           ) : (
             <>
-              {!options.data.issuerPolicies.length && (
-                <p className="text-xs text-muted-foreground">
-                  当前没有可用的托管证书 Policy。
-                </p>
-              )}
               {tlsMode === "managed" && (
                 <div className="space-y-2">
                   <Label htmlFor="access-issuer">Issuer Policy</Label>
@@ -141,9 +136,15 @@ export function HostCreate({
             <div className="space-y-2">
               <Label htmlFor="access-secret-binding">TLS Secret 授权</Label>
               {hostname.trim().length < 4 ? (
-                <p className="text-xs text-muted-foreground">
-                  请先输入完整域名。
-                </p>
+                <Select
+                  id="access-secret-binding"
+                  className="w-full"
+                  value=""
+                  onValueChange={() => undefined}
+                  disabled
+                >
+                  <SelectItem value="">先填写域名</SelectItem>
+                </Select>
               ) : bindings.isPending || bindings.error ? (
                 <QueryNotice
                   error={bindings.error}
@@ -165,8 +166,8 @@ export function HostCreate({
                     ))}
                   </Select>
                   {!bindings.data.length && (
-                    <p className="text-xs text-muted-foreground">
-                      当前域名没有已授权的 TLS Secret。
+                    <p className="text-sm text-muted-foreground">
+                      暂无 TLS Secret 授权
                     </p>
                   )}
                   {(bindingOffset > 0 || bindings.data.length > 20) && (
@@ -201,10 +202,6 @@ export function HostCreate({
               )}
             </div>
           )}
-          <p className="text-muted-foreground">
-            创建后可配置 PathPrefix 路由。证书控制器与 DNS
-            验证在详情中单独观察。
-          </p>
           {validation && (
             <p role="alert" className="text-destructive">
               {validation}
@@ -213,7 +210,6 @@ export function HostCreate({
           {mutation.error && (
             <p role="alert" className="text-destructive">
               {errorText(mutation.error)}
-              。结果未知时，相同输入重试会复用幂等键。
             </p>
           )}
           <Button

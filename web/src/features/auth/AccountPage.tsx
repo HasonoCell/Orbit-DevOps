@@ -9,10 +9,7 @@ export function AccountPage() {
   const principal = useOutletContext<CurrentPrincipal>();
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">个人账号</p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight">账号信息</h1>
-      </div>
+      <h1 className="text-3xl font-semibold tracking-tight">账号信息</h1>
       <Card>
         <CardHeader>
           <CardTitle>当前身份</CardTitle>
@@ -41,10 +38,6 @@ export function AccountPage() {
           <CardTitle>账号安全</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="mb-4 text-sm text-muted-foreground">
-            可以修改已有的本地密码；仅使用 OIDC
-            登录的账号也可以首次设置本地登录名和密码。成功后所有现有会话都会被撤销。
-          </p>
           <Button variant="outline" asChild>
             <Link to="/account/password">管理本地密码</Link>
           </Button>

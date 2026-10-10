@@ -47,7 +47,7 @@ export function PodList({ report }: { report: DiagnosticReport }) {
                   <SheetHeader>
                     <SheetTitle>Pod 详情</SheetTitle>
                     <SheetDescription>
-                      只读观测于{" "}
+                      观测于{" "}
                       <Timestamp
                         value={report.workloadObservation.metadata.observedAt}
                       />
@@ -130,8 +130,8 @@ export function PodList({ report }: { report: DiagnosticReport }) {
       {report.workloadObservation.pods.length === 0 && (
         <QuietEmpty>
           {report.workloadObservation.metadata.status === "complete"
-            ? "此次观测未返回 Pod。"
-            : "Pod 观测不完整，不能确认工作负载不存在。"}
+            ? "暂无 Pod"
+            : "Pod 观测不完整，无法判断"}
         </QuietEmpty>
       )}
     </section>

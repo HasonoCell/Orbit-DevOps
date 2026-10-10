@@ -187,7 +187,7 @@ test("运行观测不可用且无 Pod 时不显示健康结论或可选日志", 
   );
   await page.goto("/projects/p-1/applications/a-1/releases/r-1");
   await expect(page.getByText("运行版本尚无法判断")).toBeVisible();
-  await expect(page.getByText("未观测到 Pod，暂无可选日志。")).toBeVisible();
+  await expect(page.getByText("暂无可选 Pod 日志")).toBeVisible();
   await expect(page.getByRole("button", { name: /读取 .* 日志/ })).toHaveCount(
     0,
   );

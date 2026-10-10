@@ -100,12 +100,7 @@ function AdmissionsContent({ status }: { status: Status }) {
     <div className="space-y-5">
       <section className="workbench-panel">
         <header className="panel-heading">
-          <div>
-            <h2>OIDC 准入</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              按状态查看外部身份；邮箱只用于展示，不合并用户
-            </p>
-          </div>
+          <h2>OIDC 准入</h2>
           <Button
             variant="outline"
             size="sm"
@@ -174,9 +169,7 @@ function AdmissionsContent({ status }: { status: Status }) {
                 ))}
               </div>
             ) : (
-              <p className="p-5 text-sm text-muted-foreground">
-                此状态下暂无记录
-              </p>
+              <p className="p-5 text-sm text-muted-foreground">暂无记录</p>
             )}
             {(pageIndex > 0 || list.data.nextCursor) && (
               <div className="flex items-center justify-end gap-2 border-t p-4 text-sm">

@@ -98,7 +98,6 @@ export function ReleaseCommands({
     <section className="workbench-panel mt-5">
       <header className="panel-heading">
         <h2>执行操作</h2>
-        <span className="text-xs text-muted-foreground">按状态与权限显示</span>
       </header>
       <div className="flex flex-wrap gap-2 p-5">
         {available.map((action) => (
@@ -124,16 +123,15 @@ export function ReleaseCommands({
           <DialogHeader>
             <DialogTitle>{selected && labels[selected]}</DialogTitle>
             <DialogDescription>
-              {selected === "retry" &&
-                "重新排队同一 Operation。结果未知时，服务端会先确认外部状态是否安全。"}
+              {selected === "retry" && "重试此执行；结果未知时先核验外部状态。"}
               {selected === "cancel" &&
-                "取消排队中的发布，或请求 Worker 停止正在执行的发布。"}
+                "取消排队发布，或请求停止当前执行；不会回退已写入的资源。"}
               {selected === "reconcile" &&
-                "只读检查 Kubernetes 权威状态，并更新执行结论。"}
+                "读取 Kubernetes 状态并更新执行结论。"}
               {selected === "force-fail" &&
-                "人工结束结果未知的执行，解除目标阻塞；不会撤销可能已发生的集群写入。"}
+                "结束未知执行并解除阻塞；不会撤销已有集群写入。"}
               {selected === "rollback" &&
-                "以此历史 Release 的不可变快照创建新 Release，替换目标当前运行版本。接纳不等于部署完成。"}
+                "按此历史快照创建新发布，替换目标当前运行版本。"}
             </DialogDescription>
           </DialogHeader>
           <p className="break-all rounded bg-muted p-3 text-xs">
@@ -159,10 +157,7 @@ export function ReleaseCommands({
           )}
           {mutation.error && (
             <Alert variant="destructive" role="alert">
-              <AlertDescription>
-                {errorText(mutation.error)}
-                。结果未确认；保持相同输入重试会复用幂等键。
-              </AlertDescription>
+              <AlertDescription>{errorText(mutation.error)}</AlertDescription>
             </Alert>
           )}
           <DialogFooter>

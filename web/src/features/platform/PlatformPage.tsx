@@ -16,20 +16,12 @@ export function PlatformPage() {
         ? "admissions"
         : "users";
   if (principal.user?.platformRole !== "platform_admin") {
-    return (
-      <EmptyState
-        title="无平台管理权限"
-        description="请使用平台管理员账号访问。"
-      />
-    );
+    return <EmptyState title="无平台管理权限" />;
   }
   return (
     <div className="workbench-page">
       <div className="workbench-heading">
-        <div>
-          <p className="text-xs text-muted-foreground">平台管理</p>
-          <h1 className="mt-1">安全与身份</h1>
-        </div>
+        <h1>安全与身份</h1>
       </div>
       <ViewNavigation
         label="平台管理视图"

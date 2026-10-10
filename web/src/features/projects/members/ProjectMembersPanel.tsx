@@ -159,12 +159,7 @@ export function ProjectMembersPanel({
   return (
     <section className="workbench-panel mt-5" aria-label="项目成员">
       <header className="panel-heading">
-        <div>
-          <h2>项目成员</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            按项目角色管理访问权限
-          </p>
-        </div>
+        <h2>项目成员</h2>
       </header>
       {notice && (
         <p role="status" className="mx-5 mt-5 text-sm text-emerald-700">

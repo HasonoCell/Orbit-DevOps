@@ -206,7 +206,7 @@ test("当前页筛选保留游标与 URL，不把匹配数显示为项目总数"
   );
   await page.goto("/projects");
   await page.getByLabel("筛选当前页项目").fill("second");
-  await expect(page.getByText("当前页没有匹配的结果")).toBeVisible();
+  await expect(page.getByText("本页无匹配结果")).toBeVisible();
   await page.getByRole("button", { name: "下一页" }).click();
   await expect(page).toHaveURL(/q=second&cursor=second/);
   await expect(page.getByRole("link", { name: /Second/ })).toBeVisible();
@@ -300,9 +300,7 @@ test("终态记录停止轮询，诊断继续有界刷新并可手动重启", as
   expect(releases).toBe(initial.releases);
   expect(runs).toBe(initial.runs);
   await page.clock.fastForward(5 * 60_000);
-  await expect(
-    page.getByText("自动刷新已暂停，点击刷新查看最新状态"),
-  ).toBeVisible();
+  await expect(page.getByText("自动刷新已暂停")).toBeVisible();
   await expect(page.getByRole("button", { name: "刷新概览" })).toBeEnabled();
   const stoppedAt = diagnostics;
   await page.clock.fastForward(60_000);

@@ -70,9 +70,7 @@ export function SecretBindingsPanel() {
     onSuccess(binding) {
       revokeKey.clear();
       setRemoving(null);
-      setNotice(
-        `已撤销 ${binding.hostname} / ${binding.secretName}。正在引用它的入口会重新调和。`,
-      );
+      setNotice(`已撤销 ${binding.hostname} / ${binding.secretName}。`);
       void queryClient.invalidateQueries({
         queryKey: ["platform-secret-bindings"],
       });
@@ -93,12 +91,7 @@ export function SecretBindingsPanel() {
     <div className="space-y-5">
       <section className="workbench-panel max-w-3xl">
         <header className="panel-heading">
-          <div>
-            <h2>登记 TLS Secret</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              只登记已有 Secret 的名称和授权范围，不上传证书或私钥
-            </p>
-          </div>
+          <h2>登记 TLS Secret</h2>
         </header>
         <form
           onSubmit={submit}

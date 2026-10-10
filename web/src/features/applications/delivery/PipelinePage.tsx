@@ -86,20 +86,10 @@ export function PipelinePage() {
       (detail.data?.pipeline.projectId !== projectId ||
         detail.data.pipeline.applicationId !== applicationId))
   )
-    return (
-      <EmptyState
-        title="Pipeline 不属于当前应用"
-        description="请从它所属的应用重新进入。"
-      />
-    );
+    return <EmptyState title="Pipeline 不属于当前应用" />;
   const canDevelop = permissions.data.allowed.includes("develop");
   if (creating && !canDevelop)
-    return (
-      <EmptyState
-        title="当前角色不能创建 Pipeline"
-        description="请联系项目管理员确认开发权限。"
-      />
-    );
+    return <EmptyState title="当前角色不能创建 Pipeline" />;
   return (
     <PipelineEditor
       key={`${pipelineId}-${detail.data?.revision.revision ?? "new"}`}
@@ -269,11 +259,6 @@ function PipelineEditor({
               <span className="break-all font-mono">{webhookUrl}</span>
             </Fact>
           </dl>
-          <p className="border-t px-5 py-4 text-xs text-muted-foreground">
-            运维需先配置 endpoint key 对应的服务端验签密钥，再在 GitHub
-            仓库手动配置 Webhook URL 与相同密钥。Orbit
-            已启用仅表示本侧接纳匹配事件，不表示 GitHub 已连接。
-          </p>
         </section>
       )}
       <section className="workbench-panel max-w-3xl">
@@ -375,9 +360,6 @@ function PipelineEditor({
                 mutation.error.status === 409
                   ? "配置已变化或存在冲突。请刷新服务端配置后再决定是否修订。"
                   : errorText(mutation.error)}
-                <span className="block text-xs">
-                  结果未确认时，相同输入再次提交会复用幂等键。
-                </span>
               </AlertDescription>
             </Alert>
           )}
@@ -462,16 +444,12 @@ function PipelineActivation({
   return (
     <section className="workbench-panel mt-5 max-w-3xl p-5 text-sm">
       <h2 className="font-semibold">接纳控制</h2>
-      <p className="mt-2 text-muted-foreground">
-        {detail.pipeline.enabled
-          ? "停用后 Orbit 不再接纳此 Pipeline 的新运行，已有运行保留历史。"
-          : "启用时将重新核验 GitHub 来源；仍需单独在 GitHub 仓库配置 Webhook。"}
-      </p>
       {selected === action ? (
         <div className="mt-4 space-y-3 rounded border p-4">
           <p>
             确认{action === "enable" ? "启用" : "停用"} {detail.pipeline.name}？
           </p>
+          {action === "disable" && <p>停用后不再接纳新运行。</p>}
           {mutation.error && (
             <p role="alert" className="text-destructive">
               {errorText(mutation.error)}

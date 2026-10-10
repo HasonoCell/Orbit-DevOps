@@ -81,9 +81,6 @@ export function AccessRoutesPanel({
     <section className="workbench-panel">
       <header className="panel-heading">
         <h2>路径路由</h2>
-        <span className="text-xs text-muted-foreground">
-          PathPrefix → Target Service
-        </span>
       </header>
       {cleanup && (
         <p role="status" className="m-5 rounded border bg-accent p-3 text-sm">
@@ -229,9 +226,7 @@ export function AccessRoutesPanel({
           ) : (
             <>
               {!targets.data.length && (
-                <p className="text-muted-foreground">
-                  同集群和 Namespace 下没有可选 Target。
-                </p>
+                <p className="text-muted-foreground">暂无可选部署目标</p>
               )}
               {(targetOffset > 0 || targets.data.length > 20) && (
                 <div className="flex gap-2">
@@ -257,10 +252,6 @@ export function AccessRoutesPanel({
               )}
             </>
           )}
-          <p className="text-xs text-muted-foreground">
-            目标 Service 的端口由 Orbit 读取；实际是否被 HTTPRoute
-            控制器接受，请看上方入口观测。
-          </p>
           {validation && (
             <p role="alert" className="text-destructive">
               {validation}
@@ -268,7 +259,7 @@ export function AccessRoutesPanel({
           )}
           {write.error && (
             <p role="alert" className="text-destructive">
-              {errorText(write.error)}。结果未知时相同输入重试会复用幂等键。
+              {errorText(write.error)}
             </p>
           )}
           <div className="flex gap-2">

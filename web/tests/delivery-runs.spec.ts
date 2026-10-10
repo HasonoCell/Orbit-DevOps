@@ -192,9 +192,7 @@ test("阻塞 Run 的重新对账只是接纳后台推进请求", async ({ page }
   await page.getByRole("button", { name: "重新对账", exact: true }).click();
   expect(submitted).toBe(false);
   await page.getByRole("button", { name: "确认重新对账" }).click();
-  await expect(
-    page.getByText("推进请求已接纳，请稍后刷新运行状态。"),
-  ).toBeVisible();
+  await expect(page.getByText("推进请求已接纳")).toBeVisible();
   await expect(page.getByText("已阻塞", { exact: true })).toBeVisible();
   expect(submitted).toBe(true);
   const acceptedAt = reads;

@@ -135,12 +135,7 @@ function ProjectContent({
             </p>
           </div>
         </div>
-        <div>
-          {createButton}
-          {!canDevelop && (
-            <p className="mt-1 text-xs text-muted-foreground">需要开发权限</p>
-          )}
-        </div>
+        {createButton}
       </div>
       <ViewNavigation
         label="项目视图"
@@ -180,7 +175,6 @@ function ProjectContent({
       ) : applications.data.items.length === 0 && !cursor ? (
         <EmptyState
           title="还没有应用"
-          description="应用承载构建和交付配置；先创建应用，再配置部署目标。"
           action={canDevelop ? createButton : undefined}
         />
       ) : (

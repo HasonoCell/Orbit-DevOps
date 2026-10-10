@@ -47,6 +47,7 @@ test("管理员批准准入后详情显示正式 User 关联，列表转入已�
     });
   });
   await page.goto("/platform?view=admissions");
+  await expect(page.getByText(/按状态查看外部身份/)).toHaveCount(0);
   await expect(page.getByText("申请人").first()).toBeVisible();
   await page.getByRole("button", { name: "详情" }).click();
   await expect(page).toHaveURL(/identityId=identity-1/);
@@ -139,7 +140,7 @@ test("近期认证后批准不会自动重放", async ({ page }) => {
   await page.getByRole("button", { name: "确认提交" }).click();
   await page.getByLabel("当前密码").fill("fixture-only-recent-proof");
   await page.getByRole("button", { name: "用密码验证" }).click();
-  await expect(page.getByText(/身份已验证，请检查原操作/)).toBeVisible();
+  await expect(page.getByText("身份已验证，请重新提交。")).toBeVisible();
   expect(approvals).toBe(1);
 });
 
@@ -176,7 +177,7 @@ test("浏览器返回状态列表时不沿用另一状态的分页游标", async
   await page.getByRole("button", { name: "下一页" }).click();
   await expect(page.getByText("第二页申请")).toBeVisible();
   await page.getByRole("button", { name: "已拒绝" }).click();
-  await expect(page.getByText("此状态下暂无记录")).toBeVisible();
+  await expect(page.getByText("暂无记录")).toBeVisible();
   await page.goBack();
   await expect(page.getByText("申请人").first()).toBeVisible();
   await expect(page.getByText("第 1 页")).toBeVisible();

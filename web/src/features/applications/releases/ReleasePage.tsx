@@ -153,12 +153,7 @@ function ReleaseContent({
     detail.data.release.targetSnapshot.applicationId !== applicationId ||
     target.data?.applicationId !== applicationId
   ) {
-    return (
-      <EmptyState
-        title="发布不属于当前应用"
-        description="请从发布所属的应用重新进入。"
-      />
-    );
+    return <EmptyState title="发布不属于当前应用" />;
   }
   const { release, snapshotDifferences, auditTimeline } = detail.data;
   const current = operation.error ? undefined : operation.data;
@@ -254,9 +249,6 @@ function ReleaseContent({
       {canDevelop && (
         <section className="workbench-panel mb-5 p-5 text-sm">
           <h2 className="font-semibold">以此镜像创建新发布</h2>
-          <p className="mt-2 text-muted-foreground">
-            新发布会读取所选 Target 的当前配置。历史 Release 保持不变。
-          </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="outline" asChild>
               <Link
@@ -280,9 +272,7 @@ function ReleaseContent({
             !targets.isPending &&
             !targets.error &&
             !productionTarget && (
-              <p className="mt-3 text-muted-foreground">
-                尚无生产 Target，请先创建生产目标。
-              </p>
+              <p className="mt-3 text-muted-foreground">暂无生产目标</p>
             )}
           {targets.error && (
             <QueryNotice
@@ -386,9 +376,6 @@ function ReleaseContent({
       <section className="mb-5" aria-label="运行观测">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold">Kubernetes 运行观测</h2>
-          <span className="text-xs text-muted-foreground">
-            独立于发布执行结果
-          </span>
         </div>
         {report.isPending || report.error ? (
           <QueryNotice error={report.error} retry={refresh} />
@@ -420,7 +407,6 @@ function ReleaseContent({
                 <Timestamp
                   value={report.data.workloadObservation.metadata.observedAt}
                 />
-                ；Pod 就绪不等于公网访问已验证。
               </p>
             </div>
           )
@@ -460,7 +446,7 @@ function RuntimeLogs({
         {!canRead ? (
           <p className="text-muted-foreground">当前角色不能读取运行日志。</p>
         ) : report.workloadObservation.pods.length === 0 ? (
-          <p className="text-muted-foreground">未观测到 Pod，暂无可选日志。</p>
+          <p className="text-muted-foreground">暂无可选 Pod 日志</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {report.workloadObservation.pods.flatMap((pod) =>

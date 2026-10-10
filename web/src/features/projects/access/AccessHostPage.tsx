@@ -54,20 +54,10 @@ export function AccessHostPage() {
       />
     );
   if (!creating && host.data?.projectId !== projectId)
-    return (
-      <EmptyState
-        title="域名不属于该项目"
-        description="请从所属项目重新进入。"
-      />
-    );
+    return <EmptyState title="域名不属于该项目" />;
   if (creating) {
     if (!permissions.data.allowed.includes("manage_access_hosts"))
-      return (
-        <EmptyState
-          title="当前角色不能创建访问域名"
-          description="请联系项目管理员确认入口管理权限。"
-        />
-      );
+      return <EmptyState title="当前角色不能创建访问域名" />;
     return <HostCreate projectId={projectId} projectName={project.data.name} />;
   }
   return (

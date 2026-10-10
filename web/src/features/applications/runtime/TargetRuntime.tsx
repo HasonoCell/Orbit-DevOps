@@ -63,7 +63,7 @@ export function TargetRuntime({
   if (!release.data)
     return (
       <section className="workbench-panel">
-        <QuietEmpty>尚无发布记录。运行状态暂不可判断。</QuietEmpty>
+        <QuietEmpty>暂无发布，运行状态未知</QuietEmpty>
         <TargetFacts target={target} />
       </section>
     );
@@ -161,9 +161,7 @@ export function TargetRuntime({
                             ))}
                           </ul>
                         ) : (
-                          <p className="mt-3 text-muted-foreground">
-                            目标配置与接纳快照一致。
-                          </p>
+                          <p className="mt-3 text-muted-foreground">配置一致</p>
                         )}
                       </CollapsibleContent>
                     </Collapsible>
@@ -192,7 +190,6 @@ export function TargetRuntime({
               <Timestamp
                 value={report.workloadObservation.metadata.observedAt}
               />
-              。Pod 就绪不等于公网访问已验证。
             </p>
           </>
         )
@@ -221,7 +218,6 @@ export function RuntimeResources({ report }: { report: DiagnosticReport }) {
     <section className="workbench-panel">
       <header className="panel-heading">
         <h2>目标资源</h2>
-        <span className="text-xs text-muted-foreground">Kubernetes 观测</span>
       </header>
       <div className="runtime-resource-grid">
         <div className="runtime-resource">
@@ -275,9 +271,6 @@ export function RuntimeResources({ report }: { report: DiagnosticReport }) {
           )}
         </div>
       </div>
-      <p className="border-t bg-muted/40 px-5 py-3 text-xs text-muted-foreground">
-        同一目标关联的资源，不表示流量或 owner 链。
-      </p>
     </section>
   );
 }
@@ -348,9 +341,7 @@ export function DiagnosticEvidence({ report }: { report: DiagnosticReport }) {
           ))}
         </ul>
       ) : (
-        <p className="mt-3">
-          此次诊断没有返回信号；请结合运行状态、观测完整性和时间判断。
-        </p>
+        <p className="mt-3">暂无诊断信号</p>
       )}
       {report.eventObservation.metadata.status !== "complete" && (
         <p className="mt-3 text-amber-900">集群事件读取不完整。</p>
@@ -392,8 +383,8 @@ export function EventEvidence({ report }: { report: DiagnosticReport }) {
       ) : (
         <QuietEmpty>
           {report.eventObservation.metadata.status === "complete"
-            ? "此次观测没有返回事件。"
-            : "事件观测不可用或不完整，不能判断是否存在事件。"}
+            ? "暂无集群事件"
+            : "事件观测不完整，无法判断"}
         </QuietEmpty>
       )}
     </section>

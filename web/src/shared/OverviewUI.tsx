@@ -68,7 +68,7 @@ export function QueryNotice({
           {errorText(error)}
         </p>
         {retry && (
-          <Button size="sm" variant="outline" onClick={retry}>
+          <Button type="button" size="sm" variant="outline" onClick={retry}>
             重试
           </Button>
         )}

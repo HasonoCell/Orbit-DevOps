@@ -57,16 +57,18 @@ export function EmptyState({
   action,
 }: {
   title: string;
-  description: string;
+  description?: string;
   action?: ReactNode;
 }) {
   return (
     <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed bg-card px-6 py-10 text-center">
       <FolderOpen className="size-8 text-muted-foreground" aria-hidden="true" />
       <h2 className="mt-4 font-semibold">{title}</h2>
-      <p className="mt-1 max-w-lg text-sm text-muted-foreground">
-        {description}
-      </p>
+      {description && (
+        <p className="mt-1 max-w-lg text-sm text-muted-foreground">
+          {description}
+        </p>
+      )}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );

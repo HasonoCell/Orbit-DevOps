@@ -80,9 +80,6 @@ export function BuildCommands({
     <section className="workbench-panel mt-5">
       <header className="panel-heading">
         <h2>执行操作</h2>
-        <span className="text-xs text-muted-foreground">
-          按当前状态显示可用命令
-        </span>
       </header>
       <div className="flex flex-wrap gap-2 p-5">
         {available.map((command) => (
@@ -108,14 +105,12 @@ export function BuildCommands({
           <DialogHeader>
             <DialogTitle>{selected && labels[selected]}</DialogTitle>
             <DialogDescription>
-              {selected === "retry" &&
-                "将使用原 Build 的冻结输入重新排队，不创建新 Build。"}
+              {selected === "retry" && "使用原构建输入重试。"}
               {selected === "cancel" &&
-                "取消排队中的构建，或请求 Worker 停止运行中的 Job。"}
-              {selected === "reconcile" &&
-                "先读取已有 Job 的权威结果，再决定是否继续执行。"}
+                "取消排队构建，或请求停止运行中的 Job。"}
+              {selected === "reconcile" && "读取现有 Job 结果并重新对账。"}
               {selected === "force-fail" &&
-                "人工结束结果未知的构建；不会清理旧 Job 证据。"}
+                "结束结果未知的构建，不清理已有 Job 证据。"}
             </DialogDescription>
           </DialogHeader>
           <p className="break-all rounded bg-muted p-3 text-xs">
@@ -141,10 +136,7 @@ export function BuildCommands({
           )}
           {mutation.error && (
             <Alert variant="destructive" role="alert">
-              <AlertDescription>
-                {errorText(mutation.error)}
-                。结果未确认；保持相同输入重试会复用幂等键。
-              </AlertDescription>
+              <AlertDescription>{errorText(mutation.error)}</AlertDescription>
             </Alert>
           )}
           <DialogFooter>

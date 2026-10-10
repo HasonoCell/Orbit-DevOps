@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -82,12 +81,12 @@ export function BuildCreateDialog({
         if (!mutation.isPending) onOpenChange(next);
       }}
     >
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+      <DialogContent
+        className="max-h-[90dvh] overflow-y-auto sm:max-w-xl"
+        aria-describedby={undefined}
+      >
         <DialogHeader>
           <DialogTitle>手动构建</DialogTitle>
-          <DialogDescription>
-            指定不可变 Commit。创建后由 Worker 执行构建。
-          </DialogDescription>
         </DialogHeader>
         <form
           className="space-y-4"
@@ -156,9 +155,7 @@ export function BuildCreateDialog({
           </div>
           {mutation.error && (
             <Alert variant="destructive" role="alert">
-              <AlertDescription>
-                {errorText(mutation.error)}。保留相同输入重试会复用幂等键。
-              </AlertDescription>
+              <AlertDescription>{errorText(mutation.error)}</AlertDescription>
             </Alert>
           )}
           <DialogFooter>

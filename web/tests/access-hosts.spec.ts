@@ -155,7 +155,13 @@ test("项目创建 Host、选择同边界 Target 建 Route，并分开呈现入�
   await expect(page).toHaveURL(/\/access-hosts\/h-1$/);
   await expect(page.getByText("待调和", { exact: false })).toBeVisible();
   await expect(page.getByText("不匹配")).toBeVisible();
-  await expect(page.getByText(/未主动验证公网 HTTP\/HTTPS/)).toBeVisible();
+  await expect(
+    page.getByRole("term").filter({ hasText: "公网连通性" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("definition").filter({ hasText: "未检测" }),
+  ).toBeVisible();
+  await expect(page.getByText(/未主动验证公网 HTTP\/HTTPS/)).toHaveCount(0);
   await page.getByLabel("PathPrefix").fill("/pay");
   await chooseOption(page.getByLabel("部署目标"), "t-1");
   await page.getByRole("button", { name: "创建路由" }).click();
@@ -165,7 +171,7 @@ test("项目创建 Host、选择同边界 Target 建 Route，并分开呈现入�
   await expect(page.getByText(/清理已接纳，等待控制器完成/)).toBeVisible();
   await page.getByRole("button", { name: "删除域名" }).click();
   await page.getByRole("button", { name: "确认删除", exact: true }).click();
-  await expect(page.getByText(/清理已接纳。请继续观察/)).toBeVisible();
+  await expect(page.getByText("已提交清理，等待控制器完成。")).toBeVisible();
 });
 
 test("托管 TLS 长页面中的 Target 下拉可见且可点击", async ({ page }) => {
@@ -385,7 +391,7 @@ for (const action of [
       await chooseOption(page.getByLabel("模式", { exact: true }), "managed");
       await chooseOption(page.getByLabel("Issuer Policy"), "demo-issuer");
       await page.getByRole("button", { name: "保存 TLS 配置" }).click();
-      await expect(page.getByText(/配置已保存/)).toBeVisible();
+      await expect(page.getByText("已保存，等待控制器更新。")).toBeVisible();
     } else if (action === "创建路由" || action === "修改路由") {
       if (action === "修改路由")
         await page.getByRole("button", { name: "修改", exact: true }).click();
@@ -410,7 +416,9 @@ for (const action of [
     } else {
       await page.getByRole("button", { name: "删除域名" }).click();
       await page.getByRole("button", { name: "确认删除", exact: true }).click();
-      await expect(page.getByText(/清理已接纳。请继续观察/)).toBeVisible();
+      await expect(
+        page.getByText("已提交清理，等待控制器完成。"),
+      ).toBeVisible();
     }
     await expect(page.getByText("待调和 · 修订 0/2")).toBeVisible();
     await expect(
@@ -586,7 +594,7 @@ test("无 Policy 时禁用托管模式，已有 Policy 失效时拒绝继续提�
   await page.getByLabel("TLS 模式").click();
   await expect(page.getByRole("option", { name: "托管证书" })).toBeDisabled();
   await page.keyboard.press("Escape");
-  await expect(page.getByText(/当前没有可用的托管证书 Policy/)).toBeVisible();
+  await expect(page.getByText(/当前没有可用的托管证书 Policy/)).toHaveCount(0);
 
   const managed = {
     ...host,

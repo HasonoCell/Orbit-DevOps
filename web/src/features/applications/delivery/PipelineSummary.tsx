@@ -33,11 +33,7 @@ export function PipelineSummary({
     ...pipelineQueries.list(applicationId, cursor),
   });
   return (
-    <Panel
-      title="自动交付"
-      icon={<GitBranch className="size-4" />}
-      subtitle="Webhook → 构建 → 部署"
-    >
+    <Panel title="自动交付" icon={<GitBranch className="size-4" />}>
       {pipelines.isPending || pipelines.error ? (
         <QueryNotice
           error={pipelines.error}
@@ -125,9 +121,7 @@ function PipelineItem({
       {run.isPending || run.error ? (
         <QueryNotice error={run.error} retry={() => void run.refetch()} />
       ) : !run.data ? (
-        <p className="mt-4 text-xs text-muted-foreground">
-          暂无触发记录，等待匹配的 Webhook。
-        </p>
+        <p className="mt-4 text-xs text-muted-foreground">暂无触发记录</p>
       ) : (
         <div className="mt-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">

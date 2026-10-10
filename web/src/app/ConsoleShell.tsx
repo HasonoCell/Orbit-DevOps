@@ -111,16 +111,13 @@ export function ConsoleShell() {
         className="console-brand"
       >
         <OrbitMark />
-        <span>
-          Orbit<small>DevOps console</small>
-        </span>
+        <span>Orbit</span>
       </Link>
       {projectName && (
         <div className="console-project">
           <span>{projectName.slice(0, 1)}</span>
           <div>
             <strong>{projectName}</strong>
-            <small>项目空间</small>
           </div>
         </div>
       )}

@@ -7,12 +7,7 @@ import { changePassword, principalQueryKey } from "@/features/auth/api";
 import { ApiError, errorText, type CurrentPrincipal } from "@/api/http";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RecentAuthPrompt } from "./RecentAuthPrompt";
@@ -145,11 +140,6 @@ export function PasswordPage() {
           <h1 className="text-xl font-semibold">
             {principal.mustChangePassword ? "设置新密码" : "管理本地密码"}
           </h1>
-          <CardDescription>
-            {principal.mustChangePassword
-              ? "临时密码只能用于完成改密。修改后需重新登录。"
-              : "选择与当前账号相符的方式。成功后所有会话将被撤销。"}
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -202,10 +192,6 @@ export function PasswordPage() {
                     {form.formState.errors.loginName.message}
                   </p>
                 )}
-                <p className="text-xs text-muted-foreground">
-                  首次设置需要近期 OIDC
-                  登录；如果认证已过期，请重新登录后再操作。
-                </p>
               </div>
             )}
             <PasswordField
@@ -215,10 +201,6 @@ export function PasswordPage() {
               register={form.register("newPassword")}
               error={form.formState.errors.newPassword?.message}
             />
-            <p className="text-xs text-muted-foreground">
-              需为 12–128 个字符，UTF-8 不超过 512
-              字节；请勿使用常见弱密码或全部由同一字符组成的密码。
-            </p>
             <PasswordField
               id="confirm-password"
               label="确认新密码"
@@ -237,6 +219,7 @@ export function PasswordPage() {
                   </AlertDescription>
                 </Alert>
               )}
+            <p className="text-sm">提交后将退出所有设备。</p>
             <div className="flex items-center justify-between gap-4">
               {!principal.mustChangePassword && (
                 <Link

@@ -31,12 +31,7 @@ export function AccessHostsPanel({
   return (
     <section className="workbench-panel mt-5">
       <header className="panel-heading">
-        <div>
-          <h2>访问域名</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            入口状态与 DNS 验证分别观察
-          </p>
-        </div>
+        <h2>访问域名</h2>
         {canManage && (
           <Button asChild>
             <Link to={`/projects/${projectId}/access-hosts/new`}>添加域名</Link>

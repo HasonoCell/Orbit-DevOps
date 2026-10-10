@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -58,12 +57,9 @@ export function ResourceCreateDialog({
   };
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>创建{kind}</DialogTitle>
-          <DialogDescription>
-            名称供人阅读，标识用于稳定识别，不建议频繁更改。
-          </DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
           <div className="space-y-2">
@@ -84,7 +80,7 @@ export function ResourceCreateDialog({
             <Label htmlFor="resource-slug">{kind}标识</Label>
             <Input
               id="resource-slug"
-              placeholder="yuuki"
+              placeholder="orbit-app"
               autoCapitalize="none"
               spellCheck={false}
               {...form.register("slug")}

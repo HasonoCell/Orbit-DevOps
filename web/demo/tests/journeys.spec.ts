@@ -131,7 +131,7 @@ test("场景面板触发自动交付，入口与证书状态变化回到真实�
   );
   await chooseOption(page.getByLabel("TLS Secret 授权"), "binding-1");
   await page.getByRole("button", { name: "保存 TLS 配置" }).click();
-  await expect(page.getByText(/配置已保存/)).toBeVisible();
+  await expect(page.getByText("已保存，等待控制器更新。")).toBeVisible();
   await scenario(page, { evidence: "dns_mismatch" });
   await page.getByRole("button", { name: "刷新入口状态" }).click();
   await expect
@@ -184,7 +184,7 @@ test("平台管理、近期认证和 OIDC 绑定使用实际 Mock HTTP 跳转", 
   await expect(page.getByRole("group", { name: "近期认证" })).toBeVisible();
   await page.getByLabel("当前密码").fill(demoPassword);
   await page.getByRole("button", { name: "用密码验证" }).click();
-  await expect(page.getByText(/再次点击原操作按钮/)).toBeVisible();
+  await expect(page.getByText("身份已验证，请重新提交。")).toBeVisible();
   await page.getByRole("button", { name: "确认解除" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await login(page);

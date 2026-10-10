@@ -49,11 +49,7 @@ export function AdmissionPage() {
           <h1 className="text-xl font-semibold">等待管理员准入</h1>
         </CardHeader>
         <CardContent className="space-y-5 text-sm text-muted-foreground">
-          <p>
-            {principal.externalIdentity?.displayName ?? "当前外部身份"}
-            尚未关联正式用户。管理员完成审核后，请重新登录。
-          </p>
-          <p>此状态下不能访问项目或执行发布命令。</p>
+          <p>{principal.externalIdentity?.displayName ?? "当前外部身份"}</p>
           {checkNotice && <p role="status">{checkNotice}</p>}
           {check.error &&
             !(

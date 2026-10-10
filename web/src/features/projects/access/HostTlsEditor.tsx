@@ -95,11 +95,6 @@ export function HostTlsEditor({
           />
         ) : (
           <>
-            {!options.data.issuerPolicies.length && (
-              <p className="text-xs text-muted-foreground">
-                当前没有可用的托管证书 Policy。
-              </p>
-            )}
             {mode === "managed" && (
               <div className="space-y-2">
                 <Label htmlFor="access-detail-issuer">Issuer Policy</Label>
@@ -163,8 +158,8 @@ export function HostTlsEditor({
                   ))}
                 </Select>
                 {!bindings.data.length && (
-                  <p className="text-xs text-muted-foreground">
-                    当前域名没有有效的 TLS Secret 授权。
+                  <p className="text-sm text-muted-foreground">
+                    暂无 TLS Secret 授权
                   </p>
                 )}
                 {(bindingOffset > 0 || bindings.data.length > 20) && (
@@ -214,12 +209,12 @@ export function HostTlsEditor({
         )}
         {mutation.error && (
           <p role="alert" className="text-destructive">
-            {errorText(mutation.error)}。结果未知时，相同输入重试会复用幂等键。
+            {errorText(mutation.error)}
           </p>
         )}
         {mutation.isSuccess && (
           <p role="status" className="text-emerald-700">
-            配置已保存，等待入口与证书控制器调和。
+            已保存，等待控制器更新。
           </p>
         )}
         <Button

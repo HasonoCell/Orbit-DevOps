@@ -80,6 +80,9 @@ test("管理员创建本地用户、任命角色、停用并重置临时密码",
   await expect(page.getByText("新用户默认没有平台或项目管理权限")).toHaveCount(
     0,
   );
+  await expect(page.getByText(/提交前请通过安全渠道保存临时密码/)).toHaveCount(
+    0,
+  );
   await page.getByLabel("登录名").fill("colleague");
   await page.getByLabel("显示名称").fill("新同事");
   await page.getByLabel("临时密码", { exact: true }).fill(fixturePassword);
@@ -87,6 +90,7 @@ test("管理员创建本地用户、任命角色、停用并重置临时密码",
   await expect(page.getByText(/已创建 新同事/)).toBeVisible();
   await expect(page.getByLabel("临时密码", { exact: true })).toHaveValue("");
   await page.getByRole("button", { name: "管理" }).last().click();
+  await expect(page.getByText(/已有本地账号时，登录名留空/)).toHaveCount(0);
   await chooseOption(page.getByLabel("平台角色"), "platform_admin");
   await page.getByRole("button", { name: "修改角色" }).click();
   await page.getByRole("button", { name: "确认提交" }).click();
@@ -154,7 +158,7 @@ test("近期认证保留创建草稿且不会自动重提", async ({ page }) => 
   await page.getByRole("button", { name: "创建用户" }).click();
   await page.getByLabel("当前密码").fill("fixture-only-recent-proof");
   await page.getByRole("button", { name: "用密码验证" }).click();
-  await expect(page.getByText(/身份已验证，请检查原操作/)).toBeVisible();
+  await expect(page.getByText("身份已验证，请重新提交。")).toBeVisible();
   await expect(page.getByLabel("临时密码", { exact: true })).toHaveValue(
     fixturePassword,
   );

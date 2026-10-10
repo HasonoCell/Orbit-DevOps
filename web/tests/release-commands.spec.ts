@@ -69,10 +69,10 @@ test("失败的执行经确认后重试，同一输入的网络重试复用幂�
   await page.goto("/projects/p-1/applications/a-1/releases/r-1");
   await page.getByRole("button", { name: "重试执行" }).click();
   await expect(
-    page.getByText("重新排队同一 Operation。", { exact: false }),
+    page.getByText("重试此执行；结果未知时先核验外部状态。"),
   ).toBeVisible();
   await page.getByRole("button", { name: "确认重试执行" }).click();
-  await expect(page.getByRole("alert").getByText(/结果未确认/)).toBeVisible();
+  await expect(page.getByRole("alert").getByText("暂时不可用")).toBeVisible();
   await page.getByRole("button", { name: "确认重试执行" }).click();
   await expect(page.getByRole("button", { name: "取消执行" })).toBeVisible();
   expect(keys).toHaveLength(2);
@@ -217,7 +217,9 @@ test("回滚创建新的 Release 并跳转，不改写历史 Release", async ({ 
   });
   await page.goto("/projects/p-1/applications/a-1/releases/r-1");
   await page.getByRole("button", { name: "回滚到此发布" }).click();
-  await expect(page.getByText(/以此历史 Release 的不可变快照/)).toBeVisible();
+  await expect(
+    page.getByText("按此历史快照创建新发布，替换目标当前运行版本。"),
+  ).toBeVisible();
   expect(posted).toBe(false);
   await page.getByRole("button", { name: "确认回滚到此发布" }).click();
   await expect(page).toHaveURL(/\/releases\/r-2$/);

@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -60,14 +59,11 @@ export function TargetCreateDialog({
   }
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>
             创建{stage === "production" ? "生产" : "开发"}部署目标
           </DialogTitle>
-          <DialogDescription>
-            集群与 Namespace 由服务端确定。创建后再选择镜像发布。
-          </DialogDescription>
         </DialogHeader>
         <form
           className="space-y-5"

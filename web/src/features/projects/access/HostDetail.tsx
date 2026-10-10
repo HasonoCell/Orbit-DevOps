@@ -73,7 +73,7 @@ export function HostDetail({
       </div>
       {deleteAccepted && (
         <p role="status" className="mb-5 rounded border bg-accent p-4 text-sm">
-          清理已接纳。请继续观察入口调和与控制器状态。
+          已提交清理，等待控制器完成。
         </p>
       )}
       {displayed.tlsMode === "existing_secret" &&
@@ -130,9 +130,6 @@ export function HostDetail({
       <section className="workbench-panel mb-5">
         <header className="panel-heading">
           <h2>入口观测</h2>
-          <span className="text-xs text-muted-foreground">
-            独立观察，不包含公网探测
-          </span>
         </header>
         {status.isPending || status.error ? (
           <QueryNotice error={status.error} retry={refresh} />

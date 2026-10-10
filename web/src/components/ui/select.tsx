@@ -23,6 +23,7 @@ export function Select({
   disabled,
   className,
   placeholder = "请选择",
+  emptyValueAsPlaceholder = false,
   ref: forwardedRef,
   ...triggerProps
 }: Omit<
@@ -33,6 +34,8 @@ export function Select({
   onValueChange: (value: string) => void;
   children: ReactNode;
   placeholder?: string;
+  // 必选字段的空值仅显示占位，不把“请选择”放入可选项；可清空字段仍使用空选项。
+  emptyValueAsPlaceholder?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -64,7 +67,7 @@ export function Select({
     <SelectPrimitive.Root
       open={open}
       onOpenChange={setOpen}
-      value={encode(value)}
+      value={value === "" && emptyValueAsPlaceholder ? "" : encode(value)}
       disabled={disabled}
       onValueChange={(next) => onValueChange(next === emptyOption ? "" : next)}
     >

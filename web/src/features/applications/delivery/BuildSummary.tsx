@@ -45,11 +45,7 @@ export function BuildSummary({
     refetchIntervalInBackground: false,
   });
   return (
-    <Panel
-      title="构建记录"
-      icon={<Hammer className="size-4" />}
-      subtitle={cursor ? "历史记录" : "最近 5 条"}
-    >
+    <Panel title="构建记录" icon={<Hammer className="size-4" />}>
       {builds.isPending || builds.error ? (
         <QueryNotice error={builds.error} retry={() => void builds.refetch()} />
       ) : (

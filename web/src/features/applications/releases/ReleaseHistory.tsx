@@ -82,7 +82,7 @@ export function ReleaseHistory({
               ))}
             </div>
           ) : (
-            <QuietEmpty>暂无发布记录。</QuietEmpty>
+            <QuietEmpty>暂无发布记录</QuietEmpty>
           )}
           <CursorPagination
             className="p-4"

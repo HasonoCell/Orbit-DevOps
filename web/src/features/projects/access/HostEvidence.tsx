@@ -66,6 +66,7 @@ export function HostEvidence({ status }: { status: HostStatus }) {
         <Fact label="DNS 答案">
           {status.dns.answers.join(", ") || "尚无答案"}
         </Fact>
+        <Fact label="公网连通性">未检测</Fact>
       </dl>
       {status.controller.routes.length > 0 && (
         <div>
@@ -80,10 +81,6 @@ export function HostEvidence({ status }: { status: HostStatus }) {
           </ul>
         </div>
       )}
-      <p className="border-t pt-4 text-xs text-muted-foreground">
-        Gateway/HTTPRoute、证书与 DNS 是不同观测。这里未主动验证公网 HTTP/HTTPS
-        请求。
-      </p>
     </div>
   );
 }

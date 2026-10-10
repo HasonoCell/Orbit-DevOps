@@ -108,12 +108,7 @@ function BuildContent({
     build.data.build.applicationId !== applicationId ||
     build.data.build.projectId !== projectId
   ) {
-    return (
-      <EmptyState
-        title="构建不属于当前应用"
-        description="请从构建所属的应用重新进入。"
-      />
-    );
+    return <EmptyState title="构建不属于当前应用" />;
   }
   const { build: record, imageArtifact } = build.data;
   const current = operation.error ? undefined : operation.data;

@@ -269,10 +269,6 @@ export function UserDetailPanel({
         </div>
         <form onSubmit={submitReset} className="space-y-3 border-t pt-5">
           <h3 className="font-semibold">重置本地密码</h3>
-          <p className="text-xs text-muted-foreground">
-            已有本地账号时，登录名留空。OIDC
-            专用账号首次建立本地登录时填写新登录名。提交前请安全保存临时密码。
-          </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="reset-login">新登录名（仅首次建立）</Label>

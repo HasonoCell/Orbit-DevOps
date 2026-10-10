@@ -133,12 +133,7 @@ function DeliveryRunContent({
     pipeline.data.pipeline.applicationId !== applicationId ||
     run.data.run.deliveryPipelineId !== pipelineId
   )
-    return (
-      <EmptyState
-        title="交付运行不属于当前 Pipeline"
-        description="请从所属 Pipeline 重新进入。"
-      />
-    );
+    return <EmptyState title="交付运行不属于当前 Pipeline" />;
   const detail = run.data;
   const canReconcile =
     permissions.data.allowed.includes("develop") &&
@@ -250,17 +245,12 @@ function DeliveryRunContent({
       {canReconcile && (
         <section className="workbench-panel p-5 text-sm">
           <h2 className="font-semibold">人工处理</h2>
-          <p className="mt-2 text-muted-foreground">
-            重新对账只登记一次后台推进请求；底层 Build、Release
-            和发布门禁仍分别判断。
-          </p>
           {confirm ? (
             <div className="mt-4 space-y-3 rounded border p-4">
               <p>确认重新对账 Run {runId}？</p>
               {reconcile.error && (
                 <p role="alert" className="text-destructive">
                   {errorText(reconcile.error)}
-                  。结果未确认时，相同输入重试会复用幂等键。
                 </p>
               )}
               <div className="flex gap-2">
@@ -295,7 +285,7 @@ function DeliveryRunContent({
       )}
       {accepted && (
         <p role="status" className="mt-4 rounded border bg-accent p-4 text-sm">
-          推进请求已接纳，请稍后刷新运行状态。
+          推进请求已接纳
         </p>
       )}
     </div>
